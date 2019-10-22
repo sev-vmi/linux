@@ -234,7 +234,6 @@ static struct pci_dev *setup_aliases(struct device *dev)
 		pci_add_dma_alias(pdev, ivrs_alias & 0xff, 1);
 
 	clone_aliases(pdev);
-
 	return pdev;
 }
 
