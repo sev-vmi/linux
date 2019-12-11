@@ -75,7 +75,6 @@ static unsigned long ioapic_read_indirect(struct kvm_ioapic *ioapic,
 		{
 			u32 redir_index = (ioapic->ioregsel - 0x10) >> 1;
 			u64 redir_content = ~0ULL;
-
 			if (redir_index < IOAPIC_NUM_PINS) {
 				u32 index = array_index_nospec(
 					redir_index, IOAPIC_NUM_PINS);
