@@ -583,7 +583,7 @@ struct iommu_fwspec {
 	void			*iommu_priv;
 	u32			flags;
 	unsigned int		num_ids;
-	u32			ids[1];
+	u32			ids[];
 };
 
 /* ATS is supported */
