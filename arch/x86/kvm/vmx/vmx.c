@@ -6103,11 +6103,18 @@ void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 	vmx_update_msr_bitmap(vcpu);
 }
 
-static void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu, hpa_t hpa)
+static void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
 {
+	struct page *page;
+
 	if (!is_guest_mode(vcpu)) {
-		vmcs_write64(APIC_ACCESS_ADDR, hpa);
+		page = gfn_to_page(vcpu->kvm, APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT);
+		if (is_error_page(page))
+			return;
+
+		vmcs_write64(APIC_ACCESS_ADDR, page_to_phys(page));
 		vmx_flush_tlb(vcpu, true);
+		put_page(page);
 	}
 }
 
