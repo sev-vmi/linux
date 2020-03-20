@@ -6131,7 +6131,7 @@ void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 		if (flexpriority_enabled) {
 			sec_exec_control |=
 				SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
-			vmx_flush_tlb(vcpu, true);
+			vmx_flush_tlb(vcpu);
 		}
 		break;
 	case LAPIC_MODE_X2APIC:
@@ -6155,7 +6155,7 @@ static void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
 			return;
 
 		vmcs_write64(APIC_ACCESS_ADDR, page_to_phys(page));
-		vmx_flush_tlb(vcpu, true);
+		vmx_flush_tlb(vcpu);
 		put_page(page);
 	}
 }
