@@ -358,6 +358,7 @@ struct iommu_fault_param {
  * @fault_param: IOMMU detected device fault reporting data
  * @fwspec:	 IOMMU fwspec data
  * @iommu_dev:	 IOMMU device this device is linked to
+ * @priv:	 IOMMU Driver private data
  *
  * TODO: migrate other per device data pointers under iommu_dev_data, e.g.
  *	struct iommu_group	*iommu_group;
@@ -367,6 +368,7 @@ struct dev_iommu {
 	struct iommu_fault_param	*fault_param;
 	struct iommu_fwspec		*fwspec;
 	struct iommu_device		*iommu_dev;
+	void				*priv;
 };
 
 int  iommu_device_register(struct iommu_device *iommu);
@@ -569,7 +571,6 @@ struct iommu_group *fsl_mc_device_group(struct device *dev);
 struct iommu_fwspec {
 	const struct iommu_ops	*ops;
 	struct fwnode_handle	*iommu_fwnode;
-	void			*iommu_priv;
 	u32			flags;
 	unsigned int		num_ids;
 	u32			ids[];
@@ -608,14 +609,14 @@ static inline void dev_iommu_fwspec_set(struct device *dev,
 static inline void *dev_iommu_priv_get(struct device *dev)
 {
 	if (dev->iommu)
-		return dev->iommu->fwspec->iommu_priv;
+		return dev->iommu->priv;
 	else
 		return NULL;
 }
 
 static inline void dev_iommu_priv_set(struct device *dev, void *priv)
 {
-	dev->iommu->fwspec->iommu_priv = priv;
+	dev->iommu->priv = priv;
 }
 
 int iommu_probe_device(struct device *dev);
