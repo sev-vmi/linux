@@ -3607,8 +3607,19 @@ static void svm_cancel_injection(struct kvm_vcpu *vcpu)
 	svm_complete_interrupts(svm);
 }
 
-static void svm_vcpu_run(struct kvm_vcpu *vcpu)
+static enum exit_fastpath_completion svm_exit_handlers_fastpath(struct kvm_vcpu *vcpu)
 {
+	if (!is_guest_mode(vcpu) &&
+	    to_svm(vcpu)->vmcb->control.exit_code == SVM_EXIT_MSR &&
+	    to_svm(vcpu)->vmcb->control.exit_info_1)
+		return handle_fastpath_set_msr_irqoff(vcpu);
+
+	return EXIT_FASTPATH_NONE;
+}
+
+static enum exit_fastpath_completion svm_vcpu_run(struct kvm_vcpu *vcpu)
+{
+	enum exit_fastpath_completion exit_fastpath;
 	struct vcpu_svm *svm = to_svm(vcpu);
 
 	svm->vmcb->save.rax = vcpu->arch.regs[VCPU_REGS_RAX];
@@ -3620,7 +3631,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
 	 * again.
 	 */
 	if (unlikely(svm->nested.exit_required))
-		return;
+		return EXIT_FASTPATH_NONE;
 
 	/*
 	 * Disable singlestep if we're injecting an interrupt/exception.
@@ -3799,6 +3810,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
 	stgi();
 
 	/* Any pending NMI will happen here */
+	exit_fastpath = svm_exit_handlers_fastpath(vcpu);
 
 	if (unlikely(svm->vmcb->control.exit_code == SVM_EXIT_NMI))
 		kvm_after_interrupt(&svm->vcpu);
@@ -3827,6 +3839,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
 		svm_handle_mce(svm);
 
 	mark_all_clean(svm->vmcb);
+	return exit_fastpath;
 }
 STACK_FRAME_NON_STANDARD(svm_vcpu_run);
 
@@ -4197,12 +4210,8 @@ out:
 	return ret;
 }
 
-static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu,
-	enum exit_fastpath_completion *exit_fastpath)
+static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu)
 {
-	if (!is_guest_mode(vcpu) &&
-		to_svm(vcpu)->vmcb->control.exit_code == EXIT_REASON_MSR_WRITE)
-		*exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
 }
 
 static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
