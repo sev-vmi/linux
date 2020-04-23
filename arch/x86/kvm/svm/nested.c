@@ -405,6 +405,7 @@ int nested_svm_vmrun(struct vcpu_svm *svm)
 
 	copy_vmcb_control_area(hsave, vmcb);
 
+	svm->nested.nested_run_pending = 1;
 	enter_svm_guest_mode(svm, vmcb_gpa, nested_vmcb, &map);
 
 	if (!nested_svm_vmrun_msrpm(svm)) {
@@ -802,7 +803,8 @@ int svm_check_nested_events(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 	bool block_nested_events =
-		kvm_event_needs_reinjection(vcpu) || svm->nested.exit_required;
+		kvm_event_needs_reinjection(vcpu) || svm->nested.exit_required ||
+		svm->nested.nested_run_pending;
 
 	if (vcpu->arch.smi_pending && nested_exit_on_smi(svm)) {
 		if (block_nested_events)
