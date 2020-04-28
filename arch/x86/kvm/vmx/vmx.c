@@ -5889,8 +5889,7 @@ void dump_vmcs(void)
  * The guest has exited.  See if we can fix it or if we need userspace
  * assistance.
  */
-static int vmx_handle_exit(struct kvm_vcpu *vcpu,
-	enum exit_fastpath_completion exit_fastpath)
+static int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	u32 exit_reason = vmx->exit_reason;
@@ -5976,18 +5975,38 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu,
 		}
 	}
 
-	if (exit_fastpath == EXIT_FASTPATH_SKIP_EMUL_INS) {
-		kvm_skip_emulated_instruction(vcpu);
+	if (exit_fastpath != EXIT_FASTPATH_NONE)
 		return 1;
-	} else if (exit_reason < kvm_vmx_max_exit_handlers
-	    && kvm_vmx_exit_handlers[exit_reason]) {
-		return kvm_vmx_exit_handlers[exit_reason](vcpu);
-	else {
-		vcpu_unimpl(vcpu, "vmx: unexpected exit reason 0x%x\n",
-				exit_reason);
-		dump_vmcs();
-		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
-		vcpu->run->internal.suberror =
+
+	if (exit_reason >= kvm_vmx_max_exit_handlers)
+		goto unexpected_vmexit;
+#ifdef CONFIG_RETPOLINE
+	if (exit_reason == EXIT_REASON_MSR_WRITE)
+		return kvm_emulate_wrmsr(vcpu);
+	else if (exit_reason == EXIT_REASON_PREEMPTION_TIMER)
+		return handle_preemption_timer(vcpu);
+	else if (exit_reason == EXIT_REASON_INTERRUPT_WINDOW)
+		return handle_interrupt_window(vcpu);
+	else if (exit_reason == EXIT_REASON_EXTERNAL_INTERRUPT)
+		return handle_external_interrupt(vcpu);
+	else if (exit_reason == EXIT_REASON_HLT)
+		return kvm_emulate_halt(vcpu);
+	else if (exit_reason == EXIT_REASON_EPT_MISCONFIG)
+		return handle_ept_misconfig(vcpu);
+#endif
+
+	exit_reason = array_index_nospec(exit_reason,
+					 kvm_vmx_max_exit_handlers);
+	if (!kvm_vmx_exit_handlers[exit_reason])
+		goto unexpected_vmexit;
+
+	return kvm_vmx_exit_handlers[exit_reason](vcpu);
+
+unexpected_vmexit:
+	vcpu_unimpl(vcpu, "vmx: unexpected exit reason 0x%x\n", exit_reason);
+	dump_vmcs();
+	vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
+	vcpu->run->internal.suberror =
 			KVM_INTERNAL_ERROR_UNEXPECTED_EXIT_REASON;
 		vcpu->run->internal.ndata = 1;
 		vcpu->run->internal.data[0] = exit_reason;
@@ -6537,14 +6556,25 @@ void vmx_update_host_rsp(struct vcpu_vmx *vmx, unsigned long host_rsp)
 	}
 }
 
+static fastpath_t vmx_exit_handlers_fastpath(struct kvm_vcpu *vcpu)
+{
+	switch (to_vmx(vcpu)->exit_reason) {
+	case EXIT_REASON_MSR_WRITE:
+		return handle_fastpath_set_msr_irqoff(vcpu);
+	default:
+		return EXIT_FASTPATH_NONE;
+	}
+}
+
 bool __vmx_vcpu_run(struct vcpu_vmx *vmx, unsigned long *regs, bool launched);
 
-static enum exit_fastpath_completion vmx_vcpu_run(struct kvm_vcpu *vcpu)
+static fastpath_t vmx_vcpu_run(struct kvm_vcpu *vcpu)
 {
-	enum exit_fastpath_completion exit_fastpath;
+	fastpath_t exit_fastpath;
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long cr3, cr4;
 
+reenter_guest:
 	/* Record the guest's net vcpu time for enforced NMI injections. */
 	if (unlikely(!enable_vnmi &&
 		     vmx->loaded_vmcs->soft_vnmi_blocked))
@@ -6712,6 +6742,22 @@ static enum exit_fastpath_completion vmx_vcpu_run(struct kvm_vcpu *vcpu)
 
 	vmx_recover_nmi_blocking(vmx);
 	vmx_complete_interrupts(vmx);
+
+	if (is_guest_mode(vcpu))
+		return EXIT_FASTPATH_NONE;
+
+	exit_fastpath = vmx_exit_handlers_fastpath(vcpu);
+	if (exit_fastpath == EXIT_FASTPATH_REENTER_GUEST) {
+		if (!kvm_vcpu_exit_request(vcpu)) {
+			/*
+			 * FIXME: this goto should be a loop in vcpu_enter_guest,
+			 * but it would incur the cost of a retpoline for now.
+			 * Revisit once static calls are available.
+			 */
+			goto reenter_guest;
+		}
+		exit_fastpath = EXIT_FASTPATH_EXIT_HANDLED;
+	}
 
 	return exit_fastpath;
 }
