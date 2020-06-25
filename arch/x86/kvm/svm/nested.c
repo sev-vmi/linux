@@ -101,7 +101,7 @@ void recalc_intercepts(struct vcpu_svm *svm)
 	struct vmcb_control_area *c, *h;
 	struct nested_state *g;
 
-	mark_dirty(svm->vmcb, VMCB_INTERCEPTS);
+	vmcb_mark_dirty(svm->vmcb, VMCB_INTERCEPTS);
 
 	if (!is_guest_mode(&svm->vcpu))
 		return;
@@ -329,7 +329,7 @@ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
 	if (unlikely(evaluate_pending_interrupts))
 		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
 
-	mark_all_dirty(svm->vmcb);
+	vmcb_mark_all_dirty(svm->vmcb);
 }
 
 int nested_svm_vmrun(struct vcpu_svm *svm)
@@ -560,7 +560,7 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 	svm->vmcb->save.cpl = 0;
 	svm->vmcb->control.exit_int_info = 0;
 
-	mark_all_dirty(svm->vmcb);
+	vmcb_mark_all_dirty(svm->vmcb);
 
 	kvm_vcpu_unmap(&svm->vcpu, &map, true);
 
