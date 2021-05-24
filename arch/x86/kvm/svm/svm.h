@@ -403,7 +403,7 @@ int nested_svm_exit_special(struct vcpu_svm *svm);
 
 #define VMCB_AVIC_APIC_BAR_MASK		0xFFFFFFFFFF000ULL
 
-extern int avic;
+extern bool avic;
 
 static inline void avic_update_vapic_bar(struct vcpu_svm *svm, u64 data)
 {
