@@ -1099,4 +1099,5 @@ struct vma_prepare {
 	struct vm_area_struct *remove;
 	struct vm_area_struct *remove2;
 };
+
 #endif	/* __MM_INTERNAL_H */
