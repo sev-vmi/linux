@@ -2548,11 +2548,7 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_block);
 
 bool kvm_vcpu_wake_up(struct kvm_vcpu *vcpu)
 {
-	struct swait_queue_head *wqp;
-
-	wqp = kvm_arch_vcpu_wq(vcpu);
-	if (swq_has_sleeper(wqp)) {
-		swake_up_one(wqp);
+	if (__kvm_vcpu_wake_up(vcpu)) {
 		WRITE_ONCE(vcpu->ready, true);
 		++vcpu->stat.halt_wakeup;
 		return true;
@@ -2694,7 +2690,7 @@ void kvm_vcpu_on_spin(struct kvm_vcpu *me, bool yield_to_kernel_mode)
 				continue;
 			if (vcpu == me)
 				continue;
-			if (swait_active(&vcpu->wq) && !vcpu_dy_runnable(vcpu))
+			if (kvm_vcpu_is_blocking(vcpu) && !vcpu_dy_runnable(vcpu))
 				continue;
 			if (READ_ONCE(vcpu->preempted) && yield_to_kernel_mode &&
 				!kvm_arch_vcpu_in_kernel(vcpu))

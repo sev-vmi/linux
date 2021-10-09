@@ -593,7 +593,7 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 	if (map.emul_ptimer)
 		soft_timer_cancel(&map.emul_ptimer->hrtimer);
 
-	if (swait_active(kvm_arch_vcpu_wq(vcpu)))
+	if (kvm_vcpu_is_blocking(vcpu))
 		kvm_timer_blocking(vcpu);
 
 	/*

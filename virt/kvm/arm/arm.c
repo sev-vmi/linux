@@ -573,7 +573,7 @@ void kvm_arm_resume_guest(struct kvm *kvm)
 
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		vcpu->arch.pause = false;
-		swake_up_one(kvm_arch_vcpu_wq(vcpu));
+		__kvm_vcpu_wake_up(vcpu);
 	}
 }
 

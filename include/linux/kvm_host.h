@@ -949,6 +949,31 @@ static inline struct swait_queue_head *kvm_arch_vcpu_wq(struct kvm_vcpu *vcpu)
 #endif
 }
 
+/*
+ * Wake a vCPU if necessary, but don't do any stats/metadata updates.  Returns
+ * true if the vCPU was blocking and was awakened, false otherwise.
+ */
+static inline bool __kvm_vcpu_wake_up(struct kvm_vcpu *vcpu)
+{
+	struct swait_queue_head *wqp;
+
+	wqp = kvm_arch_vcpu_wq(vcpu);
+	if (swq_has_sleeper(wqp)) {
+		swake_up_one(wqp);
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool kvm_vcpu_is_blocking(struct kvm_vcpu *vcpu)
+{
+	struct swait_queue_head *wqp;
+
+	wqp = kvm_arch_vcpu_wq(vcpu);
+	return swait_active(wqp);	
+}
+
 #ifdef __KVM_HAVE_ARCH_INTC_INITIALIZED
 /*
  * returns true if the virtual interrupt controller is initialized and
