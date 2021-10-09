@@ -2683,6 +2683,35 @@ out:
 	return ret;
 }
 
+/*
+ * Block the vCPU until the vCPU is runnable, an event arrives, or a signal is
+ * pending.  This is mostly used when halting a vCPU, but may also be used
+ * directly for other vCPU non-runnable states, e.g. x86's Wait-For-SIPI.
+ */
+bool kvm_vcpu_block(struct kvm_vcpu *vcpu)
+{
+	struct rcuwait *wait = kvm_arch_vcpu_get_wait(vcpu);
+	bool waited = false;
+
+	kvm_arch_vcpu_blocking(vcpu);
+
+	prepare_to_rcuwait(wait);
+	for (;;) {
+		set_current_state(TASK_INTERRUPTIBLE);
+
+		if (kvm_vcpu_check_block(vcpu) < 0)
+			break;
+
+		waited = true;
+		schedule();
+	}
+	finish_rcuwait(wait);
+
+	kvm_arch_vcpu_unblocking(vcpu);
+
+	return waited;
+}
+
 static inline void
 update_halt_poll_stats(struct kvm_vcpu *vcpu, u64 poll_ns, bool waited)
 {
@@ -2692,13 +2721,17 @@ update_halt_poll_stats(struct kvm_vcpu *vcpu, u64 poll_ns, bool waited)
 		vcpu->stat.halt_poll_success_ns += poll_ns;
 }
 
+/*
+ * Emulate a vCPU halt condition, e.g. HLT on x86, WFI on arm, etc...  If halt
+ * polling is enabled, busy wait for a short time before blocking to avoid the
+ * expensive block+unblock sequence if a wake event arrives soon after the vCPU
+ * is halted.
+ */
 void kvm_vcpu_halt(struct kvm_vcpu *vcpu)
 {
 	ktime_t start, cur, poll_end;
 	bool waited = false;
 	u64 halt_ns;
-
-	kvm_arch_vcpu_blocking(vcpu);
 
 	start = cur = poll_end = ktime_get();
 	if (vcpu->halt_poll_ns && !kvm_arch_no_poll(vcpu)) {
@@ -2720,20 +2753,10 @@ void kvm_vcpu_halt(struct kvm_vcpu *vcpu)
 		} while (single_task_running() && ktime_before(cur, stop));
 	}
 
-	prepare_to_rcuwait(&vcpu->wait);
-	for (;;) {
-		set_current_state(TASK_INTERRUPTIBLE);
+	waited = kvm_vcpu_block(vcpu);
 
-		if (kvm_vcpu_check_block(vcpu) < 0)
-			break;
-
-		waited = true;
-		schedule();
-	}
-	finish_rcuwait(&vcpu->wait);
 	cur = ktime_get();
 out:
-	kvm_arch_vcpu_unblocking(vcpu);
 	/* The total time the vCPU was "halted", including polling time. */
 	halt_ns = ktime_to_ns(cur) - ktime_to_ns(start);
 
