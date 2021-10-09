@@ -3506,7 +3506,7 @@ static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
 	    !((vmcs12->cpu_based_vm_exec_control & CPU_BASED_INTR_WINDOW_EXITING) &&
 	      (vmcs12->guest_rflags & X86_EFLAGS_IF))) {
 		vmx->nested.nested_run_pending = 0;
-		return kvm_vcpu_halt(vcpu);
+		return kvm_emulate_halt_noskip(vcpu);
 	}
 	return 1;
 
