@@ -7426,7 +7426,7 @@ void kvm_arch_exit(void)
 	kmem_cache_destroy(x86_fpu_cache);
 }
 
-static int __kvm_vcpu_halt(struct kvm_vcpu *vcpu, int state, int reason)
+static int __kvm_emulate_halt(struct kvm_vcpu *vcpu, int state, int reason)
 {
 	++vcpu->stat.halt_exits;
 	if (lapic_in_kernel(vcpu)) {
@@ -7437,7 +7437,12 @@ static int __kvm_vcpu_halt(struct kvm_vcpu *vcpu, int state, int reason)
 		return 0;
 	}
 }
-EXPORT_SYMBOL_GPL(kvm_vcpu_halt);
+
+int kvm_emulate_halt_noskip(struct kvm_vcpu *vcpu)
+{
+	return __kvm_emulate_halt(vcpu, KVM_MP_STATE_HALTED, KVM_EXIT_HLT);
+}
+EXPORT_SYMBOL_GPL(kvm_emulate_halt_noskip);
 
 int kvm_emulate_halt(struct kvm_vcpu *vcpu)
 {
@@ -7446,9 +7451,18 @@ int kvm_emulate_halt(struct kvm_vcpu *vcpu)
 	 * TODO: we might be squashing a GUESTDBG_SINGLESTEP-triggered
 	 * KVM_EXIT_DEBUG here.
 	 */
-	return kvm_vcpu_halt(vcpu) && ret;
+	return kvm_emulate_halt_noskip(vcpu) && ret;
 }
 EXPORT_SYMBOL_GPL(kvm_emulate_halt);
+
+//int kvm_emulate_ap_reset_hold(struct kvm_vcpu *vcpu)
+//{
+//	int ret = kvm_skip_emulated_instruction(vcpu);
+//
+//	return __kvm_emulate_halt(vcpu, KVM_MP_STATE_AP_RESET_HOLD,
+//					KVM_EXIT_AP_RESET_HOLD) && ret;
+//}
+//EXPORT_SYMBOL_GPL(kvm_emulate_ap_reset_hold);
 
 #ifdef CONFIG_X86_64
 static int kvm_pv_clock_pairing(struct kvm_vcpu *vcpu, gpa_t paddr,
