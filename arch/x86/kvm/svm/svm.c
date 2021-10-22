@@ -3425,8 +3425,6 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu)
 
 	pre_svm_run(svm);
 
-	WARN_ON_ONCE(kvm_apicv_activated(vcpu->kvm) != kvm_vcpu_apicv_active(vcpu));
-
 	sync_lapic_to_cr8(vcpu);
 
 	svm->vmcb->save.cr2 = vcpu->arch.cr2;
