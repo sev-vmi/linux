@@ -106,7 +106,7 @@ static void synic_update_vector(struct kvm_vcpu_hv_synic *synic,
 	if (!!auto_eoi_old == !!auto_eoi_new)
 		return;
 
-	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
+	down_write(&vcpu->kvm->arch.apicv_update_lock);
 
 	if (auto_eoi_new)
 		hv->synic_auto_eoi_used++;
@@ -121,7 +121,7 @@ static void synic_update_vector(struct kvm_vcpu_hv_synic *synic,
 					 APICV_INHIBIT_REASON_HYPERV,
 					 !!hv->synic_auto_eoi_used);
 
-	mutex_unlock(&vcpu->kvm->arch.apicv_update_lock);
+	up_write(&vcpu->kvm->arch.apicv_update_lock);
 }
 
 static int synic_set_sint(struct kvm_vcpu_hv_synic *synic, int sint,

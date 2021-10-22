@@ -7532,7 +7532,7 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_apicv_activated);
 
 static void kvm_apicv_init(struct kvm *kvm)
 {
-	mutex_init(&kvm->arch.apicv_update_lock);
+	init_rwsem(&kvm->arch.apicv_update_lock);
 
 	set_bit(APICV_INHIBIT_REASON_ABSENT,
 		&kvm->arch.apicv_inhibit_reasons);
@@ -8112,7 +8112,7 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 	if (!lapic_in_kernel(vcpu))
 		return;
 
-	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
+	down_read(&vcpu->kvm->arch.apicv_update_lock);
 
 	activate = kvm_vcpu_apicv_activated(vcpu);
 
@@ -8133,7 +8133,7 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 
 out:
-	mutex_unlock(&vcpu->kvm->arch.apicv_update_lock);
+	up_read(&vcpu->kvm->arch.apicv_update_lock);
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
 
@@ -8142,6 +8142,7 @@ void __kvm_set_or_clear_apicv_inhibit(struct kvm *kvm,
 {
 	unsigned long old, new;
 
+	lockdep_assert_held_write(&kvm->arch.apicv_update_lock);
 	if (!kvm_x86_ops->check_apicv_inhibit_reasons ||
 	    !kvm_x86_ops->check_apicv_inhibit_reasons(reason))
 		return;
@@ -8182,9 +8183,9 @@ EXPORT_SYMBOL_GPL(__kvm_set_or_clear_apicv_inhibit);
 void kvm_set_or_clear_apicv_inhibit(struct kvm *kvm,
 				    enum kvm_apicv_inhibit reason, bool set)
 {
-	mutex_lock(&kvm->arch.apicv_update_lock);
+	down_write(&kvm->arch.apicv_update_lock);
 	__kvm_set_or_clear_apicv_inhibit(kvm, reason, set);
-	mutex_unlock(&kvm->arch.apicv_update_lock);
+	up_write(&kvm->arch.apicv_update_lock);
 }
 EXPORT_SYMBOL_GPL(kvm_set_or_clear_apicv_inhibit);
 
