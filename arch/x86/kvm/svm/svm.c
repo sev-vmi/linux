@@ -185,6 +185,8 @@ module_param(vgif, int, 0444);
 static int sev = IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT_ACTIVE_BY_DEFAULT);
 module_param(sev, int, 0444);
 
+static struct kvm_x86_ops svm_x86_ops __ro_after_init;
+
 /*
  * enable / disable AVIC.  Because the defaults differ for APICv
  * support between VMX and SVM we cannot use module_param_named.
@@ -5152,8 +5154,8 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
 	.prepare_guest_switch = svm_prepare_guest_switch,
 	.vcpu_load = svm_vcpu_load,
 	.vcpu_put = svm_vcpu_put,
-	.vcpu_blocking = svm_vcpu_blocking,
-	.vcpu_unblocking = svm_vcpu_unblocking,
+	.vcpu_blocking = avic_vcpu_blocking,
+	.vcpu_unblocking = avic_vcpu_unblocking,
 
 	.update_bp_intercept = update_bp_intercept,
 	.get_msr_feature = svm_get_msr_feature,
@@ -5360,6 +5362,9 @@ static __init int svm_hardware_setup(void)
 		pr_info("AVIC enabled\n");
 
 		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
+	} else {
+		svm_x86_ops.vcpu_blocking = NULL;
+		svm_x86_ops.vcpu_unblocking = NULL;
 	}
 
 	if (vls) {
