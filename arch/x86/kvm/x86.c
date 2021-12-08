@@ -8183,6 +8183,9 @@ EXPORT_SYMBOL_GPL(__kvm_set_or_clear_apicv_inhibit);
 void kvm_set_or_clear_apicv_inhibit(struct kvm *kvm,
 				    enum kvm_apicv_inhibit reason, bool set)
 {
+	if (!enable_apicv)
+		return;
+
 	down_write(&kvm->arch.apicv_update_lock);
 	__kvm_set_or_clear_apicv_inhibit(kvm, reason, set);
 	up_write(&kvm->arch.apicv_update_lock);
