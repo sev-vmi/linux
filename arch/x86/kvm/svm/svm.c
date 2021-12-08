@@ -744,6 +744,29 @@ static void shrink_ple_window(struct kvm_vcpu *vcpu)
 	}
 }
 
+static void svm_hardware_teardown(void)
+{
+	int cpu;
+
+	if (svm_sev_enabled())
+		sev_hardware_teardown();
+
+	for_each_possible_cpu(cpu)
+		svm_cpu_uninit(cpu);
+
+	__free_pages(pfn_to_page(iopm_base >> PAGE_SHIFT), IOPM_ALLOC_ORDER);
+	iopm_base = 0;
+}
+
+static void init_seg(struct vmcb_seg *seg)
+{
+	seg->selector = 0;
+	seg->attrib = SVM_SELECTOR_P_MASK | SVM_SELECTOR_S_MASK |
+		      SVM_SELECTOR_WRITE_MASK; /* Read/Write Data Segment */
+	seg->limit = 0xffff;
+	seg->base = 0;
+}
+
 /*
  * The default MMIO mask is a single bit (excluding the present bit),
  * which could conflict with the memory encryption bit. Check for
@@ -783,20 +806,6 @@ static __init void svm_adjust_mmio_mask(void)
 	mask = (mask_bit < 52) ? rsvd_bits(mask_bit, 51) | PT_PRESENT_MASK : 0;
 
 	kvm_mmu_set_mmio_spte_mask(mask, PT_WRITABLE_MASK | PT_USER_MASK);
-}
-
-static void svm_hardware_teardown(void)
-{
-	int cpu;
-
-	if (svm_sev_enabled())
-		sev_hardware_teardown();
-
-	for_each_possible_cpu(cpu)
-		svm_cpu_uninit(cpu);
-
-	__free_pages(pfn_to_page(iopm_base >> PAGE_SHIFT), IOPM_ALLOC_ORDER);
-	iopm_base = 0;
 }
 
 static __init void svm_set_cpu_caps(void)
@@ -932,15 +941,6 @@ static __init int svm_hardware_setup(void)
 err:
 	svm_hardware_teardown();
 	return r;
-}
-
-static void init_seg(struct vmcb_seg *seg)
-{
-	seg->selector = 0;
-	seg->attrib = SVM_SELECTOR_P_MASK | SVM_SELECTOR_S_MASK |
-		      SVM_SELECTOR_WRITE_MASK; /* Read/Write Data Segment */
-	seg->limit = 0xffff;
-	seg->base = 0;
 }
 
 static void init_sys_seg(struct vmcb_seg *seg, uint32_t type)
