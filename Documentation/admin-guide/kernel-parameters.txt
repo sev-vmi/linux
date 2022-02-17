@@ -4194,6 +4194,9 @@
 				on: Turn realloc on
 		realloc		same as realloc=on
 		noari		do not use PCIe ARI.
+		disable_tph	Do not use PCIe TPH.
+		nostmode 	Allow TPH to be enabled but do not use steering
+				tag table.
 		noats		[PCIE, Intel-IOMMU, AMD-IOMMU]
 				do not use PCIe ATS (and IOMMU device IOTLB).
 		pcie_scan_all	Scan all possible PCIe devices.  Otherwise we
