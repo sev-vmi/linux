@@ -447,6 +447,12 @@ static inline void pcie_walk_rcec(struct pci_dev *rcec,
 				  void *userdata) {}
 #endif
 
+#ifdef CONFIG_PCIE_TPH
+void pcie_tph_init(struct pci_dev *dev);
+#else
+static inline void pcie_tph_init(struct pci_dev *dev) {}
+#endif
+
 #ifdef CONFIG_PCI_ATS
 /* Address Translation Service */
 void pci_ats_init(struct pci_dev *dev);
