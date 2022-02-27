@@ -9333,6 +9333,14 @@ static int bnxt_request_irq(struct bnxt *bp)
 					    irq->vector);
 				break;
 			}
+#ifdef CONFIG_PCIE_TPH
+			if (!pcie_tph_set_stte(bp->pdev, i,
+					       cpumask_first(irq->cpu_mask),
+					       TPH_MTYPE_TAG_VRAM,
+					       TPH_REQ_TPH_ONLY))
+				WARN_ONCE(1,
+					  "Error configuring steering tag\n");
+#endif
 		}
 	}
 	return rc;
