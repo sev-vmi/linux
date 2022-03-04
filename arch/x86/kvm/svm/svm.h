@@ -20,6 +20,8 @@
 
 #include <asm/svm.h>
 
+#include "kvm_cache_regs.h"
+
 static const u32 host_save_user_msrs[] = {
 #ifdef CONFIG_X86_64
 	MSR_STAR, MSR_LSTAR, MSR_CSTAR, MSR_SYSCALL_MASK, MSR_KERNEL_GS_BASE,
