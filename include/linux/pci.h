@@ -311,6 +311,63 @@ struct pci_vpd {
 	u8		cap;
 };
 
+/**
+ *enum tph_requester_enable - TPH requester enable. Also used for TPH
+ * completer capability.
+ *
+ * @TPH_REQ_DISABLE: no tags.
+ * @TPH_REQ_TPH_ONLY: 8 bit tags only.
+ * @TPH_REQ_TPH_EXTENDED: 8 or 16 bit tags.
+ */
+enum tph_requester_enable {
+	TPH_REQ_DISABLE		= 0,
+	TPH_REQ_TPH_ONLY	= 1,
+	TPH_REQ_TPH_EXTENDED	= 3
+};
+
+/* TPH register offsets */
+#define TPH_CTRL_REG_OFFSET	0x8 /* control register*/
+
+/**
+ * enum tph_st_mode_selected - steering tag mode selected.
+ *
+ * @TPH_NO_ST_MODE: All steering tags must be 0.
+ * @TPH_INTR_VEC_MODE: Tags from the TPH Configuration space
+ *        or MSI-X space.
+ * @TPH_DEVICE_SPECIFIC_MODE: Steering tags not from a table.
+ */
+enum tph_st_mode_selected {
+	TPH_NO_ST_MODE		 = 0,
+	TPH_INTR_VEC_MODE	 = 1,
+	TPH_DEVICE_SPECIFIC_MODE = 2,
+};
+
+/* TPH Requester Control Register */
+#define TPH_CTRL_MODE_SEL_SHIFT	0
+#define TPH_CTRL_MODE_SEL_MASK	GENMASK(2, 0)
+#define TPH_CTRL_REQ_EN_SHIFT	8
+#define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
+
+/* TPH register offsets */
+#define TPH_CTRL_REG_OFFSET	0x8 /* control register*/
+
+#ifdef CONFIG_PCIE_TPH
+/* TPH Requester Control Register */
+#define TPH_CTRL_MODE_SEL_SHIFT	0
+#define TPH_CTRL_MODE_SEL_MASK	GENMASK(2, 0)
+#define TPH_CTRL_REQ_EN_SHIFT	8
+#define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
+
+void tph_set_option_disabled(void);
+bool tph_get_option_disabled(void);
+int tph_clr_ctrl_reg_en(struct pci_dev *dev);
+#else
+
+static inline void tph_set_option_disabled(void) {};
+static inline bool tph_get_option_disabled(void) {return false; };
+static inline int tph_clr_ctrl_reg_en(struct pci_dev *dev) {return -EOPNOTSUPP; };
+#endif
+
 struct irq_affinity;
 struct pcie_link_state;
 struct pci_sriov;
