@@ -1023,6 +1023,27 @@
 #define PCI_TPH_CAP_ST_SHIFT	16	/* ST table shift */
 #define PCI_TPH_BASE_SIZEOF	0xc	/* size with no ST table */
 
+/* TPH Requester Control Register */
+#define TPH_CTRL_REG_OFFSET	0x8
+#define TPH_CTRL_MODE_SEL_SHIFT	0
+#define TPH_CTRL_MODE_SEL_MASK	GENMASK(2, 0)
+#define TPH_CTRL_REQ_EN_SHIFT	8
+#define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
+
+/**
+ *enum tph_requester_enable - TPH requester enable. Also used for TPH
+ * completer capability.
+ *
+ * @TPH_REQ_DISABLE: no tags.
+ * @TPH_REQ_TPH_ONLY: 8 bit tags only.
+ * @TPH_REQ_TPH_EXTENDED: 8 or 16 bit tags.
+ */
+enum tph_requester_enable {
+	TPH_REQ_DISABLE		= 0,
+	TPH_REQ_TPH_ONLY	= 1,
+	TPH_REQ_TPH_EXTENDED	= 3
+};
+
 /* Downstream Port Containment */
 #define PCI_EXP_DPC_CAP			0x04	/* DPC Capability */
 #define PCI_EXP_DPC_IRQ			0x001F	/* Interrupt Message Number */

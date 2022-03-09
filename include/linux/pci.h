@@ -311,6 +311,16 @@ struct pci_vpd {
 	u8		cap;
 };
 
+#ifdef CONFIG_PCIE_TPH
+void tph_set_disabled(void);
+bool tph_is_disabled(void);
+int pcie_tph_disable(struct pci_dev *dev);
+#else
+static inline void tph_set_disabled(void) {};
+static inline bool tph_is_disabled(void) {return false; };
+static inline int pcie_tph_disable(struct pci_dev *dev) {return -EOPNOTSUPP; };
+#endif
+
 struct irq_affinity;
 struct pcie_link_state;
 struct pci_sriov;

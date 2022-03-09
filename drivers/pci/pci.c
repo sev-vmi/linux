@@ -140,6 +140,21 @@ unsigned int pcibios_max_latency = 255;
 /* If set, the PCIe ARI capability will not be used. */
 static bool pcie_ari_disabled;
 
+#ifdef CONFIG_PCIE_TPH
+static bool pcie_tph_disabled;
+
+void tph_set_disabled(void)
+{
+	pcie_tph_disabled = true;
+}
+
+bool tph_is_disabled(void)
+{
+	return pcie_tph_disabled;
+}
+
+#endif
+
 /* If set, the PCIe ATS capability will not be used. */
 static bool pcie_ats_disabled;
 
@@ -6847,6 +6862,8 @@ static int __init pci_setup(char *str)
 				pci_no_domains();
 			} else if (!strncmp(str, "noari", 5)) {
 				pcie_ari_disabled = true;
+			} else if (!strcmp(str, "notph")) {
+				tph_set_disabled();
 			} else if (!strncmp(str, "cbiosize=", 9)) {
 				pci_cardbus_io_size = memparse(str + 9, &str);
 			} else if (!strncmp(str, "cbmemsize=", 10)) {
