@@ -2862,7 +2862,7 @@ static int interrupt_window_interception(struct vcpu_svm *svm)
 	 * In this case AVIC was temporarily disabled for
 	 * requesting the IRQ window and we have to re-enable it.
 	 */
-	kvm_request_apicv_update(svm->vcpu.kvm, true, APICV_INHIBIT_REASON_IRQWIN);
+	kvm_clear_apicv_inhibit(svm->vcpu.kvm, APICV_INHIBIT_REASON_IRQWIN);
 
 	++svm->vcpu.stat.irq_window_exits;
 	return 1;
@@ -3412,7 +3412,7 @@ static void enable_irq_window(struct kvm_vcpu *vcpu)
 		 * via AVIC. In such case, we need to temporarily disable AVIC,
 		 * and fallback to injecting IRQ via V_IRQ.
 		 */
-		kvm_request_apicv_update(vcpu->kvm, false, APICV_INHIBIT_REASON_IRQWIN);
+		kvm_set_apicv_inhibit(vcpu->kvm, APICV_INHIBIT_REASON_IRQWIN);
 		svm_set_vintr(svm);
 	}
 }
@@ -3895,16 +3895,14 @@ static void svm_cpuid_update(struct kvm_vcpu *vcpu)
 	 * is exposed to the guest, disable AVIC.
 	 */
 	if (guest_cpuid_has(vcpu, X86_FEATURE_X2APIC))
-		kvm_request_apicv_update(vcpu->kvm, false,
-					 APICV_INHIBIT_REASON_X2APIC);
+		kvm_set_apicv_inhibit(vcpu->kvm, APICV_INHIBIT_REASON_X2APIC);
 
 	/*
 	 * Currently, AVIC does not work with nested virtualization.
 	 * So, we disable AVIC when cpuid for SVM is set in the L1 guest.
 	 */
 	if (nested && guest_cpuid_has(vcpu, X86_FEATURE_SVM))
-		kvm_request_apicv_update(vcpu->kvm, false,
-					 APICV_INHIBIT_REASON_NESTED);
+		kvm_set_apicv_inhibit(vcpu->kvm, APICV_INHIBIT_REASON_NESTED);
 }
 
 #define F(x) bit(X86_FEATURE_##x)
