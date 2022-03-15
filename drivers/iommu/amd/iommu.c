@@ -2531,12 +2531,12 @@ int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids, bool giov)
 	spin_lock_irqsave(&pdom->lock, flags);
 
 	/*
-	 * Save us all sanity checks whether devices already in the
-	 * domain support IOMMUv2. Just force that the domain has no
-	 * devices attached when it is switched into IOMMUv2 mode.
+	 * With nested page table, we can enable * v2 (i.e GCR3)
+	 * on a existing domain. Therefore, only check if domain
+	 * already enable v2.
 	 */
 	ret = -EBUSY;
-	if (pdom->dev_cnt > 0 || pdom->flags & PD_IOMMUV2_MASK)
+	if (pdom->flags & PD_IOMMUV2_MASK)
 		goto out;
 
 	if (!pdom->gcr3_tbl)
@@ -2687,9 +2687,6 @@ static int __set_gcr3(struct protection_domain *domain, u32 pasid,
 		      unsigned long cr3)
 {
 	u64 *pte;
-
-	if (domain->iop.mode != PAGE_MODE_NONE)
-		return -EINVAL;
 
 	pte = __get_gcr3_pte(domain->gcr3_tbl, domain->glx, pasid, true);
 	if (pte == NULL)
