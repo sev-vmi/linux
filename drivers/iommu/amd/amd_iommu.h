@@ -11,6 +11,24 @@
 
 #include "amd_iommu_types.h"
 
+extern void iommu_feature_enable(struct amd_iommu *iommu, u8 bit);
+extern void iommu_feature_disable(struct amd_iommu *iommu, u8 bit);
+extern u8 __iomem * __init iommu_map_mmio_space(u64 address, u64 end);
+extern void set_dte_entry(struct amd_iommu *iommu, u16 devid,
+			  struct protection_domain *domain,
+			  bool ats, bool ppr);
+extern int iommu_flush_dte(struct amd_iommu *iommu, u16 devid);
+extern struct protection_domain *to_pdomain(struct iommu_domain *dom);
+extern struct iommu_domain *amd_iommu_domain_alloc(unsigned int type);
+extern void amd_iommu_domain_free(struct iommu_domain *dom);
+extern int amd_iommu_v1_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
+				  phys_addr_t paddr, size_t pgsize, size_t pgcount,
+				  int prot, gfp_t gfp, size_t *mapped);
+extern unsigned long amd_iommu_v1_unmap_pages(struct io_pgtable_ops *ops,
+					      unsigned long iova,
+					      size_t pgsize, size_t pgcount,
+					      struct iommu_iotlb_gather *gather);
+
 extern irqreturn_t amd_iommu_int_thread(int irq, void *data);
 extern irqreturn_t amd_iommu_int_handler(int irq, void *data);
 extern void amd_iommu_apply_erratum_63(struct amd_iommu *iommu, u16 devid);
