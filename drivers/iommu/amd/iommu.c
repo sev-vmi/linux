@@ -76,12 +76,6 @@ struct iommu_cmd {
 struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
-static void amd_iommu_domain_free(struct iommu_domain *dom);
-
-static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
-			  struct gcr3_tbl_info *gcr3_info,
-			  struct protection_domain *domain, bool ats,
-			  bool ppr);
 
 static int __set_gcr3(struct iommu_dev_data *dev_data,
 		       u32 pasid, unsigned long gcr3);
@@ -563,7 +557,7 @@ static void amd_iommu_uninit_device(struct device *dev)
  *
  ****************************************************************************/
 
-static void dump_dte_entry(struct amd_iommu *iommu, u16 devid)
+void dump_dte_entry(struct amd_iommu *iommu, u16 devid)
 {
 	int i;
 	struct dev_table_entry *dev_table = get_dev_table(iommu);
@@ -1254,7 +1248,7 @@ out_unlock:
 	return ret;
 }
 
-static int iommu_flush_dte(struct amd_iommu *iommu, u16 devid)
+int iommu_flush_dte(struct amd_iommu *iommu, u16 devid)
 {
 	struct iommu_cmd cmd;
 
@@ -1672,10 +1666,10 @@ static int setup_gcr3_table(struct iommu_dev_data *dev_data, int pasids)
 	return 0;
 }
 
-static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
-			  struct gcr3_tbl_info *gcr3_info,
-			  struct protection_domain *domain, bool ats,
-			  bool ppr)
+void set_dte_entry(struct amd_iommu *iommu, u16 devid,
+		   struct gcr3_tbl_info *gcr3_info,
+		   struct protection_domain *domain, bool ats,
+		   bool ppr)
 {
 	u64 pte_root = 0;
 	u64 flags = 0;
@@ -2255,7 +2249,7 @@ static inline u64 dma_max_address(void)
 	return ((1ULL << PM_LEVEL_SHIFT(amd_iommu_gpt_level)) - 1);
 }
 
-static struct iommu_domain *amd_iommu_domain_alloc(unsigned type)
+struct iommu_domain *amd_iommu_domain_alloc(unsigned int type)
 {
 	struct protection_domain *domain;
 
@@ -2277,7 +2271,7 @@ static struct iommu_domain *amd_iommu_domain_alloc(unsigned type)
 	return &domain->domain;
 }
 
-static void amd_iommu_domain_free(struct iommu_domain *dom)
+void amd_iommu_domain_free(struct iommu_domain *dom)
 {
 	struct protection_domain *domain;
 	unsigned long flags;

@@ -25,10 +25,26 @@ void amd_iommu_restart_ga_log(struct amd_iommu *iommu);
 void amd_iommu_restart_ppr_log(struct amd_iommu *iommu);
 void amd_iommu_set_rlookup_table(struct amd_iommu *iommu, u16 devid);
 void iommu_feature_enable(struct amd_iommu *iommu, u8 bit);
+void iommu_feature_disable(struct amd_iommu *iommu, u8 bit);
 void *__init iommu_alloc_4k_pages(struct amd_iommu *iommu,
 				  gfp_t gfp, size_t size);
 struct iommu_dev_data *amd_iommu_search_dev_data(struct amd_iommu *iommu,
 						 u16 devid);
+u8 __iomem * __init iommu_map_mmio_space(u64 address, u64 end);
+void set_dte_entry(struct amd_iommu *iommu, u16 devid,
+		   struct gcr3_tbl_info *gcr3_info,
+		   struct protection_domain *domain, bool ats,
+		   bool ppr);
+int iommu_flush_dte(struct amd_iommu *iommu, u16 devid);
+struct iommu_domain *amd_iommu_domain_alloc(unsigned int type);
+void amd_iommu_domain_free(struct iommu_domain *dom);
+int amd_iommu_v1_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
+			   phys_addr_t paddr, size_t pgsize, size_t pgcount,
+			   int prot, gfp_t gfp, size_t *mapped);
+unsigned long amd_iommu_v1_unmap_pages(struct io_pgtable_ops *ops,
+				       unsigned long iova,
+				       size_t pgsize, size_t pgcount,
+				       struct iommu_iotlb_gather *gather);
 
 #ifdef CONFIG_AMD_IOMMU_DEBUGFS
 void amd_iommu_debugfs_setup(struct amd_iommu *iommu);
