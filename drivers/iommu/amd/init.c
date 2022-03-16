@@ -192,6 +192,9 @@ bool amdr_ivrs_remap_support __read_mostly;
 
 bool amd_iommu_force_isolation __read_mostly;
 
+/* VIOMMU enabling flag */
+bool amd_iommu_viommu = true;
+
 /*
  * AMD IOMMU allows up to 2^16 different protection domains. This is a bitmap
  * to know which ones are already in use.
@@ -2147,6 +2150,9 @@ static void print_iommu_info(void)
 			if (iommu->features & FEATURE_SNP)
 				pr_cont(" SNP");
 
+			if (iommu->features & FEATURE_VIOMMU)
+				pr_cont(" vIOMMU");
+
 			pr_cont("\n");
 		}
 	}
@@ -2157,6 +2163,8 @@ static void print_iommu_info(void)
 	}
 	if (amd_iommu_pgtable == AMD_IOMMU_V2)
 		pr_info("V2 page table enabled\n");
+	if (amd_iommu_viommu)
+		pr_info("AMD-Vi: vIOMMU enabled\n");
 }
 
 static int __init amd_iommu_init_pci(void)
@@ -3387,6 +3395,8 @@ static int __init parse_amd_iommu_options(char *str)
 			amd_iommu_pgtable = AMD_IOMMU_V1;
 		} else if (strncmp(str, "pgtbl_v2", 8) == 0) {
 			amd_iommu_pgtable = AMD_IOMMU_V2;
+		} else if (strncmp(str, "viommu_disable", 14) == 0) {
+			amd_iommu_viommu = false;
 		} else {
 			pr_notice("Unknown option - '%s'\n", str);
 		}
