@@ -46,6 +46,8 @@ void amd_iommu_debugfs_setup(struct amd_iommu *iommu);
 static inline void amd_iommu_debugfs_setup(struct amd_iommu *iommu) {}
 #endif
 
+extern bool amd_iommu_viommu;
+
 /* Needed for interrupt remapping */
 extern int amd_iommu_prepare(void);
 extern int amd_iommu_enable(void);
