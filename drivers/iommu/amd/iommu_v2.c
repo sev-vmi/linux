@@ -784,7 +784,7 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	dev_state->domain->type = IOMMU_DOMAIN_IDENTITY;
 	amd_iommu_domain_direct_map(dev_state->domain);
 
-	ret = amd_iommu_domain_enable_v2(dev_state->domain, pasids);
+	ret = amd_iommu_domain_enable_v2(dev_state->domain, pasids, false);
 	if (ret)
 		goto out_free_domain;
 

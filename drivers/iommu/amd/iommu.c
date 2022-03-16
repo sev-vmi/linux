@@ -79,7 +79,7 @@ struct iommu_cmd {
 struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
-static int domain_enable_v2(struct protection_domain *domain, int pasids);
+static int domain_enable_v2(struct protection_domain *domain, int pasids, bool giov);
 
 /****************************************************************************
  *
@@ -1567,6 +1567,11 @@ void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 	pte_root |= (domain->iop.mode & DEV_ENTRY_MODE_MASK)
 		    << DEV_ENTRY_MODE_SHIFT;
 
+	if ((domain->flags & PD_IOMMUV2_MASK) &&
+	    (domain->flags & PD_GIOV_MASK) &&
+	    iommu_feature(iommu, FEATURE_GIOSUP))
+		pte_root |= DTE_FLAG_GIOV;
+
 	pte_root |= DTE_FLAG_IR | DTE_FLAG_IW | DTE_FLAG_V;
 
 	/*
@@ -2046,9 +2051,7 @@ static int protection_domain_init_v2(struct protection_domain *domain)
 		return -ENOMEM;
 	INIT_LIST_HEAD(&domain->dev_list);
 
-	domain->flags |= PD_GIOV_MASK;
-
-	if (domain_enable_v2(domain, 1)) {
+	if (domain_enable_v2(domain, 1, true)) {
 		domain_id_free(domain->id);
 		return -ENOMEM;
 	}
@@ -2475,7 +2478,7 @@ void amd_iommu_domain_direct_map(struct iommu_domain *dom)
 EXPORT_SYMBOL(amd_iommu_domain_direct_map);
 
 /* Note: This function expects iommu_domain->lock to be held prior calling the function. */
-static int domain_enable_v2(struct protection_domain *domain, int pasids)
+static int domain_enable_v2(struct protection_domain *domain, int pasids, bool giov)
 {
 	int levels;
 
@@ -2492,13 +2495,15 @@ static int domain_enable_v2(struct protection_domain *domain, int pasids)
 
 	domain->glx      = levels;
 	domain->flags   |= PD_IOMMUV2_MASK;
+	if (giov)
+		domain->flags |= PD_GIOV_MASK;
 
 	amd_iommu_domain_update(domain);
 
 	return 0;
 }
 
-int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids)
+int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids, bool giov)
 {
 	struct protection_domain *pdom = to_pdomain(dom);
 	unsigned long flags;
@@ -2516,7 +2521,7 @@ int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids)
 		goto out;
 
 	if (!pdom->gcr3_tbl)
-		ret = domain_enable_v2(pdom, pasids);
+		ret = domain_enable_v2(pdom, pasids, giov);
 
 out:
 	spin_unlock_irqrestore(&pdom->lock, flags);
