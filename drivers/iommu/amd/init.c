@@ -232,6 +232,8 @@ static int amd_iommu_enable_interrupts(void);
 static int __init iommu_go_to_state(enum iommu_init_state state);
 static void init_device_table_dma(struct amd_iommu_pci_seg *pci_seg);
 
+extern int iommu_init_viommu(struct amd_iommu *iommu);
+
 static bool amd_iommu_pre_enabled = true;
 
 static u32 amd_iommu_ivinfo __initdata;
@@ -2060,6 +2062,8 @@ static int __init iommu_init_pci(struct amd_iommu *iommu)
 
 	if (iommu_feature(iommu, FEATURE_PPR) && alloc_ppr_log(iommu))
 		return -ENOMEM;
+
+	iommu_init_viommu(iommu);
 
 	if (iommu->cap & (1UL << IOMMU_CAP_NPCACHE)) {
 		pr_info("Using strict mode due to virtualization\n");
