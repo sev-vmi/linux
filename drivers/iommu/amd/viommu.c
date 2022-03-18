@@ -526,3 +526,139 @@ static int viommu_set_translate_dte(struct amd_iommu *iommu, u16 gid)
 	vminfo->trans_init = true;
 	return 0;
 }
+
+static void set_dte_viommu(struct amd_iommu *iommu, u16 hDevId, u16 gid, u16 gDevId)
+{
+	u64 tmp, dte;
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+
+	// vImuEn
+	dte = dev_table[hDevId].data[3];
+	dte |= (1ULL << DTE_VIOMMU_EN_SHIFT);
+
+	// GDeviceID
+	tmp = gDevId & DTE_VIOMMU_GUESTID_MASK;
+	dte |= (tmp << DTE_VIOMMU_GUESTID_SHIFT);
+
+	// GuestID
+	tmp = gid & DTE_VIOMMU_GUESTID_MASK;
+	dte |= (tmp << DTE_VIOMMU_GDEVICEID_SHIFT);
+
+	dev_table[hDevId].data[3] = dte;
+
+	dte = dev_table[hDevId].data[0];
+	dte |= DTE_FLAG_GV;
+	dev_table[hDevId].data[0] = dte;
+
+	iommu_flush_dte(iommu, hDevId);
+}
+
+static void dump_device_mapping(struct amd_iommu *iommu, u16 guestId, u16 gdev_id)
+{
+	void *addr;
+	u64 offset, val;
+	struct amd_iommu_vminfo *vminfo;
+
+	vminfo = amd_iommu_get_vminfo(guestId);
+	if (!vminfo)
+		return;
+
+	addr = vminfo->devid_table;
+	offset = gdev_id << 4;
+	val = *((u64 *)(addr + offset));
+
+	pr_debug("%s: guestId=%#x, gdev_id=%#x, base=%#llx, offset=%#llx(val=%#llx)\n", __func__,
+		 guestId, gdev_id, (unsigned long long)iommu_virt_to_phys(vminfo->devid_table),
+		 (unsigned long long)offset, (unsigned long long)val);
+}
+
+/*
+ * Program the DevID via VFCTRL registers
+ * This function will be called during VM init via VFIO.
+ */
+static void set_device_mapping(struct amd_iommu *iommu, u16 hDevId,
+			       u16 guestId, u16 queueId, u16 gDevId)
+{
+	u64 val, tmp1, tmp2;
+	u8 __iomem *vfctrl;
+
+	pr_debug("%s: iommu_id=%#x, gid=%#x, hDevId=%#x, gDevId=%#x\n",
+		__func__, pci_dev_id(iommu->dev), guestId, hDevId, gDevId);
+
+	set_dte_viommu(iommu, hDevId, guestId, gDevId);
+
+	tmp1 = gDevId;
+	tmp1 = ((tmp1 & 0xFFFFULL) << 46);
+	tmp2 = hDevId;
+	tmp2 = ((tmp2 & 0xFFFFULL) << 14);
+	val = tmp1 | tmp2 | 0x8000000000000001ULL;
+	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, guestId);
+	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_DID_MAP_CONTROL0_OFFSET);
+
+	wbinvd_on_all_cpus();
+}
+
+static void clear_dte_viommu(struct amd_iommu *iommu, u16 hDevId)
+{
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	u64 dte = dev_table[hDevId].data[3];
+
+	dte &= ~(1ULL << DTE_VIOMMU_EN_SHIFT);
+	dte &= ~(0xFFFFULL << DTE_VIOMMU_GUESTID_SHIFT);
+	dte &= ~(0xFFFFULL << DTE_VIOMMU_GDEVICEID_SHIFT);
+
+	dev_table[hDevId].data[3] = dte;
+
+	dte = dev_table[hDevId].data[0];
+	dte &= ~DTE_FLAG_GV;
+	dev_table[hDevId].data[0] = dte;
+
+	iommu_flush_dte(iommu, hDevId);
+}
+
+int amd_viommu_device_update(struct amd_viommu_dev_info *data, bool is_set)
+{
+	struct pci_dev *pdev;
+	struct iommu_domain *dom;
+	int gid = data->gid;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(data->iommu_id);
+	struct iommu_dev_data *dev_data;
+
+	if (!iommu)
+		return -ENODEV;
+
+	clear_dte_viommu(iommu, data->hdev_id);
+
+	if (is_set) {
+		set_device_mapping(iommu, data->hdev_id, gid,
+				   data->queue_id, data->gdev_id);
+
+		pdev = pci_get_domain_bus_and_slot(0, PCI_BUS_NUM(data->hdev_id),
+						   data->hdev_id & 0xff);
+
+		/* Extract guest ID from struct iommu_dev_data */
+		dev_data = dev_iommu_priv_get(&pdev->dev);
+		if (!dev_data) {
+			pr_err("%s: Device not found (devid=%#x)\n",
+			       __func__, pci_dev_id(pdev));
+			return -EINVAL;
+		}
+
+		dev_data->gid = gid;
+		dom = iommu_get_domain_for_dev(&pdev->dev);
+		if (!dom) {
+			pr_err("%s: Domain not found (devid=%#x)\n",
+			       __func__, pci_dev_id(pdev));
+			return -EINVAL;
+		}
+
+		amd_iommu_domain_flush_all(to_pdomain(dom));
+	} else {
+		clear_device_mapping(iommu, data->hdev_id, gid,
+				     data->queue_id, data->gdev_id);
+	}
+	dump_device_mapping(iommu, gid, data->gdev_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(amd_viommu_device_update);
