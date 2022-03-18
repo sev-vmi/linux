@@ -435,10 +435,10 @@ out:
 	return ret;
 }
 
-static unsigned long iommu_v1_unmap_pages(struct io_pgtable_ops *ops,
-					  unsigned long iova,
-					  size_t pgsize, size_t pgcount,
-					  struct iommu_iotlb_gather *gather)
+unsigned long amd_iommu_v1_unmap_pages(struct io_pgtable_ops *ops,
+				       unsigned long iova,
+				       size_t pgsize, size_t pgcount,
+				       struct iommu_iotlb_gather *gather)
 {
 	struct amd_io_pgtable *pgtable = io_pgtable_ops_to_data(ops);
 	unsigned long long unmapped;
@@ -525,7 +525,7 @@ static struct io_pgtable *v1_alloc_pgtable(struct io_pgtable_cfg *cfg, void *coo
 	cfg->tlb            = &v1_flush_ops;
 
 	pgtable->iop.ops.map_pages    = amd_iommu_v1_map_pages;
-	pgtable->iop.ops.unmap_pages  = iommu_v1_unmap_pages;
+	pgtable->iop.ops.unmap_pages  = amd_iommu_v1_unmap_pages;
 	pgtable->iop.ops.iova_to_phys = iommu_v1_iova_to_phys;
 
 	return &pgtable->iop;
