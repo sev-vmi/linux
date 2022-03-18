@@ -29,6 +29,9 @@
 #define SET_CTRL_BITS(reg, bit1, bit2, msk) \
 	((((reg) >> (bit1)) & (ULL(msk))) << (bit2))
 
+#define VIOMMU_MAX_GDEVID	0xFFFF
+#define VIOMMU_MAX_GDOMID	0xFFFF
+
 LIST_HEAD(viommu_devid_map);
 
 struct amd_iommu *get_amd_iommu_from_devid(u16 devid)
@@ -148,6 +151,52 @@ err_out:
 	return NULL;
 }
 
+static int alloc_private_vm_region(struct amd_iommu *iommu, u64 **entry,
+				   u64 base, size_t size, u16 guestId)
+{
+	int ret;
+	u64 addr = base + (guestId * size);
+
+	*entry = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, get_order(size));
+
+	ret = set_memory_uc((unsigned long)*entry, size >> PAGE_SHIFT);
+	if (ret)
+		return ret;
+
+	pr_debug("%s: entry=%#llx(%#llx), addr=%#llx\n", __func__,
+		 (unsigned long  long)*entry, iommu_virt_to_phys(*entry), addr);
+
+	ret = amd_iommu_v1_map_pages(&iommu->viommu_pdom->iop.iop.ops, addr,
+				     iommu_virt_to_phys(*entry), PAGE_SIZE, (size / PAGE_SIZE),
+				     IOMMU_PROT_IR | IOMMU_PROT_IW, GFP_KERNEL, NULL);
+	if (ret)
+		return ret;
+
+	return amd_iommu_flush_private_vm_region(iommu, iommu->viommu_pdom, addr, size);
+}
+
+static void free_private_vm_region(struct amd_iommu *iommu, u64 **entry,
+					u64 base, size_t size, u16 guestId)
+{
+	size_t ret;
+	struct iommu_iotlb_gather gather;
+	u64 addr = base + (guestId * size);
+
+	pr_debug("entry=%#llx(%#llx), addr=%#llx\n",
+		 (unsigned long  long)*entry,
+		 iommu_virt_to_phys(*entry), addr);
+
+	if (!iommu || iommu->viommu_pdom)
+		return;
+	ret = amd_iommu_v1_unmap_pages(&iommu->viommu_pdom->iop.iop.ops,
+				       addr, PAGE_SIZE, (size / PAGE_SIZE), &gather);
+	if (ret)
+		amd_iommu_iotlb_sync(&iommu->viommu_pdom->domain, &gather);
+
+	free_pages((unsigned long)*entry, get_order(size));
+	*entry = NULL;
+}
+
 /* Set DTE for IOMMU device */
 static void set_iommu_private_space_dte(struct amd_iommu *iommu)
 {
@@ -260,3 +309,177 @@ err_out:
 	amd_iommu_viommu = false;
 	return ret;
 }
+
+static void viommu_uninit_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo, u16 guestId)
+{
+	free_private_vm_region(iommu, &vminfo->devid_table,
+			       VIOMMU_DEVID_MAPPING_BASE,
+			       VIOMMU_DEVID_MAPPING_ENTRY_SIZE,
+			       guestId);
+	free_private_vm_region(iommu, &vminfo->domid_table,
+			       VIOMMU_DOMID_MAPPING_BASE,
+			       VIOMMU_DOMID_MAPPING_ENTRY_SIZE,
+			       guestId);
+}
+
+/*
+ * Clear the DevID via VFCTRL registers
+ * This function will be called during VM destroy via VFIO.
+ */
+static void clear_device_mapping(struct amd_iommu *iommu, u16 hDevId, u16 guestId,
+				 u16 queueId, u16 gDevId)
+{
+	u64 val, tmp1, tmp2;
+	u8 __iomem *vfctrl;
+
+	/*
+	 * Clear the DevID in VFCTRL registers
+	 */
+	tmp1 = gDevId;
+	tmp1 = ((tmp1 & 0xFFFFULL) << 46);
+	tmp2 = hDevId;
+	tmp2 = ((tmp2 & 0xFFFFULL) << 14);
+	val = tmp1 | tmp2 | 0x8000000000000001ULL;
+	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, guestId);
+	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_DID_MAP_CONTROL0_OFFSET);
+}
+
+/*
+ * Clear the DomID via VFCTRL registers
+ * This function will be called during VM destroy via VFIO.
+ */
+static void clear_domain_mapping(struct amd_iommu *iommu, u16 hDomId, u16 guestId, u16 gDomId)
+{
+	u64 val, tmp1, tmp2;
+	u8 __iomem *vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, guestId);
+
+	tmp1 = gDomId;
+	tmp1 = ((tmp1 & 0xFFFFULL) << 46);
+	tmp2 = hDomId;
+	tmp2 = ((tmp2 & 0xFFFFULL) << 14);
+	val = tmp1 | tmp2 | 0x8000000000000001UL;
+	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_DID_MAP_CONTROL1_OFFSET);
+}
+
+static void viommu_clear_mapping(struct amd_iommu *iommu, u16 guestId)
+{
+	int i;
+
+	for (i = 0; i <= VIOMMU_MAX_GDEVID; i++)
+		clear_device_mapping(iommu, 0, guestId, 0, i);
+
+	for (i = 0; i <= VIOMMU_MAX_GDOMID; i++)
+		clear_domain_mapping(iommu, 0, guestId, i);
+}
+
+static void viommu_clear_dirty_status_mask(struct amd_iommu *iommu, unsigned int gid)
+{
+	u32 offset, index, bits;
+	u64 *group, val;
+
+	if (gid >= 256 * 256)
+		return;
+
+	group = (u64 *)(iommu->cmdbuf_dirty_mask +
+		(((gid & 0xFF) << 4) | (((gid >> 13) & 0x7) << 2)));
+	offset = (gid >> 8) & 0x1F;
+	index = offset >> 6;
+	bits = offset & 0x3F;
+
+	val = READ_ONCE(group[index]);
+	val &= ~(1ULL << bits);
+	WRITE_ONCE(group[index], val);
+}
+
+/*
+ * Allocate pages for the following regions:
+ * - Guest MMIO
+ * - DeviceID/DomainId Mapping Table
+ * - Cmd buffer
+ * - Event/PRR (A/B) logs
+ */
+static int viommu_init_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo)
+{
+	int ret;
+
+	ret = alloc_private_vm_region(iommu, &vminfo->devid_table,
+				      VIOMMU_DEVID_MAPPING_BASE,
+				      VIOMMU_DEVID_MAPPING_ENTRY_SIZE,
+				      vminfo->gid);
+	if (ret)
+		goto err_out;
+
+	ret = alloc_private_vm_region(iommu, &vminfo->domid_table,
+				      VIOMMU_DOMID_MAPPING_BASE,
+				      VIOMMU_DOMID_MAPPING_ENTRY_SIZE,
+				      vminfo->gid);
+	if (ret)
+		goto err_out;
+
+	viommu_clear_mapping(iommu, vminfo->gid);
+	viommu_clear_dirty_status_mask(iommu, vminfo->gid);
+
+	return 0;
+err_out:
+	viommu_uninit_one(iommu, vminfo, vminfo->gid);
+	return -ENOMEM;
+}
+
+int amd_viommu_iommu_init(struct amd_viommu_iommu_info *data)
+{
+	int ret;
+	struct amd_iommu_vminfo *vminfo;
+	unsigned int iommu_id = data->iommu_id;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(iommu_id);
+
+	if (!iommu)
+		return -ENODEV;
+
+	vminfo = kzalloc(sizeof(*vminfo), GFP_KERNEL);
+	if (!vminfo)
+		return -ENOMEM;
+
+	ret = amd_iommu_vminfo_alloc(iommu, vminfo);
+	if (ret)
+		goto err_out;
+
+	ret = viommu_init_one(iommu, vminfo);
+	if (ret)
+		goto err_out;
+
+	vminfo->init = true;
+	data->gid = vminfo->gid;
+	pr_debug("%s: iommu_id=%#x, gid=%#x\n", __func__,
+		pci_dev_id(iommu->dev), vminfo->gid);
+
+	return ret;
+
+err_out:
+	amd_iommu_vminfo_free(iommu, vminfo);
+	kfree(vminfo);
+	return ret;
+}
+EXPORT_SYMBOL(amd_viommu_iommu_init);
+
+int amd_viommu_iommu_destroy(struct amd_viommu_iommu_info *data)
+{
+	unsigned int gid = data->gid;
+	struct amd_iommu_vminfo *vminfo;
+	unsigned int iommu_id = data->iommu_id;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(iommu_id);
+
+	if (!iommu)
+		return -ENODEV;
+
+	vminfo = amd_iommu_get_vminfo(gid);
+	if (!vminfo)
+		return -EINVAL;
+
+	viommu_uninit_one(iommu, vminfo, gid);
+
+	if (vminfo->init)
+		vminfo->init = false;
+	return 0;
+
+}
+EXPORT_SYMBOL(amd_viommu_iommu_destroy);

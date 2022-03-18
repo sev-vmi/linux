@@ -93,6 +93,10 @@ void amd_iommu_dev_flush_pasid_all(struct iommu_dev_data *dev_data,
 void amd_iommu_build_efr(u64 *efr, u64 *efr2);
 int amd_iommu_attach_device(struct iommu_domain *dom, struct device *dev);
 void amd_iommu_domain_free(struct iommu_domain *dom);
+void amd_iommu_iotlb_sync(struct iommu_domain *domain,
+			  struct iommu_iotlb_gather *gather);
+int amd_iommu_flush_private_vm_region(struct amd_iommu *iommu, struct protection_domain *pdom,
+				      u64 address, size_t size);
 
 #ifdef CONFIG_IRQ_REMAP
 int amd_iommu_create_irq_domain(struct amd_iommu *iommu);

@@ -1108,6 +1108,8 @@ struct amd_iommu_vminfo {
 	u16 gid;
 	struct hlist_node hnode;
 	u64 *devid_table;
+	u64 *domid_table;
+	bool init;
 };
 
 #ifdef CONFIG_IRQ_REMAP
