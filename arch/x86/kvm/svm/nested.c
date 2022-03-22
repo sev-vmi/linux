@@ -387,6 +387,9 @@ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
 	nested_prepare_vmcb_control(svm);
 
 	svm_set_gif(svm, true);
+
+	if (kvm_vcpu_apicv_active(&svm->vcpu))
+		kvm_make_request(KVM_REQ_APICV_UPDATE, &svm->vcpu);
 }
 
 int nested_svm_vmrun(struct vcpu_svm *svm)
@@ -620,6 +623,13 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 	svm->vcpu.arch.nmi_injected = false;
 	kvm_clear_exception_queue(&svm->vcpu);
 	kvm_clear_interrupt_queue(&svm->vcpu);
+
+	/*
+	 * Un-inhibit the AVIC right away, so that other vCPUs can start
+	 * to benefit from it right away.
+	 */
+	if (kvm_apicv_activated(svm->vcpu.kvm))
+		kvm_vcpu_update_apicv(&svm->vcpu);
 
 	return 0;
 }
