@@ -7518,6 +7518,18 @@ bool kvm_apicv_activated(struct kvm *kvm)
 }
 EXPORT_SYMBOL_GPL(kvm_apicv_activated);
 
+bool kvm_vcpu_apicv_activated(struct kvm_vcpu *vcpu)
+{
+	ulong vm_reasons = READ_ONCE(vcpu->kvm->arch.apicv_inhibit_reasons);
+	ulong vcpu_reasons = 0;
+
+	if (kvm_x86_ops.vcpu_get_apicv_inhibit_reasons)
+		vcpu_reasons = kvm_x86_ops.vcpu_get_apicv_inhibit_reasons(vcpu);
+
+	return (vm_reasons | vcpu_reasons) == 0;
+}
+EXPORT_SYMBOL_GPL(kvm_vcpu_apicv_activated);
+
 static void kvm_apicv_init(struct kvm *kvm)
 {
 	mutex_init(&kvm->arch.apicv_update_lock);
@@ -8102,7 +8114,8 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 
 	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
 
-	activate = kvm_apicv_activated(vcpu->kvm);
+	activate = kvm_vcpu_apicv_activated(vcpu);
+
 	if (vcpu->arch.apicv_active == activate)
 		goto out;
 
@@ -8460,7 +8473,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		 * per-VM state, and responsing vCPUs must wait for the update
 		 * to complete before servicing KVM_REQ_APICV_UPDATE.
 		 */
-		WARN_ON_ONCE(kvm_apicv_activated(vcpu->kvm) != kvm_vcpu_apicv_active(vcpu));
+		WARN_ON_ONCE(kvm_vcpu_apicv_activated(vcpu) != kvm_vcpu_apicv_active(vcpu));
 
 		exit_fastpath = kvm_x86_ops->run(vcpu);
 		if (likely(exit_fastpath != EXIT_FASTPATH_REENTER_GUEST))
