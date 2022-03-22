@@ -7523,8 +7523,8 @@ bool kvm_vcpu_apicv_activated(struct kvm_vcpu *vcpu)
 	ulong vm_reasons = READ_ONCE(vcpu->kvm->arch.apicv_inhibit_reasons);
 	ulong vcpu_reasons = 0;
 
-	if (kvm_x86_ops.vcpu_get_apicv_inhibit_reasons)
-		vcpu_reasons = kvm_x86_ops.vcpu_get_apicv_inhibit_reasons(vcpu);
+	if (kvm_x86_ops->vcpu_get_apicv_inhibit_reasons)
+		vcpu_reasons = kvm_x86_ops->vcpu_get_apicv_inhibit_reasons(vcpu);
 
 	return (vm_reasons | vcpu_reasons) == 0;
 }

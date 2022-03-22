@@ -25,6 +25,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "svm.h"
+#include "lapic.h"
 
 static void nested_svm_inject_npf_exit(struct kvm_vcpu *vcpu,
 				       struct x86_exception *fault)
@@ -330,6 +331,9 @@ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
 		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
 
 	vmcb_mark_all_dirty(svm->vmcb);
+
+	if (kvm_vcpu_apicv_active(&svm->vcpu))
+		kvm_make_request(KVM_REQ_APICV_UPDATE, &svm->vcpu);
 }
 
 int nested_svm_vmrun(struct vcpu_svm *svm)
@@ -575,6 +579,13 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 	svm->vcpu.arch.nmi_injected = false;
 	kvm_clear_exception_queue(&svm->vcpu);
 	kvm_clear_interrupt_queue(&svm->vcpu);
+
+	/*
+	 * Un-inhibit the AVIC right away, so that other vCPUs can start
+	 * to benefit from it right away.
+	 */
+	if (kvm_apicv_activated(svm->vcpu.kvm))
+		kvm_vcpu_update_apicv(&svm->vcpu);
 
 	return 0;
 }
