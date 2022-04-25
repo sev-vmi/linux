@@ -31,10 +31,35 @@
 #include <asm/iommu.h>
 
 /*
+ * The RMP entry format is not architectural. The format is defined in PPR
+ * Family 19h Model 01h, Rev B1 processor.
+ */
+struct rmpentry {
+	union {
+		struct {
+			u64	assigned	: 1,
+				pagesize	: 1,
+				immutable	: 1,
+				rsvd1		: 9,
+				gpa		: 39,
+				asid		: 10,
+				vmsa		: 1,
+				validated	: 1,
+				rsvd2		: 1;
+		} info;
+		u64 low;
+	};
+	u64 high;
+} __packed;
+
+/*
  * The first 16KB from the RMP_BASE is used by the processor for the
  * bookkeeping, the range needs to be added during the RMP entry lookup.
  */
 #define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
+#define RMPENTRY_SHIFT			8
+#define rmptable_page_offset(x)	(RMPTABLE_CPU_BOOKKEEPING_SZ +		\
+				 (((unsigned long)x) >> RMPENTRY_SHIFT))
 
 static unsigned long rmptable_start __ro_after_init;
 static unsigned long rmptable_end __ro_after_init;
@@ -210,3 +235,63 @@ nosnp:
  * the page(s) used for DMA are hypervisor owned.
  */
 fs_initcall(snp_rmptable_init);
+
+static inline unsigned int rmpentry_assigned(const struct rmpentry *e)
+{
+	return e->info.assigned;
+}
+
+static inline unsigned int rmpentry_pagesize(const struct rmpentry *e)
+{
+	return e->info.pagesize;
+}
+
+static int rmptable_entry(unsigned long paddr, struct rmpentry *entry)
+{
+	unsigned long vaddr;
+
+	vaddr = rmptable_start + rmptable_page_offset(paddr);
+	if (unlikely(vaddr > rmptable_end))
+		return -EFAULT;
+
+	*entry = *(struct rmpentry *)vaddr;
+
+	return 0;
+}
+
+static int __snp_lookup_rmpentry(u64 pfn, struct rmpentry *entry, int *level)
+{
+	unsigned long paddr = pfn << PAGE_SHIFT;
+	struct rmpentry large_entry;
+	int ret;
+
+	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
+		return -ENXIO;
+
+	ret = rmptable_entry(paddr, entry);
+	if (ret)
+		return ret;
+
+	/* Read a large RMP entry to get the correct page level used in RMP entry. */
+	ret = rmptable_entry(paddr & PMD_MASK, &large_entry);
+	if (ret)
+		return ret;
+
+	*level = RMP_TO_X86_PG_LEVEL(rmpentry_pagesize(&large_entry));
+
+	return 0;
+}
+
+int snp_lookup_rmpentry(u64 pfn, bool *assigned, int *level)
+{
+	struct rmpentry e;
+	int ret;
+
+	ret = __snp_lookup_rmpentry(pfn, &e, level);
+	if (ret)
+		return ret;
+
+	*assigned = !!rmpentry_assigned(&e);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(snp_lookup_rmpentry);
