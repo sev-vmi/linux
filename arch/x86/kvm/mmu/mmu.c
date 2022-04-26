@@ -51,6 +51,7 @@
 #include <asm/set_memory.h>
 #include <asm/vmx.h>
 #include <asm/kvm_page_track.h>
+#include <asm/sev.h>
 #include "trace.h"
 
 extern bool itlb_multihit_kvm_mitigation;
@@ -2982,6 +2983,11 @@ static int host_pfn_mapping_level(struct kvm *kvm, gfn_t gfn, kvm_pfn_t pfn,
 
 out:
 	local_irq_restore(flags);
+
+	/* Adjust the page level based on the SEV-SNP RMP page level. */
+	if (kvm_x86_ops.rmp_page_level_adjust)
+		static_call(kvm_x86_rmp_page_level_adjust)(kvm, pfn, &level);
+
 	return level;
 }
 
