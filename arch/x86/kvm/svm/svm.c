@@ -759,6 +759,9 @@ void svm_set_x2apic_msr_interception(struct vcpu_svm *svm, bool intercept)
 {
 	int i;
 
+	if (intercept == svm->x2avic_msrs_intercepted)
+		return;
+
 	if (avic_mode != AVIC_MODE_X2 ||
 	    !apic_x2apic_mode(svm->vcpu.arch.apic))
 		return;
@@ -772,6 +775,8 @@ void svm_set_x2apic_msr_interception(struct vcpu_svm *svm, bool intercept)
 		set_msr_interception(svm->msrpm, index,
 				     !intercept, !intercept);
 	}
+
+	svm->x2avic_msrs_intercepted = intercept;
 }
 
 static void svm_enable_lbrv(struct vcpu_svm *svm)
@@ -1200,7 +1205,6 @@ static void sev_unbind_asid(struct kvm *kvm, unsigned int handle)
 
 	kfree(decommission);
 }
-
 static struct page **sev_pin_memory(struct kvm *kvm, unsigned long uaddr,
 				    unsigned long ulen, unsigned long *n,
 				    int write)
@@ -1436,6 +1440,8 @@ static struct kvm_vcpu *svm_create_vcpu(struct kvm *kvm, unsigned int id)
 	err = avic_init_vcpu(svm);
 	if (err)
 		goto free_page4;
+
+	svm->x2avic_msrs_intercepted = true;
 
 	svm->nested.hsave = page_address(hsave_page);
 

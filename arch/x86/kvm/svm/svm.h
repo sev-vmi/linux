@@ -183,6 +183,9 @@ struct vcpu_svm {
 
 	/* which host CPU was used for running this vcpu */
 	unsigned int last_cpu;
+	bool received_first_sipi;
+
+	bool x2avic_msrs_intercepted;
 };
 
 void recalc_intercepts(struct vcpu_svm *svm);
