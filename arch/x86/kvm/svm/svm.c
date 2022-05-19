@@ -3943,13 +3943,6 @@ static void svm_cpuid_update(struct kvm_vcpu *vcpu)
 
 	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
-
-	/*
-	 * AVIC does not work with an x2APIC mode guest. If the X2APIC feature
-	 * is exposed to the guest, disable AVIC.
-	 */
-	if (guest_cpuid_has(vcpu, X86_FEATURE_X2APIC))
-		kvm_set_apicv_inhibit(vcpu->kvm, APICV_INHIBIT_REASON_X2APIC);
 }
 
 #define F(x) bit(X86_FEATURE_##x)
