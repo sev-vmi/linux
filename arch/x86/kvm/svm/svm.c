@@ -86,7 +86,7 @@ static DEFINE_PER_CPU(u64, current_tsc_ratio);
 static const struct svm_direct_access_msrs {
 	u32 index;   /* Index of the MSR */
 	bool always; /* True if intercept is always on */
-} direct_access_msrs[] = {
+} direct_access_msrs[MAX_DIRECT_ACCESS_MSRS] = {
 	{ .index = MSR_STAR,				.always = true  },
 	{ .index = MSR_IA32_SYSENTER_CS,		.always = true  },
 #ifdef CONFIG_X86_64
@@ -103,6 +103,31 @@ static const struct svm_direct_access_msrs {
 	{ .index = MSR_IA32_LASTBRANCHTOIP,		.always = false },
 	{ .index = MSR_IA32_LASTINTFROMIP,		.always = false },
 	{ .index = MSR_IA32_LASTINTTOIP,		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ID),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_TASKPRI),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ARBPRI),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_PROCPRI),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_EOI),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_RRR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LDR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_DFR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_SPIV),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ISR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_TMR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_IRR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ESR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ICR),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_ICR2),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVTT),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVTTHMR),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVTPC),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVT0),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVT1),		.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_LVTERR),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_TMICT),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_TMCCT),	.always = false },
+	{ .index = (APIC_BASE_MSR + APIC_TDCR),		.always = false },
 	{ .index = MSR_INVALID,				.always = false },
 };
 
