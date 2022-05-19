@@ -194,9 +194,6 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init;
 static bool avic;
 module_param(avic, bool, 0444);
 
-static bool force_avic;
-module_param_unsafe(force_avic, bool, 0444);
-
 static bool __read_mostly dump_invalid_vmcb = 0;
 module_param(dump_invalid_vmcb, bool, 0644);
 
@@ -5412,17 +5409,9 @@ static __init int svm_hardware_setup(void)
 			nrips = false;
 	}
 
-	enable_apicv = avic = avic && npt_enabled && (boot_cpu_has(X86_FEATURE_AVIC) || force_avic);
+	enable_apicv = avic = avic && avic_hardware_setup(&svm_x86_ops);
 
-	if (enable_apicv) {
-		if (!boot_cpu_has(X86_FEATURE_AVIC)) {
-			pr_warn("AVIC is not supported in CPUID but force enabled");
-			pr_warn("Your system might crash and burn");
-		} else
-			pr_info("AVIC enabled\n");
-
-		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
-	} else {
+	if (!enable_apicv) {
 		svm_x86_ops.vcpu_blocking = NULL;
 		svm_x86_ops.vcpu_unblocking = NULL;
 		svm_x86_ops.vcpu_get_apicv_inhibit_reasons = NULL;
