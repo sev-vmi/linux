@@ -142,6 +142,7 @@ static bool pcie_ari_disabled;
 
 #ifdef CONFIG_PCIE_TPH
 static bool pcie_tph_disabled;
+static bool pcie_tph_nostmode;
 
 void tph_set_disabled(void)
 {
@@ -153,6 +154,20 @@ bool tph_is_disabled(void)
 	return pcie_tph_disabled;
 }
 
+void tph_set_nostmode(void)
+{
+	if (pcie_tph_disabled) {
+		WARN(1,
+		     "nostmode kernel PCI argument ignored as TPH is disabled.\n");
+	} else {
+		pcie_tph_nostmode = true;
+	}
+}
+
+bool tph_get_nostmode(void)
+{
+	return pcie_tph_nostmode;
+}
 #endif
 
 /* If set, the PCIe ATS capability will not be used. */

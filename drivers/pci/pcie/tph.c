@@ -55,4 +55,25 @@ int pcie_tph_disable(struct pci_dev *dev)
 				      TPH_CTRL_REQ_EN_SHIFT, TPH_REQ_DISABLE);
 }
 
+/*
+ * tph_set_dev_nostmode - In the TPH Requester Control Register:
+ *        - Set ST Mode Select to "No ST Mode" (0).
+ *        - Set "TPH Requester Enable" to TPH only (1).
+ */
+int tph_set_dev_nostmode(struct pci_dev *dev)
+{
+	int ret;
+
+	ret = tph_set_reg_field_u32(dev, TPH_CTRL_REG_OFFSET,
+				    TPH_CTRL_MODE_SEL_MASK,
+				    TPH_CTRL_MODE_SEL_SHIFT, TPH_NO_ST_MODE);
+	if (ret)
+		return ret;
+
+	ret = tph_set_reg_field_u32(dev, TPH_CTRL_REG_OFFSET,
+				    TPH_CTRL_REQ_EN_MASK, TPH_CTRL_REQ_EN_SHIFT,
+				    TPH_REQ_TPH_ONLY);
+	return ret;
+}
+
 #endif

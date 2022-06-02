@@ -4318,6 +4318,10 @@
 				one PCI domain per PCI function
 		notph		[PCIE]  Disable generation of TPH headers
 		                even if CONFIG_PCIE_TPH is set.
+		nostmode	[PCIE] If CONFIG_PCIE_TPH is set, prevent
+				steering tag table entries from being written
+				to the steering tag table. Generate TPH headers
+				with tags always 0.
 
 	pcie_aspm=	[PCIE] Forcibly enable or disable PCIe Active State Power
 			Management.

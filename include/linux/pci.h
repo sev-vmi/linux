@@ -315,10 +315,16 @@ struct pci_vpd {
 void tph_set_disabled(void);
 bool tph_is_disabled(void);
 int pcie_tph_disable(struct pci_dev *dev);
+int tph_set_dev_nostmode(struct pci_dev *dev);
+void tph_set_nostmode(void);
+bool tph_get_nostmode(void);
 #else
 static inline void tph_set_disabled(void) {};
 static inline bool tph_is_disabled(void) {return false; };
 static inline int pcie_tph_disable(struct pci_dev *dev) {return -EOPNOTSUPP; };
+static inline void tph_set_nostmode(void) {};
+static inline bool tph_get_nostmode(void) {return false; };
+static inline int tph_set_dev_nostmode(struct pci_dev *dev) {return -EOPNOTSUPP; };
 #endif
 
 struct irq_affinity;

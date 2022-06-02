@@ -1044,6 +1044,20 @@ enum tph_requester_enable {
 	TPH_REQ_TPH_EXTENDED	= 3
 };
 
+/**
+ * enum tph_st_mode - steering tag mode selected.
+ *
+ * @TPH_NO_ST_MODE: All steering tags must be 0.
+ * @TPH_INTR_VEC_MODE: Tags from the TPH Configuration space
+ *        or MSI-X space.
+ * @TPH_DEVICE_SPECIFIC_MODE: Steering tags not from a table.
+ */
+enum tph_st_mode {
+	TPH_NO_ST_MODE		 = 0,
+	TPH_INTR_VEC_MODE	 = 1,
+	TPH_DEVICE_SPECIFIC_MODE = 2,
+};
+
 /* Downstream Port Containment */
 #define PCI_EXP_DPC_CAP			0x04	/* DPC Capability */
 #define PCI_EXP_DPC_IRQ			0x001F	/* Interrupt Message Number */
