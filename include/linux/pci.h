@@ -2461,6 +2461,20 @@ static inline int pci_pcie_type(const struct pci_dev *dev)
 	return (pcie_caps_reg(dev) & PCI_EXP_FLAGS_TYPE) >> 4;
 }
 
+static inline void dump_pci_dev(struct pci_dev *dev)
+{
+	bool pci_is_pcie(struct pci_dev *);
+
+	if (pci_is_pcie(dev))
+		printk("FIXME:%s: bdf(%d, %d, %d), veni:0x%x, devi:0x%x, pcieT:0x%x\n",
+			__FUNCTION__, dev->bus->number, PCI_SLOT(dev->devfn),
+			PCI_FUNC(dev->devfn), dev->vendor, dev->device,pci_pcie_type(dev));
+	else
+		printk("FIXME:%s: bdf(%d, %d, %d), veni:0x%x, devi:0x%x\n",
+			__FUNCTION__, dev->bus->number, PCI_SLOT(dev->devfn),
+			PCI_FUNC(dev->devfn), dev->vendor, dev->device);
+}
+
 /**
  * pcie_find_root_port - Get the PCIe root port device
  * @dev: PCI device

@@ -97,6 +97,8 @@ static int tph_get_table_size(struct pci_dev *dev, u16 *sz_out)
 	ret = tph_get_reg_field_u32(dev, TPH_CAP_REG_OFFSET,
 				    TPH_CAP_ST_TABLE_SIZE_MASK,
 				    TPH_CAP_ST_TABLE_SIZE_SHIFT, &tmp);
+	printk("FIXME:%s: ret = %d, tbl sz = %d\n", __FUNCTION__,
+		ret, tmp);
 	if (ret)
 		return ret;
 
@@ -276,6 +278,24 @@ static int tph_set_ctrl_reg_en(struct pci_dev *dev,
 	return 0;
 }
 
+void dump_msix_tags(struct pci_dev *dev)
+{
+	struct msi_desc *entry;
+	void __iomem *vec_ctrl_addr;
+	u32 val;
+
+	printk("FIXME:tagz:%s: dev = %p\n", __FUNCTION__, dev);
+	msi_lock_descs(&dev->dev);
+	msi_for_each_desc(entry, &dev->dev, MSI_DESC_ASSOCIATED) {
+		vec_ctrl_addr = tph_msix_desc_addr(dev, entry)
+			+ PCI_MSIX_ENTRY_VECTOR_CTRL;
+		val = readl(vec_ctrl_addr);
+		printk("FIXME:tagz%s: dev:%p, nr: %d, vec_ctrl: 0x%x\n",
+			__FUNCTION__, dev, entry->msi_index, val);
+	}
+	msi_unlock_descs(&dev->dev);
+}
+
 /*
  * translate from MSI-X interrupt ordinal number to msi_desc *
  */
@@ -362,12 +382,19 @@ static bool can_set_stte(struct pci_dev *dev,
 			 enum tph_st_mode_selected st_mode,
 			 enum tph_requester_enable req_enable, int msix_nr)
 {
+	printk("FIXME:%s@%d: cap:%d, msix:%d, dis:%d, stmode:%d\n",
+		__FUNCTION__, __LINE__, dev->tph_cap, dev->msix_enabled,
+		tph_get_option_disabled(), tph_get_option_no_st_mode());
+
 	if (!dev->tph_cap || !dev->msix_enabled ||
 	    !int_vec_mode_supported(dev) || tph_get_option_disabled() ||
 	    tph_get_option_no_st_mode() || !msix_nr_in_bounds(dev, msix_nr) ||
 	    !completer_support_ok(dev, req_enable) ||
-	    !no_st_mode_supported(dev))
+		!no_st_mode_supported(dev)) {
+		printk("FIXME:%s: FAIL\n", __FUNCTION__);
 		return false;
+	}
+	printk("FIXME:%s: PASS\n", __FUNCTION__);
 	return true;
 }
 
@@ -404,6 +431,7 @@ static bool invoke_dsm(acpi_handle handle, u32 cpu_uid, u8 processor_hint,
 		       u8 target_type, bool cache_reference_valid,
 		       u64 cache_reference, union st_info *st_tag_out)
 {
+	void acpi_dump_obj(union acpi_object *);
 	union acpi_object in_obj, in_buf[3], *out_obj;
 
 	printk("FIXME:tagz:%s: cpu_uid: %d\n", __FUNCTION__, cpu_uid);
@@ -441,6 +469,7 @@ static bool invoke_dsm(acpi_handle handle, u32 cpu_uid, u8 processor_hint,
 		return false;
 	}
 	st_tag_out->value = *((u64 *)(out_obj->buffer.pointer));
+	acpi_dump_obj(out_obj);
 
 	printk("FIXME:tagret:valid(vt:%d, vxt:%d, pt:%d, pxt:%d)\n",
 		st_tag_out->v_mem_t_valid, st_tag_out->v_mem_xt_valid,
@@ -608,4 +637,22 @@ bool pcie_tph_set_stte(struct pci_dev *dev, int msix_nr, int cpu,
 }
 EXPORT_SYMBOL(pcie_tph_set_stte);
 
+void acpi_dump_obj(union acpi_object *obj)
+{
+	if (obj->type == ACPI_TYPE_ANY) {
+		printk("FIXME:%s: null package elt or reference\n",
+		       __FUNCTION__);
+		return;
+	}
+	switch (obj->type) {
+	case ACPI_TYPE_BUFFER:
+		printk("FIXME:%s: ACPI_TYPE_BUFFER, len: 0x%x, ptr: %p\n",
+			__FUNCTION__, obj->buffer.length, obj->buffer.pointer);
+		break;
+	default:
+		printk("FIXME:%s: un-elaborated ojb of type 0x%x\n",
+			__FUNCTION__, obj->type);
+		break;
+	}
+}
 #endif
