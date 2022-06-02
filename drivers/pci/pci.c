@@ -138,6 +138,7 @@ static bool pcie_ari_disabled;
 
 #ifdef CONFIG_PCIE_TPH
 static bool pcie_tph_disabled;
+static bool tph_no_st_mode;
 
 void tph_set_option_disabled(void)
 {
@@ -149,6 +150,20 @@ bool tph_get_option_disabled(void)
 	return pcie_tph_disabled;
 }
 
+void tph_set_option_no_st_mode(void)
+{
+	if (pcie_tph_disabled) {
+		WARN(1,
+		     "nostmode kernel PCI argument ignored. disable_tph already given.\n");
+	} else {
+		tph_no_st_mode = true;
+	}
+}
+
+bool tph_get_option_no_st_mode(void)
+{
+	return tph_no_st_mode;
+}
 #endif
 
 /* If set, the PCIe ATS capability will not be used. */
@@ -6883,6 +6898,8 @@ static int __init pci_setup(char *str)
 				pcie_ari_disabled = true;
 			} else if (!strcmp(str, "notph")) {
 				tph_set_option_disabled();
+			} else if  (!strcmp(str, "nostmode")) {
+				tph_set_option_no_st_mode();
 			} else if (!strncmp(str, "cbiosize=", 9)) {
 				pci_cardbus_io_size = memparse(str + 9, &str);
 			} else if (!strncmp(str, "cbmemsize=", 10)) {

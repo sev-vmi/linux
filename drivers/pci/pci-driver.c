@@ -325,6 +325,8 @@ static long local_pci_probe(void *_ddi)
 	if (!rc) {
 		if (tph_get_option_disabled())
 			tph_clr_ctrl_reg_en(pci_dev);
+		if (tph_get_option_no_st_mode())
+			tph_set_dev_no_st_mode(pci_dev);
 		return rc;
 	}
 	if (rc < 0) {

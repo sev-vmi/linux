@@ -361,11 +361,17 @@ enum tph_st_mode_selected {
 void tph_set_option_disabled(void);
 bool tph_get_option_disabled(void);
 int tph_clr_ctrl_reg_en(struct pci_dev *dev);
+int tph_set_dev_no_st_mode(struct pci_dev *dev);
+void tph_set_option_no_st_mode(void);
+bool tph_get_option_no_st_mode(void);
 #else
 
 static inline void tph_set_option_disabled(void) {};
 static inline bool tph_get_option_disabled(void) {return false; };
 static inline int tph_clr_ctrl_reg_en(struct pci_dev *dev) {return -EOPNOTSUPP; };
+static inline void tph_set_option_no_st_mode(void) {};
+static inline bool tph_get_option_no_st_mode(void) {return false; };
+static inline int tph_set_dev_no_st_mode(struct pci_dev *dev) {return -EOPNOTSUPP; };
 #endif
 
 struct irq_affinity;
