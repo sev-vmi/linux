@@ -311,6 +311,8 @@ static void tph_write_tag_to_msix(struct pci_dev *dev, int msix_nr, u16 tagval)
 	 * | st upper | st lower |      reserved      | mask bit |
 	 * +----------|----------|---------|----------|----------|
 	 */
+	printk("%s@%d: dev:%p, msixnr:%d, tagval:0x%x\n", __FUNCTION__,
+		__LINE__, dev, msix_nr, tagval);
 
 	if (!msi_desc) {
 		WARN_ONCE(1, "msix descriptor for #%d not found\n", msix_nr);
@@ -327,6 +329,8 @@ static void tph_write_tag_to_msix(struct pci_dev *dev, int msix_nr, u16 tagval)
 
 	/* read back vector ctrl (to flush write) */
 	val = readl(vec_ctrl);
+	printk("FIXME:tagz:%s entry#: %d, vec_ctrl:0x%x\n", __FUNCTION__,
+		msi_desc->msi_index, val);
 }
 
 static bool int_vec_mode_supported(struct pci_dev *dev)
@@ -350,6 +354,7 @@ static bool msix_nr_in_bounds(struct pci_dev *dev, int msix_nr)
 
 	if (tph_get_table_size(dev, &tbl_sz))
 		return false;
+	printk("FIXME:%s: table size = %d\n", __FUNCTION__, tbl_sz);
 	return msix_nr <= tbl_sz; /* FIXME: check n -1 countage*/
 }
 
@@ -401,6 +406,7 @@ static bool invoke_dsm(acpi_handle handle, u32 cpu_uid, u8 processor_hint,
 {
 	union acpi_object in_obj, in_buf[3], *out_obj;
 
+	printk("FIXME:tagz:%s: cpu_uid: %d\n", __FUNCTION__, cpu_uid);
 	in_buf[0].integer.type = ACPI_TYPE_INTEGER;
 	in_buf[0].integer.value = 0; /* 0 => processor cache steering tags */
 
@@ -426,12 +432,22 @@ static bool invoke_dsm(acpi_handle handle, u32 cpu_uid, u8 processor_hint,
 		return false;
 	}
 
+	printk("FIXME:%s acpi_evaluate_dsm():PASS: cpu_uid:%d\n",
+		__FUNCTION__, cpu_uid);
+
 	if (out_obj->type != ACPI_TYPE_BUFFER) {
 		pr_err("%s: acpi_evaluate_dsm(): invalid return type %d\n",
 		       __func__, out_obj->type);
 		return false;
 	}
 	st_tag_out->value = *((u64 *)(out_obj->buffer.pointer));
+
+	printk("FIXME:tagret:valid(vt:%d, vxt:%d, pt:%d, pxt:%d)\n",
+		st_tag_out->v_mem_t_valid, st_tag_out->v_mem_xt_valid,
+		st_tag_out->p_mem_t_valid, st_tag_out->p_mem_xt_valid);
+	printk("FIXME:tagret:tags(vt:%d, vxt:%d, pt:%d, pxt:%d)\n",
+		st_tag_out->v_mem_t, st_tag_out->v_mem_xt,
+		st_tag_out->p_mem_t, st_tag_out->p_mem_xt);
 	ACPI_FREE(out_obj);
 
 	return true;
@@ -449,9 +465,20 @@ static int tph_get_table_location(struct pci_dev *dev, u8 *tbl_loc_out)
 	if (ret)
 		return ret;
 
+	switch(tmp) {
+	case TPH_TABLE_LOCATION_MSIX:
+		printk("%s: table in msix memory\n", __FUNCTION__);
+		break;
+	case TPH_TABLE_LOCATION_EXTND_CAP_STRUCT:
+		printk("%s: table in tph memory\n", __FUNCTION__);
+		break;
+	default:
+		printk("%s: table in unknown location\n", __FUNCTION__);
+		break;
+	}
+
 	*tbl_loc_out = tmp;
 	return 0;
-	return (enum st_table_location)tmp;
 }
 
 /*
@@ -540,6 +567,9 @@ bool pcie_tph_set_stte(struct pci_dev *dev, int msix_nr, int cpu,
 	int ret;
 	u8 tbl_loc;
 
+	printk("FIXME:TPH_STTE:%s: dev:%p, msix_nr:%d, cpu:%d\n",
+	       __FUNCTION__, dev, msix_nr, cpu);
+
 	if (!can_set_stte(dev, TPH_INTR_VEC_MODE, req_enable, msix_nr))
 		return false;
 
@@ -555,8 +585,9 @@ bool pcie_tph_set_stte(struct pci_dev *dev, int msix_nr, int cpu,
 	tph_clr_ctrl_reg_en(dev); /* disable b4 updating tag*/
 
 	tagval = tph_get_tag(dev, tag_type, req_enable, &st_tag_out);
-	ret = tph_get_table_location(dev, &tbl_loc);
+	printk("FIXME:%s@%d: tagval = 0x%x\n", __FUNCTION__, __LINE__, tagval);
 
+	ret = tph_get_table_location(dev, &tbl_loc);
 	switch (tbl_loc) {
 	case TPH_TABLE_LOCATION_MSIX:
 		tph_write_tag_to_msix(dev, msix_nr, tagval);

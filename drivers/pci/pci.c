@@ -6897,8 +6897,10 @@ static int __init pci_setup(char *str)
 			} else if (!strncmp(str, "noari", 5)) {
 				pcie_ari_disabled = true;
 			} else if (!strcmp(str, "notph")) {
+				printk("FIXME: no tph\n");
 				tph_set_option_disabled();
 			} else if  (!strcmp(str, "nostmode")) {
+				printk("FIXME: no_st_mode\n");
 				tph_set_option_no_st_mode();
 			} else if (!strncmp(str, "cbiosize=", 9)) {
 				pci_cardbus_io_size = memparse(str + 9, &str);
