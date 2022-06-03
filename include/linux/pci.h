@@ -325,6 +325,18 @@ enum tph_requester_enable {
 	TPH_REQ_TPH_EXTENDED	= 3
 };
 
+/**
+ * enum tph_mtype_tag - type of memory for which to use tag from _DSM
+ *
+ * @TPH_MTYPE_VRAM:  volatile memory
+ * @TPH_MTYPE_NVRAM: non volatile memory.
+ */
+enum tph_mtype_tag {
+	TPH_MTYPE_TAG_VRAM	= 0,
+	TPH_MTYPE_TAG_NVRAM	= 1
+};
+
+#ifdef CONFIG_PCIE_TPH
 /* TPH register offsets */
 #define TPH_CTRL_REG_OFFSET	0x8 /* control register*/
 
@@ -348,15 +360,99 @@ enum tph_st_mode_selected {
 #define TPH_CTRL_REQ_EN_SHIFT	8
 #define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
 
+/*
+ * union st_info - Steering tag information from root complex's _DSM.
+ *
+ * @v_mem_t_valid: 8 bit tag for volatile memory is valid
+ * @v_mem_xt_valid: 16 bit tag for volatile memory is valid
+ * @v_mem_ignore: 1 => was and will be ignored, 0 => ph should be supplied
+ * @reserved_1: reserved
+ * @v_mem_t: 8 bit steering tag for volatile mem
+ * @v_mem_xt: 16 bit steering tag for volatile mem
+ * @p_mem_t_valid: 8 bit tag for persistent memory is valid
+ * @p_mem_xt_valid:  16 bit tag for persistent memory is valid
+ * @p_mem_ignore: 1 => was and will be ignore, 0 => ph should be supplied
+ * @reserved_2: reserved
+ * @p_mem_t: 8 bit steering tag for persistent mem
+ * @p_mem_xt: 16 bit steering tag for persistent mem
+ * @value: the 64 bit value that contains all of the above bit field
+ *
+ * The st_info struct defines the steering tag returned by the firmware _DSM
+ * method defined in the ECR from AMD & ARM. The specification is available at:
+ * https://members.pcisig.com/wg/PCI-SIG/document/15470 to PCI SIG members.
+ */
+union st_info {
+	struct {
+		u64 v_mem_t_valid:1,
+		    v_mem_xt_valid:1,
+		    v_mem_ignore:1,
+		    reserved_1:5, /* will be 0 */
+		    v_mem_t:8,
+		    v_mem_xt:16,
+		    p_mem_t_valid:1,
+		    p_mem_xt_valid:1,
+		    p_mem_ignore:1,
+		    reserved_2:5, // will be 0
+		    p_mem_t:8,
+		    p_mem_xt:16;
+	};
+	u64 value;
+};
+
 /* TPH register offsets */
 #define TPH_CTRL_REG_OFFSET	0x8 /* control register*/
 
-#ifdef CONFIG_PCIE_TPH
 /* TPH Requester Control Register */
 #define TPH_CTRL_MODE_SEL_SHIFT	0
 #define TPH_CTRL_MODE_SEL_MASK	GENMASK(2, 0)
 #define TPH_CTRL_REQ_EN_SHIFT	8
 #define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
+
+/* TPH register offsets */
+#define TPH_CAP_REG_OFFSET	0x4
+#define TPH_CTRL_REG_OFFSET	0x8 /* TPH control register*/
+
+/* TPH Requester Capability Register */
+#define TPH_CAP_NO_ST_MODE_SHIFT	0
+#define TPH_CAP_NO_ST_MODE_MASK		GENMASK(0, 0)
+#define TPH_CAP_INT_VEC_MODE_SHIFT      1
+#define TPH_CAP_INT_VEC_MODE_MASK       GENMASK(1, 1)
+#define TPH_CAP_ST_TABLE_SIZE_SHIFT	16
+#define TPH_CAP_ST_TABLE_SIZE_MASK	GENMASK(26, 16)
+#define TPH_CAP_ALL_MODES_SHIFT		0
+#define TPH_CAP_ALL_MODES_MASK		GENMASK(2, 0)
+#define TPH_CAP_EXTND_TPH_REQR_MASK	GENMASK(8, 8)
+#define TPH_CAP_ST_TABLE_LOCATION_SHIFT	9
+#define TPH_CAP_ST_TABLE_LOCATION_MASK	GENMASK(10, 9)
+
+/* TPH Requester Control Register */
+#define TPH_CTRL_MODE_SEL_SHIFT	0
+#define TPH_CTRL_MODE_SEL_MASK	GENMASK(2, 0)
+#define TPH_CTRL_REQ_EN_SHIFT	8
+#define TPH_CTRL_REQ_EN_MASK	GENMASK(9, 8)
+
+/* Device Capabilities 2 Register */
+#define DEVICE_CAPABILITIES2_REGISTER_OFFSET	0x24
+#define PCIE_DEVCAP2_TPH_CMPLTR_SHIFT	12
+#define PCIE_DEVCAP2_TPH_CMPLTR_MASK	0x00003000
+
+#define TPH_CMPLTR_SUPPORTS_NONE			0
+#define TPH_CMPLTR_SUPPORTS_TPH_ONLY			1
+#define TPH_CMPLTR_SUPPORTS_TPH_AND_EXTENDED_TPH	3
+
+/**
+ * enum st_table_location - ST table location.
+ *
+ * @TPH_TABLE_LOCATION_NOT_PRESENT: NO ST table.
+ * @TPH_TABLE_LOCATION_EXTND_CAP_STRUCT: ST table in TPH extended capability
+ *        space.
+ * @TPH_TABLE_LOCATION_MSIX: ST table in MSI-X table.
+ */
+enum st_table_location {
+	TPH_TABLE_LOCATION_NOT_PRESENT		= 0,
+	TPH_TABLE_LOCATION_EXTND_CAP_STRUCT	= 1,
+	TPH_TABLE_LOCATION_MSIX			= 2
+};
 
 void tph_set_option_disabled(void);
 bool tph_get_option_disabled(void);
@@ -364,6 +460,9 @@ int tph_clr_ctrl_reg_en(struct pci_dev *dev);
 int tph_set_dev_no_st_mode(struct pci_dev *dev);
 void tph_set_option_no_st_mode(void);
 bool tph_get_option_no_st_mode(void);
+bool pcie_tph_set_stte(struct pci_dev *dev, int msix_nr, int cpu,
+		       enum tph_mtype_tag tag_type,
+		       enum tph_requester_enable req_enable);
 #else
 
 static inline void tph_set_option_disabled(void) {};
@@ -587,6 +686,8 @@ struct pci_dev {
 	u8 reset_methods[PCI_NUM_RESET_METHODS]; /* In priority order */
 #ifdef CONFIG_PCIE_TPH
 	u16 tph_cap; /* TPH capability offset */
+	/* use set_stte_req_enable to know what size tags pcie_tph_stte used */
+	enum tph_requester_enable stte_req_enable;
 #endif
 };
 
