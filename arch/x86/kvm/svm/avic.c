@@ -969,7 +969,7 @@ out:
 	return ret;
 }
 
-void __avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+void avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	u64 entry;
 	int h_physical_id = kvm_cpu_get_apicid(cpu);
@@ -1002,7 +1002,7 @@ void __avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	avic_update_iommu_vcpu_affinity(vcpu, h_physical_id, true);
 }
 
-void __avic_vcpu_put(struct kvm_vcpu *vcpu)
+void avic_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	u64 entry;
 	struct vcpu_svm *svm = to_svm(vcpu);
@@ -1022,25 +1022,6 @@ void __avic_vcpu_put(struct kvm_vcpu *vcpu)
 	WRITE_ONCE(*(svm->avic_physical_id_cache), entry);
 }
 
-static void avic_vcpu_load(struct kvm_vcpu *vcpu)
-{
-	int cpu = get_cpu();
-
-	WARN_ON(cpu != vcpu->cpu);
-
-	__avic_vcpu_load(vcpu, cpu);
-
-	put_cpu();
-}
-
-static void avic_vcpu_put(struct kvm_vcpu *vcpu)
-{
-	preempt_disable();
-
-	__avic_vcpu_put(vcpu);
-
-	preempt_enable();
-}
 
 void avic_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 {
@@ -1067,7 +1048,7 @@ void avic_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 	vmcb_mark_dirty(vmcb, VMCB_AVIC);
 
 	if (activated)
-		avic_vcpu_load(vcpu);
+		avic_vcpu_load(vcpu, vcpu->cpu);
 	else
 		avic_vcpu_put(vcpu);
 
@@ -1100,5 +1081,5 @@ void avic_vcpu_unblocking(struct kvm_vcpu *vcpu)
 	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
 
-	avic_vcpu_load(vcpu);
+	avic_vcpu_load(vcpu, vcpu->cpu);
 }
