@@ -2485,7 +2485,9 @@ bool kvm_vcpu_block(struct kvm_vcpu *vcpu)
 	DECLARE_SWAITQUEUE(wait);
 	bool waited = false;
 
+	preempt_disable();
 	kvm_arch_vcpu_blocking(vcpu);
+	preempt_enable();
 
 	for (;;) {
 		prepare_to_swait_exclusive(&vcpu->wq, &wait, TASK_INTERRUPTIBLE);
@@ -2497,9 +2499,11 @@ bool kvm_vcpu_block(struct kvm_vcpu *vcpu)
 		schedule();
 	}
 
+	preempt_disable();
 	finish_swait(&vcpu->wq, &wait);
 
 	kvm_arch_vcpu_unblocking(vcpu);
+	preempt_enable();
 
 	return waited;
 }
