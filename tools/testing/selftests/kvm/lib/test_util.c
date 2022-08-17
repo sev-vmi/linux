@@ -271,6 +271,16 @@ const struct vm_mem_backing_src_alias *vm_mem_backing_src_alias(uint32_t i)
 			 */
 			.flag = MAP_SHARED,
 		},
+		[VM_MEM_SRC_ANONYMOUS_AND_RESTRICTED_MEMFD] = {
+			.name = "anonymous_and_restricted_memfd",
+			.flag = ANON_FLAGS,
+			.need_restricted_memfd = 1,
+		},
+		[VM_MEM_SRC_ANON_HTLB2M_AND_RESTRICTED_MEMFD] = {
+			.name = "anonymous_hugetlb_2mb_and_restricted_memfd",
+			.flag = ANON_HUGE_FLAGS | MAP_HUGE_2MB,
+			.need_restricted_memfd = 1,
+		},
 	};
 	_Static_assert(ARRAY_SIZE(aliases) == NUM_SRC_TYPES,
 		       "Missing new backing src types?");
@@ -289,11 +299,13 @@ size_t get_backing_src_pagesz(uint32_t i)
 	switch (i) {
 	case VM_MEM_SRC_ANONYMOUS:
 	case VM_MEM_SRC_SHMEM:
+	case VM_MEM_SRC_ANONYMOUS_AND_RESTRICTED_MEMFD:
 		return getpagesize();
 	case VM_MEM_SRC_ANONYMOUS_THP:
 		return get_trans_hugepagesz();
 	case VM_MEM_SRC_ANONYMOUS_HUGETLB:
 	case VM_MEM_SRC_SHARED_HUGETLB:
+	case VM_MEM_SRC_ANON_HTLB2M_AND_RESTRICTED_MEMFD:
 		return get_def_hugetlb_pagesz();
 	default:
 		return MAP_HUGE_PAGE_SIZE(flag);
