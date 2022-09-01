@@ -16,6 +16,14 @@ struct page;
 struct iommufd_ctx;
 struct iommufd_access;
 struct file;
+struct iommufd_ucmd;
+
+struct iommufd_ioctl_op {
+	unsigned int size;
+	unsigned int min_size;
+	unsigned int ioctl_num;
+	int (*execute)(struct iommufd_ucmd *ucmd);
+};
 
 struct iommufd_device *iommufd_device_bind(struct iommufd_ctx *ictx,
 					   struct device *dev, u32 *id);
