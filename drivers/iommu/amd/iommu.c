@@ -82,6 +82,9 @@ static int __set_gcr3(struct iommu_dev_data *dev_data,
 
 static int __clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid);
 
+static void amd_iommu_clear_gcr3tbl_trp(struct amd_iommu *iommu,
+					struct iommu_dev_data *dev_data);
+
 /****************************************************************************
  *
  * Helper functions
@@ -1907,6 +1910,7 @@ static int do_attach(struct iommu_dev_data *dev_data,
 
 static void do_detach(struct iommu_dev_data *dev_data)
 {
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 	struct protection_domain *domain = dev_data->domain;
 	struct amd_iommu *iommu;
 
@@ -1914,10 +1918,19 @@ static void do_detach(struct iommu_dev_data *dev_data)
 	if (!iommu)
 		return;
 
-	if (domain->pd_mode == PD_MODE_V2) {
-		__clear_gcr3(dev_data, 0);
-		domain->v2_refcnt--;
-		_destroy_gcr3_tbl(dev_data);
+	if (gcr3_info->gcr3_tbl) {
+		if (gcr3_info->trp) {
+			/*
+			 * In GCR3TRPMode, the GCR3 table contains GPA,
+			 * which is setup by guest kernel. Therefore, we just
+			 * need to clean up the DTE settings for guest translation.
+			 */
+			amd_iommu_clear_gcr3tbl_trp(iommu, dev_data);
+		} else {
+			__clear_gcr3(dev_data, 0);
+			domain->v2_refcnt--;
+			_destroy_gcr3_tbl(dev_data);
+		}
 	}
 
 	/* Update data structures */
@@ -2707,10 +2720,93 @@ static void *amd_iommu_hw_info(struct device *dev, u32 *length, u32 *type)
 	return hwinfo;
 }
 
+//SURAVEE: TODO
+static int amd_iommu_nested_cache_invalidate_user(struct iommu_domain *domain,
+						  const struct iommu_user_data *user_data)
+{
+	return 0;
+}
+
+//SURAVEE: TODO
+static const struct iommu_domain_ops amd_iommu_nested_domain_ops = {
+	.attach_dev		= amd_iommu_attach_device,
+	.free			= amd_iommu_domain_free,
+	.cache_invalidate_user	= amd_iommu_nested_cache_invalidate_user,
+};
+
+static struct iommu_domain *
+amd_iommu_domain_alloc_user(struct device *dev,
+			    u32 flags,
+			    enum iommu_hwpt_type hwpt_type,
+			    struct iommu_domain *parent,
+			    const struct iommu_user_data *user_data)
+{
+	int ret;
+	struct iommu_domain *dom;
+
+	if (hwpt_type != IOMMU_HWPT_TYPE_DEFAULT &&
+	    hwpt_type != IOMMU_HWPT_TYPE_AMD_V2)
+		return ERR_PTR(-EINVAL);
+
+	if ((hwpt_type == IOMMU_HWPT_TYPE_DEFAULT) == !!parent)
+		return ERR_PTR(-EINVAL);
+
+	if (!parent) {
+		dom = iommu_domain_alloc(dev->bus);
+		if (!dom) {
+			return ERR_PTR(-ENOMEM);
+		}
+
+		pdom = to_pdomain(dom);
+
+		/*
+		 * FIXME: We need setup vIOMMU translation domain (GPA->SPA)
+		 * as early as possible, which we can use the VFIO domain.
+		 *
+		 * So, we capture domain allocation w/ NULL parent, which can be from
+		 *
+		 * --> driver/iommu/iommufd/device.c: iommufd_device_auto_get_domain()
+		 *   -->  iommufd_hw_pagetable_alloc()
+		 *
+		 * or
+		 * --> driver/iommu/iommufd/hw_pagetable.c:iommufd_hwpt_alloc()
+		 *   --> iommufd_hw_pagetable_alloc()
+		 *
+		 * NOTE: We need a better way to do this.
+		 */
+		amd_viommu_set_trans_info(&pdom->iop, pdom->id);
+
+		return dom;
+	}
+
+	/*
+	 * The parent is not null only when external driver calls IOMMUFD kAPI
+	 * to create IOMMUFD_OBJ_HW_PAGETABLE to attach a bound device to IOAS.
+	 * This is for nested (v2) page table.
+	 */
+	dom = iommu_domain_alloc(dev->bus);
+	if (!dom) {
+		return ERR_PTR(-ENOMEM);
+	}
+
+	dom->type = IOMMU_DOMAIN_NESTED;
+	dom->ops = &amd_iommu_nested_domain_ops;
+
+	ret = amd_viommu_user_gcr3_update(user_data, dom);
+	if (ret)
+		goto err_out;
+
+	return dom;
+err_out:
+	iommu_domain_free(dom);
+	return ERR_PTR(-ENOMEM);
+}
+
 const struct iommu_ops amd_iommu_ops = {
 	.capable 		= amd_iommu_capable,
 	.hw_info		= amd_iommu_hw_info,
 	.domain_alloc 		= amd_iommu_domain_alloc,
+	.domain_alloc_user	= amd_iommu_domain_alloc_user,
 	.probe_device 		= amd_iommu_probe_device,
 	.release_device 	= amd_iommu_release_device,
 	.probe_finalize 	= amd_iommu_probe_finalize,
@@ -2735,6 +2831,105 @@ const struct iommu_ops amd_iommu_ops = {
 		.enforce_cache_coherency = amd_iommu_enforce_cache_coherency,
 	}
 };
+
+int amd_iommu_set_gcr3tbl_trp(struct amd_iommu *iommu, struct pci_dev *pdev,
+			      u64 gcr3_tbl, u16 glx, u16 guest_paging_mode)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	int devid = pci_dev_id(pdev);
+	u64 pte_root = dev_table[devid].data[0];
+	u64 flags = dev_table[devid].data[1];
+	u64 tmp;
+
+	pr_debug("%s: devid=%d, glx=%#x, gcr3_tbl=%#llx\n",
+		__func__, devid, glx, gcr3_tbl);
+
+	WARN_ON(gcr3_info->trp);
+
+	gcr3_info->giov = true;
+	gcr3_info->trp = true;
+	gcr3_info->gcr3_tbl = (u64 *)gcr3_tbl;
+
+	pte_root |= DTE_FLAG_GV | DTE_FLAG_GIOV;
+	tmp = glx;
+	pte_root |= (tmp & DTE_GLX_MASK) << DTE_GLX_SHIFT;
+
+	/* First mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_A(~0ULL) << DTE_GCR3_SHIFT_A;
+	pte_root &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	flags &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	flags &= ~tmp;
+
+	/* Encode GCR3 table into DTE */
+	tmp = DTE_GCR3_VAL_A(gcr3_tbl) << DTE_GCR3_SHIFT_A;
+	pte_root |= tmp;
+
+	tmp = DTE_GCR3_VAL_B(gcr3_tbl) << DTE_GCR3_SHIFT_B;
+	flags |= tmp;
+
+	tmp = DTE_GCR3_VAL_C(gcr3_tbl) << DTE_GCR3_SHIFT_C;
+	flags |= tmp;
+
+	/* SURAVEE TODO: Need to also update EFR accordingly */
+	/* Check 5-level support for the host before enabling on behalf of the guest */
+	if ((check_feature_gpt_level() == GUEST_PGTABLE_5_LEVEL) &&
+	    (guest_paging_mode == GUEST_PGTABLE_5_LEVEL)) {
+		dev_table[devid].data[2] |=
+			((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
+	}
+
+	dev_table[devid].data[1]  = flags;
+	dev_table[devid].data[0]  = pte_root;
+
+	device_flush_dte(dev_data);
+	iommu_completion_wait(iommu);
+
+	return 0;
+}
+
+void amd_iommu_clear_gcr3tbl_trp(struct amd_iommu *iommu,
+				 struct iommu_dev_data *dev_data)
+{
+	int devid = dev_data->devid;
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	u64 pte_root = dev_table[devid].data[0];
+	u64 flags = dev_table[devid].data[1];
+	u64 tmp;
+
+	if (!gcr3_info->trp)
+		return;
+
+	pr_debug("%s: devid=%#x, gcr3_tbl=%#llx\n", __func__, devid,
+		 (unsigned long long)gcr3_info->gcr3_tbl);
+
+	tmp = DTE_GLX_MASK;
+	pte_root &= ~(tmp << DTE_GLX_SHIFT);
+	pte_root &= ~(DTE_FLAG_GV | DTE_FLAG_GIOV);
+
+	/* Mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_A(~0ULL) << DTE_GCR3_SHIFT_A;
+	pte_root &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	flags &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	flags &= ~tmp;
+
+	dev_table[devid].data[1] = flags;
+	dev_table[devid].data[0] = pte_root;
+
+	gcr3_info->giov = false;
+	gcr3_info->trp = false;
+	gcr3_info->gcr3_tbl = NULL;
+}
 
 static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 			 u64 address, bool size)

@@ -425,6 +425,26 @@ struct iommu_hwpt_arm_smmuv3 {
 };
 
 /**
+ * struct iommu_hwpt_amd_v2 - AMD IOMMU specific user-managed
+ *                            v2 I/O page table data
+ * @gcr3: GCR3 guest physical ddress
+ * @gid: Guest ID
+ * @iommu_id: IOMMU host device ID
+ * @glx: GCR3 table levels
+ * @gdev_id: Guest device ID
+ */
+struct iommu_hwpt_amd_v2 {
+	__aligned_u64 gcr3;
+	__aligned_u64 gcr3_va;
+	__u32 gid;
+	__u32 iommu_id;
+	__u16 glx;
+	__u16 guest_paging_mode;
+	__u16 gdev_id;
+	__u16 __reserved;
+};
+
+/**
  * enum iommu_hwpt_type - IOMMU HWPT Type
  * @IOMMU_HWPT_TYPE_DEFAULT: default
  * @IOMMU_HWPT_TYPE_VTD_S1: Intel VT-d stage-1 page table
@@ -434,6 +454,7 @@ enum iommu_hwpt_type {
 	IOMMU_HWPT_TYPE_DEFAULT,
 	IOMMU_HWPT_TYPE_VTD_S1,
 	IOMMU_HWPT_TYPE_ARM_SMMUV3,
+	IOMMU_HWPT_TYPE_AMD_V2,
 };
 
 /**
@@ -552,11 +573,13 @@ struct iommu_hw_info_amd {
  *                           info
  * @IOMMU_HW_INFO_TYPE_INTEL_VTD: Intel VT-d iommu info type
  * @IOMMU_HW_INFO_TYPE_ARM_SMMUV3: ARM SMMUv3 iommu info type
+ * @IOMMU_HW_INFO_TYPE_AMD: AMD IOMMU info type
  */
 enum iommu_hw_info_type {
 	IOMMU_HW_INFO_TYPE_NONE,
 	IOMMU_HW_INFO_TYPE_INTEL_VTD,
 	IOMMU_HW_INFO_TYPE_ARM_SMMUV3,
+	IOMMU_HW_INFO_TYPE_AMD,
 };
 
 /**
