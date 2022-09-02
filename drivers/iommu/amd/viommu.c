@@ -1072,3 +1072,39 @@ err_out:
 	return -EINVAL;
 }
 EXPORT_SYMBOL(amd_viommu_cmdbuf_update);
+
+int amd_viommu_user_gcr3_update(const void *user_data, struct iommu_domain *udom)
+{
+	int ret;
+	struct pci_dev *pdev;
+	unsigned long npinned;
+	struct page *pages[2];
+	struct iommu_domain *dom;
+	struct iommu_hwpt_amd_v2 *hwpt = (struct iommu_hwpt_amd_v2 *)user_data;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(hwpt->iommu_id);
+	u16 hdev_id = viommu_get_hdev_id(iommu, hwpt->gid, hwpt->gdev_id);
+
+	pr_debug("%s: gid=%u, hdev_id=%#x, gcr3_va=%#llx\n",
+		 __func__, hwpt->gid, hdev_id, (unsigned long long) hwpt->gcr3_va);
+
+	npinned = get_user_pages_fast(hwpt->gcr3_va, 1, FOLL_WRITE, pages);
+	if (!npinned) {
+		pr_err("Failure locking grc3 page (%#llx).\n", hwpt->gcr3_va);
+		return -EINVAL;
+	}
+
+	/* Allocate gcr3 table */
+	pdev = pci_get_domain_bus_and_slot(0, PCI_BUS_NUM(hdev_id),
+					   hdev_id & 0xff);
+	dom = iommu_get_domain_for_dev(&pdev->dev);
+	if (!dom)
+		return -EINVAL;
+
+	/* TODO: Only support 1 pasid (zero) for now */
+	ret = amd_iommu_setup_gcr3_table(iommu, pdev, dom, udom, 1,
+					 iommu_feature(iommu, FEATURE_GIOSUP));
+	if (ret)
+		pr_err("%s: Fail to enable gcr3 (devid=%#x)\n", __func__, pci_dev_id(pdev));
+
+	return amd_iommu_user_set_gcr3(iommu, dom, udom, pdev, 0, hwpt->gcr3);
+}

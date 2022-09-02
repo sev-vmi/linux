@@ -84,6 +84,18 @@ extern void amd_iommu_domain_flush_tlb_pde(struct protection_domain *domain);
 extern int amd_iommu_flush_tlb(struct iommu_domain *dom, u32 pasid);
 extern int amd_iommu_domain_set_gcr3(struct iommu_domain *dom, u32 pasid,
 				     unsigned long cr3);
+extern int amd_viommu_user_gcr3_update(const void *user_data,
+				       struct iommu_domain *udom);
+extern int amd_iommu_setup_gcr3_table(struct amd_iommu *iommu,
+				      struct pci_dev *pdev,
+				      struct iommu_domain *dom,
+				      struct iommu_domain *udom,
+				      int pasids, bool giov);
+extern int amd_iommu_user_set_gcr3(struct amd_iommu *iommu,
+				   struct iommu_domain *dom,
+				   struct iommu_domain *udom,
+				   struct pci_dev *pdev, u32 pasid,
+				   unsigned long cr3);
 extern int amd_iommu_domain_clear_gcr3(struct iommu_domain *dom, u32 pasid);
 extern void amd_iommu_iotlb_sync(struct iommu_domain *domain,
 				 struct iommu_iotlb_gather *gather);

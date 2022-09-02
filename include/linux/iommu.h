@@ -236,6 +236,7 @@ union iommu_domain_user_data {
 #endif
 	struct iommu_hwpt_vtd_s1 vtd;
 	struct iommu_hwpt_arm_smmuv3 smmuv3;
+	struct iommu_hwpt_amd_v2 amdv2;
 };
 
 /**

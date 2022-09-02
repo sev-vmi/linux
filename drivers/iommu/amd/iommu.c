@@ -80,6 +80,8 @@ struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
 static int domain_enable_v2(struct protection_domain *domain, int pasids, bool giov);
+static int __set_gcr3(struct protection_domain *domain, u32 pasid,
+		      unsigned long cr3);
 
 /****************************************************************************
  *
@@ -2525,10 +2527,43 @@ static void *amd_iommu_hw_info(struct device *dev, u32 *length)
 	return hwinfo;
 }
 
+static struct iommu_domain *
+amd_iommu_domain_alloc_user(struct device *dev,
+			    enum iommu_hwpt_type hwpt_type,
+			    struct iommu_domain *parent,
+			    const union iommu_domain_user_data *user_data)
+{
+	int ret;
+	struct iommu_domain *dom = iommu_domain_alloc(dev->bus);
+
+	if (!dom || !parent)
+		return dom;
+
+	/*
+	 * The parent is not null only when external driver calls IOMMUFD kAPI
+	 * to create IOMMUFD_OBJ_HW_PAGETABLE to attach a bound device to IOAS.
+	 * This is for nested (v2) page table.
+	 *
+	 * TODO: Currently, only support nested table w/ 1 pasid for GIOV use case.
+	 *       Add support for multiple pasids.
+	 */
+	dom->type = IOMMU_DOMAIN_NESTED;
+
+	ret = amd_viommu_user_gcr3_update(user_data, dom);
+	if (ret)
+		goto err_out;
+
+	return dom;
+err_out:
+	iommu_domain_free(dom);
+	return NULL;
+}
+
 const struct iommu_ops amd_iommu_ops = {
 	.capable		= amd_iommu_capable,
 	.hw_info		= amd_iommu_hw_info,
 	.domain_alloc		= amd_iommu_domain_alloc,
+	.domain_alloc_user	= amd_iommu_domain_alloc_user,
 	.probe_device		= amd_iommu_probe_device,
 	.release_device		= amd_iommu_release_device,
 	.probe_finalize		= amd_iommu_probe_finalize,
@@ -2537,6 +2572,7 @@ const struct iommu_ops amd_iommu_ops = {
 	.is_attach_deferred	= amd_iommu_is_attach_deferred,
 	.pgsize_bitmap		= AMD_IOMMU_PGSIZES,
 	.def_domain_type	= amd_iommu_def_domain_type,
+	.hw_info_type		= IOMMU_HW_INFO_TYPE_AMD,
 	.default_domain_ops	= &(const struct iommu_domain_ops) {
 		.attach_dev	= amd_iommu_attach_device,
 		.map_pages	= amd_iommu_map_pages,
@@ -2638,6 +2674,77 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(amd_iommu_domain_enable_v2);
+
+int amd_iommu_setup_gcr3_table(struct amd_iommu *iommu, struct pci_dev *pdev,
+			       struct iommu_domain *dom,
+			       struct iommu_domain *udom,
+			       int pasids, bool giov)
+{
+	int levels;
+	struct protection_domain *pdom = to_pdomain(dom);
+	struct protection_domain *updom = to_pdomain(udom);
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+
+	if (updom->gcr3_tbl)
+		return -EINVAL;
+
+	/* Number of GCR3 table levels required */
+	for (levels = 0; (pasids - 1) & ~0x1ff; pasids >>= 9)
+		levels += 1;
+
+	if (levels > amd_iommu_max_glx_val)
+		return -EINVAL;
+
+	updom->gcr3_tbl = (void *)get_zeroed_page(GFP_ATOMIC);
+	if (updom->gcr3_tbl == NULL)
+		return -ENOMEM;
+
+	updom->glx = levels;
+	updom->flags |= PD_IOMMUV2_MASK;
+	if (giov)
+		updom->flags |= PD_GIOV_MASK;
+
+	set_dte_entry(iommu, dev_data->devid, pdom, updom,
+		      updom->gcr3_tbl,
+		      dev_data->ats.enabled, false);
+	clone_aliases(iommu, dev_data->dev);
+
+	iommu_flush_dte(iommu, dev_data->devid);
+	iommu_completion_wait(iommu);
+	return 0;
+}
+
+/*
+ * Note: For vIOMMU, the guest could be using different
+ *       GCR3 table for each VFIO pass-through device.
+ *       Therefore, we need to per-device GCR3 table.
+ */
+int amd_iommu_user_set_gcr3(struct amd_iommu *iommu,
+			    struct iommu_domain *dom,
+			    struct iommu_domain *udom,
+			    struct pci_dev *pdev, u32 pasid,
+			    unsigned long cr3)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+	struct protection_domain *domain = to_pdomain(dom);
+	struct protection_domain *udomain = to_pdomain(udom);
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&domain->lock, flags);
+	spin_lock_irqsave(&udomain->lock, flags);
+
+	ret = __set_gcr3(udomain, pasid, cr3);
+	if (!ret) {
+		device_flush_dte(dev_data);
+		iommu_completion_wait(iommu);
+	}
+
+	spin_unlock_irqrestore(&udomain->lock, flags);
+	spin_unlock_irqrestore(&domain->lock, flags);
+
+	return ret;
+}
 
 static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 			 u64 address, bool size)
