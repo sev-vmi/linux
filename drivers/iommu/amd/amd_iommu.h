@@ -219,4 +219,9 @@ int amd_iommu_vminfo_alloc(struct amd_iommu *iommu, struct amd_iommu_vminfo *vmi
 void amd_iommu_vminfo_free(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
 struct amd_iommu_vminfo *amd_iommu_get_vminfo(int gid);
 
+/* VIOMMU */
+int amd_viommu_domain_id_update(struct amd_iommu *iommu, u16 gid,
+				struct protection_domain *pdom,
+				bool is_set);
+
 #endif
