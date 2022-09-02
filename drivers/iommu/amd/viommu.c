@@ -743,3 +743,320 @@ int amd_viommu_device_update(struct amd_viommu_dev_info *data, bool is_set)
 	return 0;
 }
 EXPORT_SYMBOL(amd_viommu_device_update);
+
+int amd_viommu_guest_mmio_read(struct amd_viommu_mmio_data *data)
+{
+	u8 __iomem *vfctrl, *vf;
+	u64 val, tmp = 0;
+	int gid = data->gid;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(data->iommu_id);
+
+	if (!iommu)
+		return -ENODEV;
+
+	vf = VIOMMU_VF_MMIO_BASE(iommu, gid);
+	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, gid);
+
+	switch (data->offset) {
+	case MMIO_CONTROL_OFFSET:
+	{
+		/* VFCTRL offset 20h */
+		val = readq(vfctrl + 0x20);
+		tmp |= SET_CTRL_BITS(val, 8, CONTROL_CMDBUF_EN, 1); // [12]
+		tmp |= SET_CTRL_BITS(val, 9, CONTROL_COMWAIT_EN, 1); // [4]
+
+		/* VFCTRL offset 28h */
+		val = readq(vfctrl + 0x28);
+		tmp |= SET_CTRL_BITS(val, 8, CONTROL_EVT_LOG_EN, 1); // [2]
+		tmp |= SET_CTRL_BITS(val, 9, CONTROL_EVT_INT_EN, 1); // [3]
+		tmp |= SET_CTRL_BITS(val, 10, CONTROL_DUALEVTLOG_EN, 3); // [33:32]
+
+		/* VFCTRL offset 30h */
+		val = readq(vfctrl + 0x30);
+		tmp |= SET_CTRL_BITS(val, 8, CONTROL_PPRLOG_EN, 1); // [13]
+		tmp |= SET_CTRL_BITS(val, 9, CONTROL_PPRINT_EN, 1); // [14]
+		tmp |= SET_CTRL_BITS(val, 10, CONTROL_PPR_EN, 1); // [15]
+		tmp |= SET_CTRL_BITS(val, 11, CONTROL_DUALPPRLOG_EN, 3); // [31:30]
+		tmp |= SET_CTRL_BITS(val, 13, CONTROL_PPR_AUTO_RSP_EN, 1); // [39]
+		tmp |= SET_CTRL_BITS(val, 14, CONTROL_BLKSTOPMRK_EN, 1); // [41]
+		tmp |= SET_CTRL_BITS(val, 15, CONTROL_PPR_AUTO_RSP_AON, 1); // [42]
+
+		data->value = tmp;
+		break;
+	}
+	case MMIO_CMD_BUF_OFFSET:
+	{
+		val = readq(vfctrl + 0x20);
+		/* CmdLen [59:56] */
+		tmp |= SET_CTRL_BITS(val, 0, 56, 0xF);
+		data->value = tmp;
+		break;
+	}
+	case MMIO_EVT_BUF_OFFSET:
+	{
+		val = readq(vfctrl + 0x28);
+		/* EventLen [59:56] */
+		tmp |= SET_CTRL_BITS(val, 0, 56, 0xF);
+		data->value = tmp;
+		break;
+	}
+	case MMIO_EVTB_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x28);
+		/* EventLenB [59:56] */
+		tmp |= SET_CTRL_BITS(val, 4, 56, 0xF);
+		data->value = tmp;
+		break;
+	}
+	case MMIO_PPR_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x30);
+		/* PPRLogLen [59:56] */
+		tmp |= SET_CTRL_BITS(val, 0, 56, 0xF);
+		data->value = tmp;
+		break;
+	}
+	case MMIO_PPRB_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x30);
+		/* PPRLogLenB [59:56] */
+		tmp |= SET_CTRL_BITS(val, 4, 56, 0xF);
+		data->value |= tmp;
+		break;
+	}
+	case MMIO_STATUS_OFFSET:
+	{
+		/* VF offset 20h */
+		val = readq(vf + 0x20);
+		tmp |= SET_CTRL_BITS(val, 0, MMIO_STATUS_EVT_OVERFLOW, 1); // []
+		tmp |= SET_CTRL_BITS(val, 1, MMIO_STATUS_EVT_INT, 1); // []
+		tmp |= SET_CTRL_BITS(val, 2, MMIO_STATUS_COM_WAIT_INT, 1); // []
+		tmp |= SET_CTRL_BITS(val, 3, MMIO_STATUS_EVT_RUN, 1); // []
+		tmp |= SET_CTRL_BITS(val, 4, MMIO_STATUS_CMDBUF_RUN, 1); // []
+		tmp |= SET_CTRL_BITS(val, 5, MMIO_STATUS_PPR_OVERFLOW, 1); // []
+		tmp |= SET_CTRL_BITS(val, 6, MMIO_STATUS_PPR_INT, 1); // []
+		tmp |= SET_CTRL_BITS(val, 7, MMIO_STATUS_PPR_RUN, 1); // []
+		data->value = tmp;
+		break;
+	}
+	case MMIO_CMD_HEAD_OFFSET:
+	{
+		val = readq(vf + 0x0);
+		data->value = (val & 0x7FFF0);
+		break;
+	}
+	case MMIO_CMD_TAIL_OFFSET:
+	{
+		val = readq(vf + 0x8);
+		data->value = (val & 0x7FFF0);
+		break;
+	}
+	case MMIO_EXT_FEATURES:
+	{
+		amd_iommu_build_efr(&data->value, NULL);
+		break;
+	}
+	default:
+		break;
+	}
+
+	pr_debug("%s: iommu_id=%#x, gid=%u, offset=%#x, value=%#llx, mmio_size=%u, is_write=%u\n",
+		 __func__, data->iommu_id, gid, data->offset,
+		 data->value, data->mmio_size, data->is_write);
+	return 0;
+}
+EXPORT_SYMBOL(amd_viommu_guest_mmio_read);
+
+/* Note:
+ * This function maps the guest MMIO write to AMD IOMMU MMIO registers
+ * into vIOMMU VFCTRL register bits.
+ */
+int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
+{
+	int ret;
+	u8 __iomem *vfctrl, *vf;
+	int gid = data->gid;
+	u64 val, tmp, ctrl = data->value;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(data->iommu_id);
+
+	if (!iommu)
+		return -ENODEV;
+
+	pr_debug("%s: iommu_id=%#x, gid=%u, offset=%#x, value=%#llx, mmio_size=%u, is_write=%u\n",
+		 __func__, data->iommu_id, gid, data->offset,
+		 ctrl, data->mmio_size, data->is_write);
+
+	/*
+	 * FIXME: We need to setup vIOMMU translation domain before
+	 * the first IOMMU completion wait command. This is the earliest.
+	 * We need a better way to do this.
+	 */
+	ret = viommu_set_translate_dte(iommu, gid);
+	if (ret)
+		return ret;
+
+	vf = VIOMMU_VF_MMIO_BASE(iommu, gid);
+	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, gid);
+
+	switch (data->offset) {
+	case MMIO_CONTROL_OFFSET:
+	{
+		/* VFCTRL offset 20h */
+		val = readq(vfctrl + 0x20);
+		val &= ~(0x3ULL << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_CMDBUF_EN, 1); // [12]
+		val |= (tmp << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_COMWAIT_EN, 1); // [4]
+		val |= (tmp << 9);
+		writeq(val, vfctrl + 0x20);
+
+		/* VFCTRL offset 28h */
+		val = readq(vfctrl + 0x28);
+		val &= ~(0xFULL << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_EVT_LOG_EN, 1); // [2]
+		val |= (tmp << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_EVT_INT_EN, 1); // [3]
+		val |= (tmp << 9);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_DUALEVTLOG_EN, 3); // [33:32]
+		val |= (tmp << 10);
+		writeq(val, vfctrl + 0x28);
+
+		/* VFCTRL offset 30h */
+		val = readq(vfctrl + 0x30);
+		val &= ~(0xFFULL << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_PPRLOG_EN, 1); // [13]
+		val |= (tmp << 8);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_PPRINT_EN, 1); // [14]
+		val |= (tmp << 9);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_PPR_EN, 1); // [15]
+		val |= (tmp << 10);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_DUALPPRLOG_EN, 3); // [31:30]
+		val |= (tmp << 11);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_PPR_AUTO_RSP_EN, 1); // [39]
+		val |= (tmp << 13);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_BLKSTOPMRK_EN, 1); // [41]
+		val |= (tmp << 14);
+		tmp = GET_CTRL_BITS(ctrl, CONTROL_PPR_AUTO_RSP_AON, 1); // [42]
+		val |= (tmp << 15);
+		writeq(val, vfctrl + 0x30);
+		break;
+	}
+	case MMIO_CMD_BUF_OFFSET:
+	{
+		val = readq(vfctrl + 0x20);
+		val &= ~(0xFFFFFFFFFF00FULL);
+		/* CmdLen [59:56] */
+		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
+		val |= tmp;
+		/* ComBase [51:12] */
+		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		writeq(val, vfctrl + 0x20);
+		break;
+	}
+	case MMIO_EVT_BUF_OFFSET:
+	{
+		val = readq(vfctrl + 0x28);
+		val &= ~(0xFFFFFFFFFF00FULL);
+		/* EventLen [59:56] */
+		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
+		val |= tmp;
+		/* EventBase [51:12] */
+		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		writeq(val, vfctrl + 0x28);
+		break;
+	}
+	case MMIO_EVTB_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x28);
+		val &= ~(0xF0ULL);
+		/* EventLenB [59:56] */
+		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
+		val |= (tmp << 4);
+		writeq(val, vfctrl + 0x28);
+
+		val = readq(vfctrl + 0x18);
+		val &= ~(0xFFFFFFFFFF000ULL);
+		/* EventLogBBase [51:12] */
+		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		writeq(val, vfctrl + 0x18);
+		break;
+	}
+	case MMIO_PPR_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x30);
+		val &= ~(0xFFFFFFFFFF00FULL);
+		/* PPRLogLen [59:56] */
+		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
+		val |= tmp;
+		/* PPRLogBase [51:12] */
+		val |= ((ctrl & 0xFFFFFFFFFF000ULL) << 4);
+		writeq(val, vfctrl + 0x30);
+		break;
+	}
+	case MMIO_PPRB_LOG_OFFSET:
+	{
+		val = readq(vfctrl + 0x30);
+		val &= ~(0xF0ULL);
+		/* PPRLogLenB [59:56] */
+		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
+		val |= (tmp << 4);
+		writeq(val, vfctrl + 0x30);
+
+		val = readq(vfctrl + 0x38);
+		val &= ~(0xFFFFFFFFFF000ULL);
+		/* PPRLogBBase [51:12] */
+		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		writeq(val, vfctrl + 0x38);
+		break;
+	}
+	case MMIO_STATUS_OFFSET:
+	{
+		/* VF offset 20h */
+		val = readq(vf + 0x20);
+		val &= ~(0xFFULL);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_EVT_OVERFLOW, 1); // []
+		val |= (tmp << 0);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_EVT_INT, 1); // []
+		val |= (tmp << 1);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_COM_WAIT_INT, 1); // []
+		val |= (tmp << 2);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_EVT_RUN, 1); // []
+		val |= (tmp << 3);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_CMDBUF_RUN, 1); // []
+		val |= (tmp << 4);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_PPR_OVERFLOW, 1); // []
+		val |= (tmp << 5);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_PPR_INT, 1); // []
+		val |= (tmp << 6);
+		tmp = GET_CTRL_BITS(ctrl, MMIO_STATUS_PPR_RUN, 1); // []
+		val |= (tmp << 7);
+		writeq(val, vf + 0x20);
+		break;
+	}
+	case MMIO_CMD_HEAD_OFFSET:
+	{
+		val = readq(vf + 0x0);
+		val &= ~(0x7FFFULL << 4);
+		tmp = GET_CTRL_BITS(ctrl, 4, 0x7FFF);
+		val |= (tmp << 4);
+		writeq(val, vf + 0x0);
+		break;
+	}
+	case MMIO_CMD_TAIL_OFFSET:
+	{
+		val = readq(vf + 0x8);
+		val &= ~(0x7FFFULL << 4);
+		tmp = GET_CTRL_BITS(ctrl, 4, 0x7FFF);
+		val |= (tmp << 4);
+		writeq(val, vf + 0x8);
+		break;
+	}
+	default:
+		break;
+	}
+
+	pr_debug("%s: offset=%#x, val=%#llx, ctrl=%#llx\n",
+		 __func__, data->offset, val, ctrl);
+	return 0;
+}
+EXPORT_SYMBOL(amd_viommu_guest_mmio_write);
