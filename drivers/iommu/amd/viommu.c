@@ -1032,3 +1032,43 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 	return 0;
 }
 EXPORT_SYMBOL(amd_viommu_guest_mmio_write);
+
+int amd_viommu_user_gcr3_update(const void *user_data, struct iommu_domain *udom)
+{
+	int ret;
+	u16 hdev_id;
+	struct pci_dev *pdev;
+	struct amd_iommu *iommu;
+	struct iommu_hwpt_amd_v2 data, *hwpt = NULL;
+	const size_t min_len = offsetofend(struct iommu_hwpt_amd_v2, gdev_id);
+
+	if (!user_data)
+		return -EINVAL;
+
+	ret = iommu_copy_user_data(&data, user_data,
+				   sizeof(struct iommu_hwpt_amd_v2), min_len);
+	if (ret)
+		return ret;
+	hwpt = &data;
+
+	iommu = get_amd_iommu_from_devid(hwpt->iommu_id);
+	hdev_id = viommu_get_hdev_id(iommu, hwpt->gid, hwpt->gdev_id);
+
+	pr_debug("%s: gid=%u, hdev_id=%#x, gcr3=%#llx\n",
+		 __func__, hwpt->gid, hdev_id,
+		 (unsigned long long) hwpt->gcr3);
+
+	/* Allocate gcr3 table */
+	pdev = pci_get_domain_bus_and_slot(0, PCI_BUS_NUM(hdev_id),
+					   hdev_id & 0xff);
+	if (!pdev)
+		return -EINVAL;
+
+	ret = amd_iommu_set_gcr3tbl_trp(iommu, pdev, hwpt->gcr3, hwpt->glx);
+	if (ret) {
+		pr_err("%s: Fail to enable gcr3 (devid=%#x)\n", __func__,
+		       pci_dev_id(pdev));
+	}
+
+	return ret;
+}
