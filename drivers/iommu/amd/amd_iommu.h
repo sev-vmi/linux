@@ -101,6 +101,21 @@ void amd_iommu_pdev_disable_cap_pri(struct pci_dev *pdev);
 int amd_iommu_set_gcr3(struct iommu_dev_data *dev_data,
 		       u32 pasid, unsigned long gcr3);
 int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid);
+int amd_viommu_user_gcr3_update(const void *user_data,
+				struct iommu_domain *udom);
+int amd_iommu_setup_gcr3_table(struct amd_iommu *iommu,
+			       struct pci_dev *pdev,
+			       struct iommu_domain *dom,
+			       struct iommu_domain *udom,
+			       int pasids, bool giov);
+int amd_iommu_user_set_gcr3(struct amd_iommu *iommu,
+			    struct iommu_domain *dom,
+			    struct iommu_domain *udom,
+			    struct iommu_dev_data *dev_data,
+			    u32 pasid, unsigned long cr3);
+
+int amd_iommu_set_gcr3tbl_trp(struct amd_iommu *iommu, struct pci_dev *pdev,
+			      u64 gcr3_tbl, u16 glx, u16 guest_paging_mode);
 
 /* PPR */
 int __init amd_iommu_alloc_ppr_log(struct amd_iommu *iommu);

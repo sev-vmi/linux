@@ -577,6 +577,7 @@ struct gcr3_tbl_info {
 	int	glx;		/* Number of levels for GCR3 table */
 	int	pasid_cnt;	/* Track attached PASIDs */
 	bool	giov;		/* GIOV bit support */
+	bool	trp;		/* TRP support */
 };
 
 struct amd_io_pgtable {
