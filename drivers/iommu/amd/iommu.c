@@ -2266,7 +2266,15 @@ static int do_attach(struct iommu_dev_data *dev_data,
 
 	device_flush_dte(dev_data);
 
+	/*
+	 * For nested domain, also setup domain ID mapping table
+	 * when attach a domain to a device.
+	 */
+	if (amd_iommu_domain_is_nested(domain))
+		ret = amd_viommu_domain_id_update(iommu, dev_data->gid,
+						  domain, true);
 	return ret;
+
 }
 
 static void do_detach(struct iommu_dev_data *dev_data)
