@@ -888,6 +888,7 @@ struct iommu_dev_data {
 	bool defer_attach;
 	/* Per device domain ID. Used with V2 page table */
 	u16 domid;
+	u16 gid;			  /* Guest ID */
 
 	struct ratelimit_state rs;        /* Ratelimit IOPF messages */
 };
