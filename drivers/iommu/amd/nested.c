@@ -95,6 +95,10 @@ struct iommu_domain *amd_iommu_nested_domain_alloc(struct device *dev,
 	dom->type = IOMMU_DOMAIN_NESTED;
 	dom->ops = &nested_domain_ops;
 
+	ret = amd_viommu_domain_id_update(hwpt, true);
+	if (ret)
+		goto err_out;
+
 	ret = nested_gcr3_update(hwpt, dom);
 	if (ret)
 		goto err_out;

@@ -220,4 +220,7 @@ struct protection_domain *to_pdomain(struct iommu_domain *dom);
 struct iommu_domain *amd_iommu_nested_domain_alloc(struct device *dev,
 						   struct iommu_hwpt_amd_v2 *hwpt);
 
+/* VIOMMU */
+int amd_viommu_domain_id_update(struct iommu_hwpt_amd_v2 *hwpt, bool is_set);
+
 #endif
