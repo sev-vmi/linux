@@ -626,6 +626,101 @@ static int viommu_set_translate_dte(struct amd_iommu *iommu, u16 gid)
 	return 0;
 }
 
+/*
+ * Program the DomID via VFCTRL registers
+ * This function will be called during VM init via VFIO.
+ */
+static void set_domain_mapping(struct amd_iommu *iommu, u16 guestId, u16 hDomId, u16 gDomId)
+{
+	u64 val, tmp1, tmp2;
+	u8 __iomem *vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, guestId);
+
+	pr_debug("%s: iommu_id=%#x, gid=%#x, dom_id=%#x, gdom_id=%#x, val=%#llx\n",
+		 __func__, pci_dev_id(iommu->dev), guestId, hDomId, gDomId, val);
+
+	tmp1 = gDomId;
+	tmp1 = ((tmp1 & 0xFFFFULL) << 46);
+	tmp2 = hDomId;
+	tmp2 = ((tmp2 & 0xFFFFULL) << 14);
+	val = tmp1 | tmp2 | 0x8000000000000001UL;
+	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_DID_MAP_CONTROL1_OFFSET);
+	wbinvd_on_all_cpus();
+}
+
+u64 get_domain_mapping(struct amd_iommu *iommu, u16 gid, u16 gdom_id)
+{
+	void *addr;
+	u64 offset, val;
+	struct amd_iommu_vminfo *vminfo;
+
+	vminfo = get_vminfo(gid);
+	if (!vminfo)
+		return -EINVAL;
+
+	addr = vminfo->domid_table;
+	offset = gdom_id << 3;
+	val = *((u64 *)(addr + offset));
+
+	return val;
+}
+
+void dump_domain_mapping(struct amd_iommu *iommu, u16 gid, u16 gdom_id)
+{
+	void *addr;
+	u64 offset, val;
+	struct amd_iommu_vminfo *vminfo;
+
+	vminfo = get_vminfo(gid);
+	if (!vminfo)
+		return;
+
+	addr = vminfo->domid_table;
+	offset = gdom_id << 3;
+	val = *((u64 *)(addr + offset));
+
+	pr_debug("%s: offset=%#llx(val=%#llx)\n", __func__,
+		(unsigned long long)offset,
+		(unsigned long long)val);
+}
+
+static u16 viommu_get_hdev_id(struct amd_iommu *iommu, u16 guestId, u16 gdev_id)
+{
+	struct amd_iommu_vminfo *vminfo;
+	void *addr;
+	u64 offset;
+
+	vminfo = get_vminfo(guestId);
+	if (!vminfo)
+		return -1;
+
+	addr = vminfo->devid_table;
+	offset = gdev_id << 4;
+	return (*((u64 *)(addr + offset)) >> 24) & 0xFFFF;
+}
+
+int amd_viommu_domain_update(struct amd_viommu_dom_info *data, bool is_set)
+{
+	u16 hdom_id, hdev_id;
+	int gid = data->gid;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(data->iommu_id);
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+
+	if (!iommu)
+		return -ENODEV;
+
+	hdev_id = viommu_get_hdev_id(iommu, gid, data->gdev_id);
+	hdom_id = dev_table[hdev_id].data[1] & 0xFFFFULL;
+
+	if (is_set) {
+		set_domain_mapping(iommu, gid, hdom_id, data->gdom_id);
+		dump_domain_mapping(iommu, gid, data->gdom_id);
+	} else
+		clear_domain_mapping(iommu, gid, hdom_id, data->gdom_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(amd_viommu_domain_update);
+
 static void set_dte_viommu(struct amd_iommu *iommu, u16 hDevId, u16 gid, u16 gDevId)
 {
 	u64 tmp, dte;
