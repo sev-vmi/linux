@@ -448,6 +448,7 @@
 #define PD_FLAG_V2DMA		BIT(2) /* DMA-API mode w/ v2 page table */
 #define PD_FLAG_GCR3		BIT(3) /* domain has gcr3 table */
 #define PD_FLAG_GIOV		BIT(4) /* domain enable GIOV support */
+#define PD_FLAG_V2API		BIT(5) /* domain is used for v2API */
 
 /* Timeout stuff */
 #define LOOP_TIMEOUT		100000

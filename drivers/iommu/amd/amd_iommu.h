@@ -56,8 +56,10 @@ int amd_iommu_pc_set_reg(struct amd_iommu *iommu, u8 bank, u8 cntr,
 
 int amd_iommu_register_ppr_notifier(struct notifier_block *nb);
 int amd_iommu_unregister_ppr_notifier(struct notifier_block *nb);
-void amd_iommu_domain_direct_map(struct iommu_domain *dom);
-int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids);
+int amd_iommu_v2_domain_init(struct protection_domain *pdom,
+			     struct pci_dev *pdev, int pasids, u32 pd_flags);
+void amd_iommu_v2_domain_uninit(struct protection_domain *pdom,
+				struct pci_dev *pdev, u32 pd_flags);
 int amd_iommu_flush_page(struct protection_domain *domain, u32 pasid, u64 address);
 void amd_iommu_update_and_flush_device_table(struct protection_domain *domain);
 void amd_iommu_domain_update(struct protection_domain *domain);

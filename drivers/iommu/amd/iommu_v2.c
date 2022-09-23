@@ -785,9 +785,10 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 
 	/* See iommu_is_default_domain() */
 	domain->type = IOMMU_DOMAIN_IDENTITY;
-	amd_iommu_domain_direct_map(&dev_state->pdom->domain);
+	dev_state->pdom->flags = PD_FLAG_PT;
 
-	ret = amd_iommu_domain_enable_v2(domain, pasids);
+	ret = amd_iommu_v2_domain_init(dev_state->pdom, pdev,
+				       pasids, PD_FLAG_V2API);
 	if (ret)
 		goto out_free_domain;
 

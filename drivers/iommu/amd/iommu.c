@@ -1566,7 +1566,13 @@ static void free_gcr3_table(struct protection_domain *domain)
 	else
 		BUG_ON(domain->glx != 0);
 
+	domain->glx = 0;
+	domain->flags &= ~PD_FLAG_GCR3;
+
+	amd_iommu_domain_update(domain);
+
 	free_page((unsigned long)domain->gcr3_tbl);
+	domain->gcr3_tbl = NULL;
 }
 
 static int get_gcr3_levels(int pasids)
@@ -2074,6 +2080,87 @@ static void protection_domain_free(struct protection_domain *domain)
 	kfree(domain);
 }
 
+static int v2api_domain_init(struct protection_domain *pdom)
+{
+	/* V2API is already enabled for this domain */
+	if (!!(pdom->flags & PD_FLAG_V2API))
+		return -EBUSY;
+
+	/*
+	 * The V2API mode cannot be initialized if domain is not in
+	 * passthrough mode
+	 */
+	if (pdom->flags != PD_FLAG_PT)
+		return -EOPNOTSUPP;
+
+	/*
+	 * Free any existing page tables for this domain since
+	 * the V2API mode require v1 table to be in identity mode.
+	 * The iommu_v2 driver will handle setting up v2 table
+	 * when binding.
+	 */
+	if (pdom->iop.pgtbl_cfg.tlb)
+		free_io_pgtable_ops(&pdom->iop.iop.ops);
+
+	return 0;
+}
+
+int amd_iommu_v2_domain_init(struct protection_domain *pdom,
+			     struct pci_dev *pdev, int pasids, u32 pd_flags)
+{
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&pdom->lock, flags);
+
+	switch (pd_flags) {
+	case PD_FLAG_V2API:
+		ret = v2api_domain_init(pdom);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	if (ret)
+		goto out;
+
+	/* Allocate guest page table */
+	if (pdom->gcr3_tbl == NULL)
+		ret = setup_gcr3_table(pdom, pasids);
+
+out:
+	/* Retain default page table mode flags. */
+	if (!ret)
+		pdom->flags |= pd_flags;
+
+	spin_unlock_irqrestore(&pdom->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL(amd_iommu_v2_domain_init);
+
+void amd_iommu_v2_domain_uninit(struct protection_domain *pdom,
+				struct pci_dev *pdev, u32 pd_flags)
+{
+	unsigned long flags;
+
+	if (!pdom || !(pdom->flags & PD_FLAG_V2API))
+		return;
+
+	spin_lock_irqsave(&pdom->lock, flags);
+
+	/*
+	 * If device is booted with passthrough mode then clear guest
+	 * page table.
+	 */
+	if (!!(pdom->flags & PD_FLAG_PT))
+		free_gcr3_table(pdom);
+
+	pdom->flags &= ~(pd_flags);
+	spin_unlock_irqrestore(&pdom->lock, flags);
+}
+EXPORT_SYMBOL(amd_iommu_v2_domain_uninit);
+
 static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 {
 	u64 *pt_root = NULL;
@@ -2529,46 +2616,6 @@ int amd_iommu_unregister_ppr_notifier(struct notifier_block *nb)
 	return atomic_notifier_chain_unregister(&ppr_notifier, nb);
 }
 EXPORT_SYMBOL(amd_iommu_unregister_ppr_notifier);
-
-void amd_iommu_domain_direct_map(struct iommu_domain *dom)
-{
-	struct protection_domain *domain = to_pdomain(dom);
-	unsigned long flags;
-
-	spin_lock_irqsave(&domain->lock, flags);
-
-	if (domain->iop.pgtbl_cfg.tlb)
-		free_io_pgtable_ops(&domain->iop.iop.ops);
-
-	spin_unlock_irqrestore(&domain->lock, flags);
-}
-EXPORT_SYMBOL(amd_iommu_domain_direct_map);
-
-int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids)
-{
-	struct protection_domain *pdom = to_pdomain(dom);
-	unsigned long flags;
-	int ret;
-
-	spin_lock_irqsave(&pdom->lock, flags);
-
-	/*
-	 * Save us all sanity checks whether devices already in the
-	 * domain support IOMMUv2. Just force that the domain has no
-	 * devices attached when it is switched into IOMMUv2 mode.
-	 */
-	ret = -EBUSY;
-	if (pdom->dev_cnt > 0 || pdom->flags & PD_FLAG_GCR3)
-		goto out;
-
-	if (!pdom->gcr3_tbl)
-		ret = setup_gcr3_table(pdom, pasids);
-
-out:
-	spin_unlock_irqrestore(&pdom->lock, flags);
-	return ret;
-}
-EXPORT_SYMBOL(amd_iommu_domain_enable_v2);
 
 static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 			 u64 address, bool size)
