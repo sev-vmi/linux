@@ -274,9 +274,9 @@ static int iommu_v2_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
 out:
 	if (updated) {
 		if (count > 1)
-			amd_iommu_flush_tlb(&pdom->domain, 0);
+			amd_iommu_flush_tlb(pdom, 0);
 		else
-			amd_iommu_flush_page(&pdom->domain, 0, o_iova);
+			amd_iommu_flush_page(pdom, 0, o_iova);
 	}
 
 	if (mapped)
@@ -384,7 +384,7 @@ static struct io_pgtable *v2_alloc_pgtable(struct io_pgtable_cfg *cfg, void *coo
 	if (!pgtable->pgd)
 		return NULL;
 
-	ret = amd_iommu_domain_set_gcr3(&pdom->domain, 0, iommu_virt_to_phys(pgtable->pgd));
+	ret = amd_iommu_domain_set_gcr3(pdom, 0, iommu_virt_to_phys(pgtable->pgd));
 	if (ret)
 		goto err_free_pgd;
 
