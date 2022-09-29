@@ -2592,10 +2592,8 @@ static int __amd_iommu_flush_page(struct protection_domain *domain, u32 pasid,
 	return __flush_pasid(domain, pasid, address, false);
 }
 
-int amd_iommu_flush_page(struct iommu_domain *dom, u32 pasid,
-			 u64 address)
+int amd_iommu_flush_page(struct protection_domain *domain, u32 pasid, u64 address)
 {
-	struct protection_domain *domain = to_pdomain(dom);
 	unsigned long flags;
 	int ret;
 
@@ -2612,9 +2610,8 @@ static int __amd_iommu_flush_tlb(struct protection_domain *domain, u32 pasid)
 			     true);
 }
 
-int amd_iommu_flush_tlb(struct iommu_domain *dom, u32 pasid)
+int amd_iommu_flush_tlb(struct protection_domain *domain, u32 pasid)
 {
-	struct protection_domain *domain = to_pdomain(dom);
 	unsigned long flags;
 	int ret;
 
@@ -2690,10 +2687,9 @@ static int __clear_gcr3(struct protection_domain *domain, u32 pasid)
 	return __amd_iommu_flush_tlb(domain, pasid);
 }
 
-int amd_iommu_domain_set_gcr3(struct iommu_domain *dom, u32 pasid,
+int amd_iommu_domain_set_gcr3(struct protection_domain *domain, u32 pasid,
 			      unsigned long cr3)
 {
-	struct protection_domain *domain = to_pdomain(dom);
 	unsigned long flags;
 	int ret;
 
@@ -2704,9 +2700,8 @@ int amd_iommu_domain_set_gcr3(struct iommu_domain *dom, u32 pasid,
 	return ret;
 }
 
-int amd_iommu_domain_clear_gcr3(struct iommu_domain *dom, u32 pasid)
+int amd_iommu_domain_clear_gcr3(struct protection_domain *domain, u32 pasid)
 {
-	struct protection_domain *domain = to_pdomain(dom);
 	unsigned long flags;
 	int ret;
 
