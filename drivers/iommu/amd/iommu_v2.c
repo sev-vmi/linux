@@ -282,7 +282,7 @@ static void unbind_pasid(struct pasid_state *pasid_state)
 	smp_wmb();
 
 	/* After this the device/pasid can't access the mm anymore */
-	amd_iommu_domain_clear_gcr3(&dev_state->pdom->domain, pasid_state->pasid);
+	amd_iommu_domain_clear_gcr3(dev_state->pdom, pasid_state->pasid);
 
 	/* Make sure no more pending faults are in the queue */
 	flush_workqueue(iommu_wq);
@@ -368,10 +368,10 @@ static void mn_invalidate_range(struct mmu_notifier *mn,
 	dev_state   = pasid_state->device_state;
 
 	if ((start ^ (end - 1)) < PAGE_SIZE)
-		amd_iommu_flush_page(&dev_state->pdom->domain, pasid_state->pasid,
+		amd_iommu_flush_page(dev_state->pdom, pasid_state->pasid,
 				     start);
 	else
-		amd_iommu_flush_tlb(&dev_state->pdom->domain, pasid_state->pasid);
+		amd_iommu_flush_tlb(dev_state->pdom, pasid_state->pasid);
 }
 
 static void mn_release(struct mmu_notifier *mn, struct mm_struct *mm)
@@ -650,7 +650,7 @@ int amd_iommu_bind_pasid(struct pci_dev *pdev, u32 pasid,
 	if (ret)
 		goto out_unregister;
 
-	ret = amd_iommu_domain_set_gcr3(&dev_state->pdom->domain, pasid,
+	ret = amd_iommu_domain_set_gcr3(dev_state->pdom, pasid,
 					__pa(pasid_state->mm->pgd));
 	if (ret)
 		goto out_clear_state;
@@ -784,8 +784,7 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 		goto out_free_states;
 
 	/* Retrieve new protection_domain that has just been allocated */
-	dev_state->pdom = container_of(domain,
-				       struct protection_domain, domain);
+	dev_state->pdom = to_pdomain(domain);
 
 	/* See iommu_is_default_domain() */
 	domain->type = IOMMU_DOMAIN_IDENTITY;
