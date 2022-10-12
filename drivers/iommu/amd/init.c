@@ -1638,6 +1638,7 @@ static void __init free_iommu_one(struct amd_iommu *iommu)
 	amd_iommu_free_ppr_log(iommu);
 	free_ga_log(iommu);
 	iommu_unmap_mmio_space(iommu);
+	amd_iommu_iopf_uninit(iommu);
 }
 
 static void __init free_iommu_all(void)
@@ -2791,9 +2792,13 @@ static void enable_iommus_v2(void)
 {
 	struct amd_iommu *iommu;
 
+	if (!amd_iommu_gt_ppr_supported())
+		return;
+
 	for_each_iommu(iommu) {
 		amd_iommu_enable_ppr_log(iommu);
 		iommu_enable_gt(iommu);
+		amd_iommu_iopf_init(iommu);
 	}
 }
 
