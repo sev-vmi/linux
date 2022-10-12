@@ -55,6 +55,10 @@ bool amd_iommu_pasid_supported(void);
 int amd_iommu_gcr3_init(struct iommu_dev_data *dev_data, ioasid_t pasids);
 void amd_iommu_gcr3_uninit(struct iommu_dev_data *dev_data);
 
+/* IOPF */
+int amd_iommu_iopf_init(struct amd_iommu *iommu);
+void amd_iommu_iopf_uninit(struct amd_iommu *iommu);
+
 struct amd_iommu *get_amd_iommu(unsigned int idx);
 u8 amd_iommu_pc_get_max_banks(unsigned int idx);
 bool amd_iommu_pc_supported(void);
