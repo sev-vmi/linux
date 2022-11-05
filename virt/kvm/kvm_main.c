@@ -1262,7 +1262,8 @@ int __weak kvm_arch_create_vm_debugfs(struct kvm *kvm)
 
 bool __weak kvm_arch_has_private_mem(struct kvm *kvm)
 {
-	return false;
+	return IS_ENABLED(CONFIG_HAVE_KVM_PRIVATE_MEM_TESTING);
+
 }
 
 static struct kvm *kvm_create_vm(unsigned long type, const char *fdname)

@@ -92,3 +92,7 @@ config HAVE_KVM_PM_NOTIFIER
 
 config HAVE_KVM_RESTRICTED_MEM
        bool
+
+config HAVE_KVM_PRIVATE_MEM_TESTING
+       bool "Private memory selftests"
+       depends on HAVE_KVM_MEMORY_ATTRIBUTES && HAVE_KVM_RESTRICTED_MEM
