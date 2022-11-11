@@ -170,6 +170,9 @@ extern enum vm_guest_mode vm_mode_default;
 #define MIN_PAGE_SIZE		(1U << MIN_PAGE_SHIFT)
 #define PTES_PER_MIN_PAGE	ptes_per_page(MIN_PAGE_SIZE)
 
+/* @a is a power of 2 value */
+#define IS_ALIGNED(x, a)		(((x) & ((typeof(x))(a) - 1)) == 0)
+
 struct vm_guest_mode_params {
 	unsigned int pa_bits;
 	unsigned int va_bits;

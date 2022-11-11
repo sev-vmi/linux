@@ -279,6 +279,7 @@ static inline unsigned int x86_model(unsigned int eax)
 #define PAGE_SHIFT		12
 #define PAGE_SIZE		(1ULL << PAGE_SHIFT)
 #define PAGE_MASK		(~(PAGE_SIZE-1) & PHYSICAL_PAGE_MASK)
+#define IS_PAGE_ALIGNED(x)	IS_ALIGNED(x, PAGE_SIZE)
 
 #define HUGEPAGE_SHIFT(x)	(PAGE_SHIFT + (((x) - 1) * 9))
 #define HUGEPAGE_SIZE(x)	(1UL << HUGEPAGE_SHIFT(x))
