@@ -2729,8 +2729,6 @@ static int kvm_apic_state_fixup(struct kvm_vcpu *vcpu,
 		/* In x2APIC mode, the LDR is fixed and based on the id */
 		if (set)
 			*ldr = kvm_apic_calc_x2apic_ldr(*id);
-	} else {
-		kvm_lapic_xapic_id_updated(vcpu->arch.apic);
 	}
 
 	return 0;
@@ -2765,6 +2763,9 @@ int kvm_apic_set_state(struct kvm_vcpu *vcpu, struct kvm_lapic_state *s)
 		return r;
 	}
 	memcpy(vcpu->arch.apic->regs, s->regs, sizeof(*s));
+
+	if (!apic_x2apic_mode(apic))
+		kvm_lapic_xapic_id_updated(apic);
 
 	atomic_set_release(&apic->vcpu->kvm->arch.apic_map_dirty, DIRTY);
 	kvm_recalculate_apic_map(vcpu->kvm);
