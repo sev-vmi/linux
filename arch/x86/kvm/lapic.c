@@ -242,6 +242,15 @@ void kvm_recalculate_apic_map(struct kvm *kvm)
 		x2apic_id = kvm_x2apic_id(apic);
 
 		/*
+		 * Deliberately truncate the vCPU ID when detecting a mismatched
+		 * APIC ID to avoid false positives if the vCPU ID, i.e. x2APIC
+		 * ID, is a 32-bit value.  Any unwanted aliasing due to
+		 * truncation results will be detected below.
+		 */
+		if (!apic_x2apic_mode(apic) && xapic_id != (u8)vcpu->vcpu_id)
+			xapic_id_mismatch = true;
+
+		/*
 		 * Apply KVM's hotplug hack if userspace has enable 32-bit APIC
 		 * IDs.  Allow sending events to vCPUs by their x2APIC ID even
 		 * if the target vCPU is in legacy xAPIC mode, and silently
@@ -335,6 +344,11 @@ out:
 		kvm_set_apicv_inhibit(kvm, APICV_INHIBIT_REASON_LOGICAL_ID_ALIASED);
 	else
 		kvm_clear_apicv_inhibit(kvm, APICV_INHIBIT_REASON_LOGICAL_ID_ALIASED);
+
+	if (xapic_id_mismatch)
+		kvm_set_apicv_inhibit(kvm, APICV_INHIBIT_REASON_APIC_ID_MODIFIED);
+	else
+		kvm_clear_apicv_inhibit(kvm, APICV_INHIBIT_REASON_APIC_ID_MODIFIED);
 
 	old = rcu_dereference_protected(kvm->arch.apic_map,
 			lockdep_is_held(&kvm->arch.apic_map_lock));
@@ -2025,23 +2039,6 @@ static void apic_manage_nmi_watchdog(struct kvm_lapic *apic, u32 lvt0_val)
 	}
 }
 
-static void kvm_lapic_xapic_id_updated(struct kvm_lapic *apic)
-{
-	if (WARN_ON_ONCE(apic_x2apic_mode(apic)))
-		return;
-
-	/*
-	 * Deliberately truncate the vCPU ID when detecting a modified APIC ID
-	 * to avoid false positives if the vCPU ID, i.e. x2APIC ID, is a 32-bit
-	 * value.  If the wrap/truncation results in unwanted aliasing, APICv
-	 * will be inhibited as part of updating KVM's optimized APIC maps.
-	 */
-	if (kvm_xapic_id(apic) == (u8)apic->vcpu->vcpu_id)
-		return;
-
-	kvm_set_apicv_inhibit(apic->vcpu->kvm, APICV_INHIBIT_REASON_APIC_ID_MODIFIED);
-}
-
 int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 {
 	int ret = 0;
@@ -2052,7 +2049,6 @@ int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
 	case APIC_ID:		/* Local APIC ID */
 		if (!apic_x2apic_mode(apic)) {
 			kvm_apic_set_xapic_id(apic, val >> 24);
-			kvm_lapic_xapic_id_updated(apic);
 		} else {
 			ret = 1;
 		}
@@ -2763,9 +2759,6 @@ int kvm_apic_set_state(struct kvm_vcpu *vcpu, struct kvm_lapic_state *s)
 		return r;
 	}
 	memcpy(vcpu->arch.apic->regs, s->regs, sizeof(*s));
-
-	if (!apic_x2apic_mode(apic))
-		kvm_lapic_xapic_id_updated(apic);
 
 	atomic_set_release(&apic->vcpu->kvm->arch.apic_map_dirty, DIRTY);
 	kvm_recalculate_apic_map(vcpu->kvm);
