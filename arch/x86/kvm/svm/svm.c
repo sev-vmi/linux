@@ -5313,11 +5313,11 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
 	.sync_pir_to_irr = kvm_lapic_find_highest_irr,
 	.set_virtual_apic_mode = avic_refresh_virtual_apic_mode,
 	.refresh_apicv_exec_ctrl = avic_refresh_apicv_exec_ctrl,
-	.check_apicv_inhibit_reasons = avic_check_apicv_inhibit_reasons,
 	.load_eoi_exitmap = avic_load_eoi_exitmap,
 	.hwapic_irr_update = avic_hwapic_irr_update,
 	.hwapic_isr_update = avic_hwapic_isr_update,
 	.apicv_post_state_restore = avic_apicv_post_state_restore,
+	.required_apicv_inhibits = AVIC_REQUIRED_APICV_INHIBITS,
 
 	.set_tss_addr = svm_set_tss_addr,
 	.set_identity_map_addr = svm_set_identity_map_addr,
