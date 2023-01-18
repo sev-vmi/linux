@@ -67,6 +67,54 @@ int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 }
 EXPORT_SYMBOL(tph_get_reg_field_u32);
 
+/* Return the number of ST Table entries that can be used */
+static int tph_get_table_size(struct pci_dev *dev, u16 *sz_out)
+{
+	int ret;
+	u32 tmp;
+
+	ret = tph_get_reg_field_u32(dev, TPH_CAP_REG_OFFSET,
+				    TPH_CAP_ST_TABLE_SIZE_MASK,
+				    TPH_CAP_ST_TABLE_SIZE_SHIFT, &tmp);
+	if (ret)
+		return ret;
+
+	*sz_out = (u16)tmp;
+	return 0;
+}
+
+/*
+ * for a given device and msi_index, return a  pointer to the msi_index(th)
+ * MSI Table Entry in the device memory mapped for msix.
+ */
+static void __iomem *tph_msix_table_entry(struct pci_dev *dev,
+					  __le16 msi_index)
+{
+	int ret;
+	void *val;
+	u16 tbl_sz;
+
+	ret = tph_get_table_size(dev, &tbl_sz);
+	if (ret || msi_index > tbl_sz)
+		return NULL;
+	val = dev->msix_base + msi_index * PCI_MSIX_ENTRY_SIZE;
+	return val;
+}
+
+/*
+ * Return a pointer to the vector control register at offset 0xc of
+ * the msi_index(th) MSI Table Entry.
+ */
+void __iomem *tph_msix_vector_control(struct pci_dev *dev, __le16 msi_index)
+{
+	void __iomem *vec_ctrl_addr = tph_msix_table_entry(dev, msi_index);
+
+	if (vec_ctrl_addr)
+		vec_ctrl_addr += PCI_MSIX_ENTRY_VECTOR_CTRL;
+	return vec_ctrl_addr;
+}
+EXPORT_SYMBOL(tph_msix_vector_control);
+
 void pcie_tph_init(struct pci_dev *dev)
 {
 	dev->tph_cap = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_TPH);
