@@ -1023,6 +1023,17 @@
 #define PCI_TPH_CAP_ST_SHIFT	16	/* ST table shift */
 #define PCI_TPH_BASE_SIZEOF	0xc	/* size with no ST table */
 
+/* TPH Requester Capability Register */
+#define TPH_CAP_REG_OFFSET	0x4
+#define TPH_CAP_ST_TABLE_LOCATION_SHIFT	9
+#define TPH_CAP_ST_TABLE_LOCATION_MASK	GENMASK(10, 9)
+
+enum st_table_location {
+	TPH_TABLE_LOCATION_NOT_PRESENT		= 0,
+	TPH_TABLE_LOCATION_EXTND_CAP_STRUCT	= 1,
+	TPH_TABLE_LOCATION_MSIX			= 2
+};
+
 /* TPH Requester Control Register */
 #define TPH_CTRL_REG_OFFSET	0x8
 #define TPH_CTRL_MODE_SEL_SHIFT	0

@@ -40,6 +40,33 @@ static int tph_set_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 	return ret;
 }
 
+/*
+ * tph_get_reg_field_u32() - Read a field of the TPH register at reg_offset.
+ * @dev: pci device
+ * @reg_offset: the TPH register offset
+ * @mask: the 32 bit mask of the field
+ * @shift: the shift of the field (0 <= shift <32)
+ * @out: where to write the field
+ */
+int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
+			  u8 shift, u32 *out)
+{
+	u32 val;
+	int ret;
+
+	if (!dev->tph_cap)
+		return -EINVAL;
+
+	ret = pci_read_config_dword(dev, dev->tph_cap + reg_offset, &val);
+	if (ret)
+		return ret;
+
+	*out = (val & mask) >> shift;
+
+	return 0;
+}
+EXPORT_SYMBOL(tph_get_reg_field_u32);
+
 void pcie_tph_init(struct pci_dev *dev)
 {
 	dev->tph_cap = pci_find_ext_capability(dev, PCI_EXT_CAP_ID_TPH);
@@ -75,5 +102,41 @@ int tph_set_dev_nostmode(struct pci_dev *dev)
 				    TPH_REQ_TPH_ONLY);
 	return ret;
 }
+
+static enum st_table_location tph_get_table_location(struct pci_dev *dev,
+						     u8 *tbl_loc_out)
+{
+	u32 tmp;
+	int ret;
+
+	/* check that device supports steering tags in msix */
+	ret = tph_get_reg_field_u32(dev, TPH_CAP_REG_OFFSET,
+				    TPH_CAP_ST_TABLE_LOCATION_MASK,
+				    TPH_CAP_ST_TABLE_LOCATION_SHIFT, &tmp);
+	if (ret)
+		return ret;
+
+	*tbl_loc_out = (enum st_table_location)tmp;
+	return 0;
+}
+
+/*
+ * Return true if TPH Steering Tag Table in MSI-X memory (not TPH configuration
+ * space.
+ */
+bool tph_is_st_table_in_msix(struct pci_dev *dev)
+{
+	u8  cap_tbl_loc;
+	int ret;
+
+	ret = tph_get_table_location(dev, &cap_tbl_loc);
+	if (ret) {
+		WARN_ON(ret);
+		return false;
+	}
+
+	return cap_tbl_loc == TPH_TABLE_LOCATION_MSIX;
+}
+EXPORT_SYMBOL(tph_is_st_table_in_msix);
 
 #endif
