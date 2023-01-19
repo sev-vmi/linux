@@ -311,6 +311,17 @@ struct pci_vpd {
 	u8		cap;
 };
 
+/**
+ * enum tph_mtype_tag - type of memory for which to use tag from _DSM
+ *
+ * @TPH_MTYPE_VRAM:  volatile memory
+ * @TPH_MTYPE_NVRAM: non volatile memory.
+ */
+enum tph_mtype_tag {
+	TPH_MTYPE_TAG_VRAM	= 0,
+	TPH_MTYPE_TAG_NVRAM	= 1
+};
+
 #ifdef CONFIG_PCIE_TPH
 void tph_set_disabled(void);
 bool tph_is_disabled(void);
@@ -324,6 +335,9 @@ bool tph_is_st_table_in_msix(struct pci_dev *dev);
 int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 			  u8 shift, u32 *out);
 bool pcie_tph_msix_int_vec_capable(struct pci_dev *dev);
+bool pcie_tph_set_stte(struct pci_dev *dev, unsigned int msix_nr,
+		       unsigned int cpu, enum tph_mtype_tag tag_type,
+		enum tph_requester_enable req_enable);
 #else
 static inline void tph_set_disabled(void) {};
 static inline bool tph_is_disabled(void) {return false; };

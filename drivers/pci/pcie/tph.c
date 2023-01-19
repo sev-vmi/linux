@@ -205,6 +205,89 @@ static enum st_table_location tph_get_table_location(struct pci_dev *dev,
 	return 0;
 }
 
+/**
+ * pcie_tph_read_steering_tag() - get steering tag table entry
+ * @cpu: the acpi cpuuid.
+ * @tag_type: vram, nvram
+ * @req_enable: disable, tph, extended tph
+ *
+ * Return:
+ *        true : success
+ *        false: the error code (ex: -EINVAL)
+ *
+ * If can_set_stte() returns true, we know interrupt vector mode is
+ * supported and the fact that we're calling this routine means we should
+ * enable it. We disable TPH before updating the tag, update the tag
+ * and enable TPH afterwards to avoid potential instability as
+ * cautioned about in the "Implementation Note" "ST Table Programming"
+ * in the PCI-E specification.
+ */
+static u16 pcie_tph_read_steering_tag(struct pci_dev *dev, unsigned int cpu,
+				      enum tph_mtype_tag tag_type,
+				      enum tph_requester_enable req_enable)
+{
+	return 0; /* dont steer */
+}
+
+/**
+ * pcie_tph_write_steering_tag - set steering tag table entry
+ * @dev: pci device
+ * @msix_nr: ordinal number of msix interrupt.
+ * @tag_type: vram, nvram
+ * @req_enable: disable, tph, extended tph
+ * @tagval: the steering tag
+ *
+ * Return:
+ *        true : success
+ *        false: the error code (ex: -EINVAL)
+ *
+ * If can_set_stte() returns true, we know interrupt vector mode is
+ * supported and the fact that we're calling this routine means we should
+ * enable it. We disable TPH before updating the tag, update the tag
+ * and enable TPH afterwards to avoid potential instability as
+ * cautioned about in the "Implementation Note" "ST Table Programming"
+ * in the PCI-E specification.
+ */
+static bool pcie_tph_write_steering_tag(struct pci_dev *dev,
+					unsigned int msix_nr,
+					enum tph_requester_enable req_enable,
+					u16 tagval)
+{
+	return false;
+}
+
+/**
+ * pcie_tph_set_stte() - set steering tag table entry
+ * @dev: pci device
+ * @msix_nr: ordinal number of msix interrupt.
+ * @cpu: the acpi cpuuid.
+ * @tag_type: vram, nvram
+ * @req_enable: disable, tph, extended tph
+ *
+ * Return:
+ *        true : success
+ *        false: the error code (ex: -EINVAL)
+ *
+ * We disable TPH before updating the tag, update the tag
+ * and enable TPH afterwards to avoid potential instability as
+ * cautioned about in the "Implementation Note" "ST Table Programming"
+ * in the PCI-E specification.
+ *
+ * FIXME: this comment belongs closer to action
+ *
+ */
+bool pcie_tph_set_stte(struct pci_dev *dev, unsigned int msix_nr,
+		       unsigned int cpu, enum tph_mtype_tag tag_type,
+		       enum tph_requester_enable req_enable)
+{
+	u16 tagval;
+
+	tagval = pcie_tph_read_steering_tag(dev, cpu, tag_type, req_enable);
+
+	return pcie_tph_write_steering_tag(dev, msix_nr, req_enable, tagval);
+}
+EXPORT_SYMBOL(pcie_tph_set_stte);
+
 /*
  * Return true if TPH Steering Tag Table in MSI-X memory (not TPH configuration
  * space.
