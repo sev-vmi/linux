@@ -1032,6 +1032,17 @@
 #define TPH_CAP_INT_VEC_MODE_SHIFT      1
 #define TPH_CAP_INT_VEC_MODE_MASK       GENMASK(1, 1)
 
+/* steering tag table in TPH config space */
+#define TPH_REQR_ST_TABLE_OFFSET	0xC
+
+/**
+ * enum st_table_location - ST table location.
+ *
+ * @TPH_TABLE_LOCATION_NOT_PRESENT: NO ST table.
+ * @TPH_TABLE_LOCATION_EXTND_CAP_STRUCT: ST table in TPH extended capability
+ *        space.
+ * @TPH_TABLE_LOCATION_MSIX: ST table in MSI-X table.
+ */
 enum st_table_location {
 	TPH_TABLE_LOCATION_NOT_PRESENT		= 0,
 	TPH_TABLE_LOCATION_EXTND_CAP_STRUCT	= 1,

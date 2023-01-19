@@ -300,6 +300,39 @@ static u16 tph_extract_tag(enum tph_mtype_tag tag_type,
 			   enum tph_requester_enable req_enable,
 			   union st_info *st_tag_out)
 {
+	switch (req_enable) {
+	case TPH_REQ_TPH_ONLY: /* 8 bit tags */
+		switch (tag_type) {
+		case TPH_MTYPE_TAG_VRAM:
+			if (st_tag_out->v_mem_t_valid)
+				return st_tag_out->v_mem_t;
+			WARN_ONCE(1, "v_mem_t not valid\n");
+			break;
+		case TPH_MTYPE_TAG_NVRAM:
+			if (st_tag_out->p_mem_t_valid)
+				return st_tag_out->p_mem_t;
+			WARN_ONCE(1, "p_mem_t not valid\n");
+			break;
+		}
+		break;
+	case TPH_REQ_TPH_EXTENDED: /* 16 bit tags */
+		switch (tag_type) {
+		case TPH_MTYPE_TAG_VRAM:
+			if (st_tag_out->v_mem_xt_valid)
+				return st_tag_out->v_mem_xt;
+			WARN_ONCE(1, "v_mem_xt not valid\n");
+			break;
+		case TPH_MTYPE_TAG_NVRAM:
+			if (st_tag_out->p_mem_xt_valid)
+				return st_tag_out->p_mem_xt;
+			WARN_ONCE(1, "p_mem_xt not valid\n");
+			break;
+		}
+		break;
+	default:
+		WARN_ONCE(1, "no valid tag found\n");
+		return 0;
+	}
 	return 0;
 }
 
@@ -337,6 +370,87 @@ static u16 pcie_tph_read_steering_tag(struct pci_dev *dev, unsigned int cpu,
 	return tagval;
 }
 
+/*
+ * return true if all of these are true
+ *        - the device does advertise the TPH capability
+ *        - the device does advertise the MSI-X capability
+ *        - the TPH Capability Register indicates Interrupt Vector Mode support
+ *        - the kernel command line argument to disable TPH has not been given
+ *        - the kernel command line argument to enforce No ST Mode has not
+ *          been given
+ *        - the msix descriptor index is within the bounds of the msix table
+ *        - the level of tph enablement requested by the device driver is
+ *          supported by the root port completer
+ *        - No ST Mode is supported
+ *
+ * In that case, setting a steering tag can be expected to behave correctly.
+ */
+static bool can_set_stte(struct pci_dev *dev,
+			 enum tph_st_mode st_mode,
+			 enum tph_requester_enable req_enable, int msix_nr)
+{
+	return false;
+}
+
+/*
+ * tph_write_control_register() - write TPH control register value to hardware
+ */
+static int tph_write_control_register(struct pci_dev *dev,
+				      u32 value)
+{
+	int ret;
+
+	ret = tph_set_reg_field_u32(dev, TPH_CTRL_REG_OFFSET, ~0L, 0, value);
+
+	if (ret)
+		goto error_ret;
+
+	return 0;
+
+error_ret:
+	/* Something went wrong. Minimize any possible harm by disabling TPH.*/
+	pcie_tph_disable(dev);
+	return ret;
+}
+
+/* update the ST Mode Select field of the TPH Control Register */
+static int tph_set_ctrl_reg_mode_sel(struct pci_dev *dev,
+				     enum tph_st_mode st_mode)
+{
+	return -EINVAL;
+}
+
+/*
+ * Write the steering tag to the memory mapped vector control register.
+ */
+static void tph_write_tag_to_msix(struct pci_dev *dev, int msix_nr, u16 tagval)
+{
+}
+
+/* update the TPH Requester Enable field of the TPH Control Register */
+static int tph_set_ctrl_reg_en(struct pci_dev *dev,
+			       enum tph_requester_enable req_enable)
+{
+	int ret;
+	u32 control_reg;
+
+	ret = tph_get_reg_field_u32(dev, TPH_CTRL_REG_OFFSET, ~0L, 0,
+				    &control_reg);
+	if (ret)
+		return ret;
+
+	/* clear the mode select and enable fields and set new values*/
+	control_reg &= ~(TPH_CTRL_REQ_EN_MASK);
+	control_reg |= (((u32)req_enable << TPH_CTRL_REQ_EN_SHIFT) &
+			TPH_CTRL_REQ_EN_MASK);
+
+	ret = tph_write_control_register(dev, control_reg);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
 /**
  * pcie_tph_write_steering_tag - set steering tag table entry
  * @dev: pci device
@@ -361,7 +475,36 @@ static bool pcie_tph_write_steering_tag(struct pci_dev *dev,
 					enum tph_requester_enable req_enable,
 					u16 tagval)
 {
-	return false;
+	int offset;
+	u8  tbl_loc;
+	int ret;
+
+	if (!can_set_stte(dev, TPH_INTR_VEC_MODE, req_enable, msix_nr))
+		return false;
+
+	pcie_tph_disable(dev); /* disable b4 updating tag*/
+
+	ret = tph_get_table_location(dev, &tbl_loc);
+	if (ret)
+		return false;
+
+	switch (tbl_loc) {
+	case TPH_TABLE_LOCATION_MSIX:
+		tph_write_tag_to_msix(dev, msix_nr, tagval);
+		break;
+	case TPH_TABLE_LOCATION_EXTND_CAP_STRUCT:
+		offset = dev->tph_cap +
+			 TPH_REQR_ST_TABLE_OFFSET + msix_nr * sizeof(u16);
+		pci_write_config_word(dev, offset, tagval);
+		break;
+	default:
+		WARN_ONCE(1, "Unable to write steering tag\n");
+		return false;
+	}
+	/* select interrupt vector mode */
+	tph_set_ctrl_reg_mode_sel(dev, TPH_INTR_VEC_MODE);
+	tph_set_ctrl_reg_en(dev, req_enable);
+	return true;
 }
 
 /**
