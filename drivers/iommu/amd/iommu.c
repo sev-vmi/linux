@@ -2423,17 +2423,17 @@ static bool amd_iommu_enforce_cache_coherency(struct iommu_domain *domain)
 }
 
 const struct iommu_ops amd_iommu_ops = {
-	.capable = amd_iommu_capable,
-	.domain_alloc = amd_iommu_domain_alloc,
-	.probe_device = amd_iommu_probe_device,
-	.release_device = amd_iommu_release_device,
-	.probe_finalize = amd_iommu_probe_finalize,
-	.device_group = amd_iommu_device_group,
-	.get_resv_regions = amd_iommu_get_resv_regions,
-	.is_attach_deferred = amd_iommu_is_attach_deferred,
-	.pgsize_bitmap	= AMD_IOMMU_PGSIZES,
-	.def_domain_type = amd_iommu_def_domain_type,
-	.default_domain_ops = &(const struct iommu_domain_ops) {
+	.capable		= amd_iommu_capable,
+	.domain_alloc		= amd_iommu_domain_alloc,
+	.probe_device		= amd_iommu_probe_device,
+	.release_device		= amd_iommu_release_device,
+	.probe_finalize		= amd_iommu_probe_finalize,
+	.device_group		= amd_iommu_device_group,
+	.get_resv_regions	= amd_iommu_get_resv_regions,
+	.is_attach_deferred	= amd_iommu_is_attach_deferred,
+	.pgsize_bitmap		= AMD_IOMMU_PGSIZES,
+	.def_domain_type	= amd_iommu_def_domain_type,
+	.default_domain_ops	= &(const struct iommu_domain_ops) {
 		.attach_dev	= amd_iommu_attach_device,
 		.map_pages	= amd_iommu_map_pages,
 		.unmap_pages	= amd_iommu_unmap_pages,
