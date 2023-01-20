@@ -370,6 +370,93 @@ static u16 pcie_tph_read_steering_tag(struct pci_dev *dev, unsigned int cpu,
 	return tagval;
 }
 
+static bool msix_nr_in_bounds(struct pci_dev *dev, int msix_nr)
+{
+	u16 tbl_sz;
+
+	if (tph_get_table_size(dev, &tbl_sz))
+		return false;
+	return msix_nr <= tbl_sz; /* FIXME: check n -1 countage*/
+}
+
+static int tph_get_root_port_completer_capability(struct pci_dev *dev)
+{
+	struct pci_dev *rp;
+	int ret;
+	int val;
+
+	rp = pcie_find_root_port(dev);
+	if (!rp) {
+		WARN_ONCE(1, "cannot find root port");
+		return 0;
+	}
+	ret = pcie_capability_read_dword(rp, PCI_EXP_DEVCAP2, &val);
+	if (ret) {
+		WARN_ONCE(1, "cannot read device capabilities 2");
+		return 0;
+	}
+
+	val = (val & PCIE_DEVCAP2_TPH_CMPLTR_MASK) >> PCIE_DEVCAP2_TPH_CMPLTR_SHIFT;
+	return val;
+}
+
+/*
+ * Not only does a TPH Device need to be below a rootport with the TPH
+ * Completer, it must offer a compatible level of completer support to that
+ * requested by the endpoint device driver.
+ */
+static bool completer_support_ok(struct pci_dev *dev,
+				 enum tph_requester_enable req_enable)
+{
+	enum tph_requester_enable cmpltr_support;
+
+	cmpltr_support = tph_get_root_port_completer_capability(dev);
+
+	if (cmpltr_support == TPH_CMPLTR_SUPPORTS_NONE &&
+	    req_enable != TPH_REQ_DISABLE) {
+		pr_err("no tph completer found => TPH cannot be enabled\n");
+		return false;
+	}
+
+	if (cmpltr_support != TPH_CMPLTR_SUPPORTS_TPH_ONLY &&
+	    cmpltr_support != TPH_CMPLTR_SUPPORTS_TPH_AND_EXTENDED_TPH) {
+		WARN_ONCE(1, "root port lacks tph completer capability");
+		return false;
+	}
+
+	if (cmpltr_support == TPH_CMPLTR_SUPPORTS_TPH_ONLY &&
+	    req_enable == TPH_REQ_TPH_EXTENDED) {
+		pr_err("requester_enable exceeds completer capability\n");
+		return false;
+	}
+	return true;
+}
+
+/*
+ * The PCI Specification version 5.0 requires the "No ST Mode" mode
+ * be supported by any compatible device.
+ */
+static bool no_st_mode_supported(struct pci_dev *dev)
+{
+	bool no_st;
+	int ret;
+	u32 tmp;
+
+	ret = tph_get_reg_field_u32(dev, TPH_CAP_REG_OFFSET,
+				    TPH_CAP_NO_ST_MODE_MASK,
+				    TPH_CAP_NO_ST_MODE_SHIFT, &tmp);
+	if (ret)
+		return false;
+
+	no_st = (bool)tmp;
+
+	if (!no_st) {
+		pr_err("TPH devices must support no st mode\n");
+		return false;
+	}
+	return true;
+}
+
 /*
  * return true if all of these are true
  *        - the device does advertise the TPH capability
@@ -389,7 +476,13 @@ static bool can_set_stte(struct pci_dev *dev,
 			 enum tph_st_mode st_mode,
 			 enum tph_requester_enable req_enable, int msix_nr)
 {
-	return false;
+	if (!dev->tph_cap || !dev->msix_enabled ||
+	    !int_vec_mode_supported(dev) || tph_is_disabled() ||
+	    tph_get_nostmode() || !msix_nr_in_bounds(dev, msix_nr) ||
+	    !completer_support_ok(dev, req_enable) ||
+		!no_st_mode_supported(dev))
+		return false;
+	return true;
 }
 
 /*
@@ -417,7 +510,23 @@ error_ret:
 static int tph_set_ctrl_reg_mode_sel(struct pci_dev *dev,
 				     enum tph_st_mode st_mode)
 {
-	return -EINVAL;
+	int ret;
+	u32 control_reg;
+
+	ret = tph_get_reg_field_u32(dev, TPH_CTRL_REG_OFFSET, ~0L, 0,
+				    &control_reg);
+	if (ret)
+		return ret;
+
+	/* clear the mode select and enable fields and set new values*/
+	control_reg &= ~(TPH_CTRL_MODE_SEL_MASK);
+	control_reg |= ((u32)(st_mode << TPH_CTRL_MODE_SEL_SHIFT) &
+			TPH_CTRL_MODE_SEL_MASK);
+
+	ret = tph_write_control_register(dev, control_reg);
+	if (ret)
+		return ret;
+	return 0;
 }
 
 /*
@@ -425,6 +534,32 @@ static int tph_set_ctrl_reg_mode_sel(struct pci_dev *dev,
  */
 static void tph_write_tag_to_msix(struct pci_dev *dev, int msix_nr, u16 tagval)
 {
+	u32 val;
+	void __iomem *vec_ctrl;
+	struct msi_desc *msi_desc = tph_msix_index_to_desc(dev, msix_nr);
+
+	/*
+	 * vector control msi-x register looks like
+	 * 31       24|23      16|15      8|7        1|    0     |
+	 * +----------|----------|---------|----------|----------|
+	 * | st upper | st lower |      reserved      | mask bit |
+	 * +----------|----------|---------|----------|----------|
+	 */
+	if (!msi_desc) {
+		WARN_ONCE(1, "msix descriptor for #%d not found\n", msix_nr);
+		return;
+	}
+
+	vec_ctrl = tph_msix_vector_control(dev, msi_desc->msi_index);
+
+	val = readl(vec_ctrl);
+	val &= 0xffff;
+	val |= (tagval << 16);
+	writel(val, vec_ctrl);
+
+	/* read back vector ctrl (to flush write) */
+	val = readl(vec_ctrl);
+	msi_unlock_descs(&dev->dev);
 }
 
 /* update the TPH Requester Enable field of the TPH Control Register */
