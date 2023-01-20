@@ -1029,12 +1029,17 @@
 #define TPH_CAP_ST_TABLE_LOCATION_MASK	GENMASK(10, 9)
 #define TPH_CAP_ST_TABLE_SIZE_SHIFT	16
 #define TPH_CAP_ST_TABLE_SIZE_MASK	GENMASK(26, 16)
+#define TPH_CAP_NO_ST_MODE_SHIFT	0
+#define TPH_CAP_NO_ST_MODE_MASK		GENMASK(0, 0)
 #define TPH_CAP_INT_VEC_MODE_SHIFT      1
 #define TPH_CAP_INT_VEC_MODE_MASK       GENMASK(1, 1)
 
 /* steering tag table in TPH config space */
 #define TPH_REQR_ST_TABLE_OFFSET	0xC
 
+#define TPH_CMPLTR_SUPPORTS_NONE			0
+#define TPH_CMPLTR_SUPPORTS_TPH_ONLY			1
+#define TPH_CMPLTR_SUPPORTS_TPH_AND_EXTENDED_TPH	3
 /**
  * enum st_table_location - ST table location.
  *
