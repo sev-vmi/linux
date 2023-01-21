@@ -2416,9 +2416,43 @@ static bool amd_iommu_enforce_cache_coherency(struct iommu_domain *domain)
 	return true;
 }
 
+static struct iommu_domain *
+amd_iommu_domain_alloc_user(struct device *dev, struct iommu_domain *parent,
+			    const void *user_data)
+{
+	struct iommu_domain *dom;
+
+	dom = iommu_domain_alloc(dev->bus);
+	if (!dom)
+		return dom;
+
+	/*
+	 * The parent is not null only when external driver calls IOMMUFD kAPI
+	 * to create IOMMUFD_OBJ_HW_PAGETABLE to attach a bound device to IOAS.
+	 * This is for nested (v2) page table.
+	 *
+	 * Currently, only support nested table w/ 1 pasid for GIOV use case.
+	 * TODO: Add support for multiple pasids.
+	 */
+	if (parent) {
+		struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
+		struct amd_iommu *iommu = rlookup_amd_iommu(dev_data->dev);
+
+		if (iommu &&
+		    amd_iommu_domain_enable_v2(dom, 1,
+					       iommu_feature(iommu, FEATURE_GIOSUP)))
+			goto err_out;
+	}
+	return dom;
+err_out:
+	iommu_domain_free(dom);
+	return NULL;
+}
+
 const struct iommu_ops amd_iommu_ops = {
 	.capable		= amd_iommu_capable,
 	.domain_alloc		= amd_iommu_domain_alloc,
+	.domain_alloc_user	= amd_iommu_domain_alloc_user,
 	.probe_device		= amd_iommu_probe_device,
 	.release_device		= amd_iommu_release_device,
 	.probe_finalize		= amd_iommu_probe_finalize,
