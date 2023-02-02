@@ -95,6 +95,17 @@ static inline bool iommu_feature(struct amd_iommu *iommu, u64 mask)
 	return !!(iommu->features & mask);
 }
 
+static inline bool check_feature_on_all_iommus(u64 mask)
+{
+	return !!(amd_iommu_efr & mask);
+}
+
+static inline bool amd_iommu_gt_ppr_supported(void)
+{
+	return (check_feature_on_all_iommus(FEATURE_GT) &&
+		check_feature_on_all_iommus(FEATURE_PPR));
+}
+
 static inline u64 iommu_virt_to_phys(void *vaddr)
 {
 	return (u64)__sme_set(virt_to_phys(vaddr));
