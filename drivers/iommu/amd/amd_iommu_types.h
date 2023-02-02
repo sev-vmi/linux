@@ -484,6 +484,10 @@ extern bool amdr_ivrs_remap_support;
 /* kmem_cache to get tables with 128 byte alignement */
 extern struct kmem_cache *amd_iommu_irq_cache;
 
+/* Global EFR and EFR2 registers */
+extern u64 amd_iommu_efr;
+extern u64 amd_iommu_efr2;
+
 #define PCI_SBDF_TO_SEGID(sbdf)		(((sbdf) >> 16) & 0xffff)
 #define PCI_SBDF_TO_DEVID(sbdf)		((sbdf) & 0xffff)
 #define PCI_SEG_DEVID_TO_SBDF(seg, devid)	((((u32)(seg) & 0xffff) << 16) | \
@@ -678,9 +682,6 @@ struct amd_iommu {
 
 	/* Extended features 2 */
 	u64 features2;
-
-	/* IOMMUv2 */
-	bool is_iommu_v2;
 
 	/* PCI device id of the IOMMU device */
 	u16 devid;
@@ -889,8 +890,6 @@ extern unsigned long *amd_iommu_pd_alloc_bitmap;
 
 /* Smallest max PASID supported by any IOMMU in the system */
 extern u32 amd_iommu_max_pasid;
-
-extern bool amd_iommu_v2_present;
 
 extern bool amd_iommu_force_isolation;
 
