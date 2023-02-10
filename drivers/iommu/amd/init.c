@@ -185,8 +185,6 @@ static int amd_iommus_present;
 bool amd_iommu_np_cache __read_mostly;
 bool amd_iommu_iotlb_sup __read_mostly = true;
 
-u32 amd_iommu_max_pasid __read_mostly = ~0;
-
 static bool amd_iommu_pc_present __read_mostly;
 bool amdr_ivrs_remap_support __read_mostly;
 
@@ -2086,16 +2084,14 @@ static int __init iommu_init_pci(struct amd_iommu *iommu)
 
 	if (iommu_feature(iommu, FEATURE_GT)) {
 		int glxval;
-		u32 max_pasid;
 		u64 pasmax;
 
 		pasmax = iommu->features & FEATURE_PASID_MASK;
 		pasmax >>= FEATURE_PASID_SHIFT;
-		max_pasid  = (1 << (pasmax + 1)) - 1;
+		iommu->iommu.max_pasids = (1 << (pasmax + 1)) - 1;
 
-		amd_iommu_max_pasid = min(amd_iommu_max_pasid, max_pasid);
-
-		BUG_ON(amd_iommu_max_pasid & ~PASID_MASK);
+		WARN_ON(iommu->iommu.max_pasids & ~PASID_MASK);
+		iommu->iommu.max_pasids &= PASID_MASK;
 
 		glxval   = iommu->features & FEATURE_GLXVAL_MASK;
 		glxval >>= FEATURE_GLXVAL_SHIFT;
