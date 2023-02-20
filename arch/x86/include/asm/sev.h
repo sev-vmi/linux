@@ -198,6 +198,7 @@ bool snp_init(struct boot_params *bp);
 void __init __noreturn snp_abort(void);
 int snp_issue_guest_request(u64 exit_code, struct snp_req_data *input, unsigned long *fw_err);
 int snp_lookup_rmpentry(u64 pfn, int *level);
+void sev_dump_rmpentry(u64 pfn);
 #else
 static inline void sev_es_ist_enter(struct pt_regs *regs) { }
 static inline void sev_es_ist_exit(void) { }
@@ -223,6 +224,7 @@ static inline int snp_issue_guest_request(u64 exit_code, struct snp_req_data *in
 	return -ENOTTY;
 }
 static inline int snp_lookup_rmpentry(u64 pfn, int *level) { return 0; }
+static inline void sev_dump_rmpentry(u64 pfn) {}
 #endif
 
 #endif
