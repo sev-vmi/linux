@@ -48,14 +48,20 @@ static int tph_set_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 	/* read the current value */
 	ret = pci_read_config_dword(dev, dev->tph_cap + reg_offset,
 				    &reg_val);
-	if (ret)
+	if (ret) {
+		printk("FIXME:%s: cap:%d, offset:%d, read failed, ret = %d\n",
+			__FUNCTION__, dev->tph_cap, reg_offset, ret);
 		return ret;
+	}
 
 	reg_val &= ~mask;
 	reg_val |= (field_val << shift);
 
 	ret = pci_write_config_dword(dev, dev->tph_cap + reg_offset,
 				     reg_val);
+	if (ret)
+		printk("FIXME:%s: cap:%d, offset:%d, write failed, ret = %d\n",
+			__FUNCTION__, dev->tph_cap, reg_offset, ret);
 	return ret;
 }
 
@@ -229,6 +235,7 @@ static int tph_write_control_register(struct pci_dev *dev,
 
 error_ret:
 	/* Something went wrong. Minimize any possible harm by disabling TPH.*/
+	printk("FIXME@%s:tph_set_reg_field_u32() failed, clearing tph enable\n", __FUNCTION__);
 	tph_clr_ctrl_reg_en(dev);
 	return ret;
 }
