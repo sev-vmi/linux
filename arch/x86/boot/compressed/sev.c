@@ -300,10 +300,17 @@ finish:
 		sev_es_terminate(SEV_TERM_SET_GEN, GHCB_SEV_ES_GEN_REQ);
 }
 
-static void enforce_vmpl0(void)
+static void enforce_vmpl(u64 hv_features)
 {
 	u64 attrs;
 	int err;
+
+	/*
+	 * VMPL0 is not required if an SVSM is present and the hypervisor
+	 * supports the required SVSM GHCB events.
+	 */
+	if (svsm_vmpl && (hv_features & GHCB_HV_FT_SNP_SVSM))
+		return;
 
 	/*
 	 * RMPADJUST modifies RMP permissions of a lesser-privileged (numerically
@@ -311,8 +318,8 @@ static void enforce_vmpl0(void)
 	 * GHCB page. If the guest is not running at VMPL0, this will fail.
 	 *
 	 * If the guest is running at VMPL0, it will succeed. Even if that operation
-	 * modifies permission bits, it is still ok to do so currently because Linux
-	 * SNP guests are supported only on VMPL0 so VMPL1 or higher permission masks
+	 * modifies permission bits, it is still ok to do currently because the Linux
+	 * SNP guest will only run at VMPL0, so VMPL1 or higher permission masks
 	 * changing is a don't-care.
 	 */
 	attrs = 1;
@@ -435,10 +442,12 @@ void sev_enable(struct boot_params *bp)
 	 * features.
 	 */
 	if (sev_status & MSR_AMD64_SEV_SNP_ENABLED) {
-		if (!(get_hv_features() & GHCB_HV_FT_SNP))
+		u64 hv_features = get_hv_features();
+
+		if (!(hv_features & GHCB_HV_FT_SNP))
 			sev_es_terminate(SEV_TERM_SET_GEN, GHCB_SNP_UNSUPPORTED);
 
-		enforce_vmpl0();
+		enforce_vmpl(hv_features);
 	}
 
 	if (snp && !(sev_status & MSR_AMD64_SEV_SNP_ENABLED))
