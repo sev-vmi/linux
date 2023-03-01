@@ -1,0 +1,58 @@
+1) Caveats
+   ========
+
+    - We currently only support devices that locate the steering tag table
+      in MSI-X memory.
+
+    - This patch set is intented for GitHub to support hardware partners.
+    
+    - This series applies on top of: 9dbf5e198d6e   Linus Torvalds : Linux 6.1
+ 
+2) Changelog
+   =========
+
+   - V5
+	- All feedback from V4 applying to sdci-base implemented.
+	  - wherever possible small patches were combined.
+	
+   - V4
+        - MOST feedback from the V3 review accomodated
+	- there is some V3 feedback is yet to be integrated
+	        - it's not ignored
+		- it will be integrated
+	- patch granularity has been reduced nearly to one patch per
+	  function.
+	        - this is likely TOO small and we should talk about increasing
+		  granularity a bit
+		  
+	- The overall algorithm for splitting the formerly huge patches was to
+	        - start with an exported symbol
+		- repeat until there are stubs for all functions ultimately
+		  referenced from the top level function.
+		  	     - provide stubs for all  callees
+			     - in the order stubs are used in the callee,
+			       
+		  
+	- GOALS FOR V5
+	        - Investigate RCU as a possible way to remove our "mrsw"
+		  (multiple reader, single write) locking implementation.
+		  
+		- Get the config intercewption segregated before the phases
+		  whose end goal is to deal with vcpu migration.
+   - V3
+   
+        - sdci virtualization(sdci-v) refactored into 3 patches
+	
+   - V2
+	- Added  a lot of coments for tph and sdci-v code
+	- Added vcpu <-> vST map
+	- cleaned up and reorganized most of the code although the tph and
+	  sdci-v patches will be split into more reviewable units in the
+	  next release
+
+
+
+3) internal tree
+   =============
+   
+   https://sos-git.amd.com/gitweb/?p=sev-evt.git;a=shortlog;h=refs/heads/cdma-v_6.1_fdbk5.1575
