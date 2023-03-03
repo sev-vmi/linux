@@ -9,6 +9,7 @@
 #include <uapi/linux/pci_regs.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
+#include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/msi.h>
 
@@ -153,6 +154,22 @@ int tph_set_dev_nostmode(struct pci_dev *dev)
 }
 
 /*
+ * translate from MSI-X interrupt index to msi_desc *
+ */
+static struct msi_desc *tph_msix_index_to_desc(struct pci_dev *dev, int index)
+{
+	struct msi_desc *entry;
+
+	msi_lock_descs(&dev->dev);
+	msi_for_each_desc(entry, &dev->dev, MSI_DESC_ASSOCIATED) {
+		if (entry->msi_index == index)
+			return entry;
+	}
+	msi_unlock_descs(&dev->dev);
+	return NULL;
+}
+
+/*
  * Return true if the device's capability register indicates support for
  * Interrupt Vector Mode.
  */
@@ -206,6 +223,23 @@ bool tph_is_st_table_in_msix(struct pci_dev *dev)
 	return cap_tbl_loc == TPH_TABLE_LOCATION_MSIX;
 }
 EXPORT_SYMBOL(tph_is_st_table_in_msix);
+
+u16 tph_get_tag_from_msix_desc(struct pci_dev *dev, int index)
+{
+	struct msi_desc *msi_desc = NULL;
+	void __iomem *vec_ctrl;
+	u32 val = 0;
+
+	msi_desc = tph_msix_index_to_desc(dev, index);
+	if (msi_desc) {
+		vec_ctrl =
+			tph_msix_vector_control(dev, msi_desc->msi_index);
+		val = readl(vec_ctrl);
+		msi_unlock_descs(&dev->dev);
+	}
+	return val >> 16;
+}
+EXPORT_SYMBOL(tph_get_tag_from_msix_desc);
 
 /*
  * Return true if device supports TPH, MSI-X, Interrupt Vector Mode and the

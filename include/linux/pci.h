@@ -319,6 +319,7 @@ int tph_set_dev_nostmode(struct pci_dev *dev);
 void tph_set_nostmode(void);
 bool tph_get_nostmode(void);
 void __iomem *tph_msix_vector_control(struct pci_dev *dev, __le16 msi_index);
+u16 tph_get_tag_from_msix_desc(struct pci_dev *dev, int msix_nr);
 bool tph_is_st_table_in_msix(struct pci_dev *dev);
 int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 			  u8 shift, u32 *out);
@@ -333,6 +334,8 @@ static inline int tph_set_dev_nostmode(struct pci_dev *dev) {return -EOPNOTSUPP;
 static inline void __iomem *tph_msix_vector_control(struct pci_dev *dev,
 						    __le16 msi_index)
 { return NULL; };
+static inline u16 tph_get_tag_from_msix_desc(struct pci_dev *dev, int msix_nr)
+{ return 0; };
 static inline bool tph_is_st_table_in_msix(struct pci_dev *dev) { return false; };
 static inline int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset,
 					u32 mask, u8 shift, u32 *out)
