@@ -10,6 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/pci.h>
+#include <linux/msi.h>
 
 #ifdef CONFIG_PCIE_TPH
 
@@ -151,6 +152,25 @@ int tph_set_dev_nostmode(struct pci_dev *dev)
 	return ret;
 }
 
+/*
+ * Return true if the device's capability register indicates support for
+ * Interrupt Vector Mode.
+ */
+static bool int_vec_mode_supported(struct pci_dev *dev)
+{
+	u32 tmp;
+	int ret;
+
+	/* check that device supports steering tags in msix */
+	ret = tph_get_reg_field_u32(dev, TPH_CAP_REG_OFFSET,
+				    TPH_CAP_INT_VEC_MODE_MASK,
+				    TPH_CAP_INT_VEC_MODE_SHIFT, &tmp);
+	if (ret)
+		return false;
+
+	return true;
+}
+
 static enum st_table_location tph_get_table_location(struct pci_dev *dev,
 						     u8 *tbl_loc_out)
 {
@@ -186,5 +206,18 @@ bool tph_is_st_table_in_msix(struct pci_dev *dev)
 	return cap_tbl_loc == TPH_TABLE_LOCATION_MSIX;
 }
 EXPORT_SYMBOL(tph_is_st_table_in_msix);
+
+/*
+ * Return true if device supports TPH, MSI-X, Interrupt Vector Mode and the
+ * Steering Tag Table is in MSI-X memory.
+ */
+bool pcie_tph_msix_int_vec_capable(struct pci_dev *dev)
+{
+	if (dev->tph_cap && dev->msix_cap && tph_is_st_table_in_msix(dev) &&
+	    int_vec_mode_supported(dev))
+		return true;
+	return false;
+}
+EXPORT_SYMBOL(pcie_tph_msix_int_vec_capable);
 
 #endif

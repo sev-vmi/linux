@@ -322,6 +322,7 @@ void __iomem *tph_msix_vector_control(struct pci_dev *dev, __le16 msi_index);
 bool tph_is_st_table_in_msix(struct pci_dev *dev);
 int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset, u32 mask,
 			  u8 shift, u32 *out);
+bool pcie_tph_msix_int_vec_capable(struct pci_dev *dev);
 #else
 static inline void tph_set_disabled(void) {};
 static inline bool tph_is_disabled(void) {return false; };
@@ -336,6 +337,7 @@ static inline bool tph_is_st_table_in_msix(struct pci_dev *dev) { return false; 
 static inline int tph_get_reg_field_u32(struct pci_dev *dev, u8 reg_offset,
 					u32 mask, u8 shift, u32 *out)
 { return -EINVAL; };
+static inline bool pcie_tph_msix_int_vec_capable(struct pci_dev *dev) { return false; };
 #endif
 
 struct irq_affinity;
