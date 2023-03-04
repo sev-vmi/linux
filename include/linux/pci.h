@@ -322,6 +322,45 @@ enum tph_mtype_tag {
 	TPH_MTYPE_TAG_NVRAM	= 1
 };
 
+/*
+ * union st_info - Steering tag information from root complex's _DSM.
+ *
+ * @v_mem_t_valid: 8 bit tag for volatile memory is valid
+ * @v_mem_xt_valid: 16 bit tag for volatile memory is valid
+ * @v_mem_ignore: 1 => was and will be ignored, 0 => ph should be supplied
+ * @reserved_1: reserved
+ * @v_mem_t: 8 bit steering tag for volatile mem
+ * @v_mem_xt: 16 bit steering tag for volatile mem
+ * @p_mem_t_valid: 8 bit tag for persistent memory is valid
+ * @p_mem_xt_valid:  16 bit tag for persistent memory is valid
+ * @p_mem_ignore: 1 => was and will be ignore, 0 => ph should be supplied
+ * @reserved_2: reserved
+ * @p_mem_t: 8 bit steering tag for persistent mem
+ * @p_mem_xt: 16 bit steering tag for persistent mem
+ * @value: the 64 bit value that contains all of the above bit field
+ *
+ * The st_info struct defines the steering tag returned by the firmware _DSM
+ * method defined in the ECR from AMD & ARM. The specification is available at:
+ * https://members.pcisig.com/wg/PCI-SIG/document/15470 to PCI SIG members.
+ */
+union st_info {
+	struct {
+		u64 v_mem_t_valid:1,
+		    v_mem_xt_valid:1,
+		    v_mem_ignore:1,
+		    reserved_1:5, /* will be 0 */
+		    v_mem_t:8,
+		    v_mem_xt:16,
+		    p_mem_t_valid:1,
+		    p_mem_xt_valid:1,
+		    p_mem_ignore:1,
+		    reserved_2:5, // will be 0
+		    p_mem_t:8,
+		    p_mem_xt:16;
+	};
+	u64 value;
+};
+
 #ifdef CONFIG_PCIE_TPH
 void tph_set_disabled(void);
 bool tph_is_disabled(void);
