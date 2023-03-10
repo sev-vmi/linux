@@ -25,6 +25,7 @@
 #include <linux/fs.h>
 #include <linux/fs_struct.h>
 #include <linux/amd-iommu.h>
+#include <linux/psp.h>
 
 #include <asm/smp.h>
 #include <asm/e820/types.h>
