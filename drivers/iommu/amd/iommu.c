@@ -1628,6 +1628,9 @@ static void clear_dte_entry(struct amd_iommu *iommu, u16 devid)
 	amd_iommu_apply_erratum_63(iommu, devid);
 }
 
+static int __quirk_viommu_setup_direct_guest_mapping(struct iommu_dev_data *dev_data,
+						     struct protection_domain *domain);
+
 static void do_attach(struct iommu_dev_data *dev_data,
 		      struct protection_domain *domain)
 {
@@ -1784,7 +1787,7 @@ static int attach_device(struct device *dev,
 	}
 
 skip_ats_check:
-	ret = 0;
+	ret = __quirk_viommu_setup_direct_guest_mapping(dev_data, domain);
 
 	do_attach(dev_data, domain);
 
@@ -3723,4 +3726,53 @@ int amd_iommu_update_ga(int cpu, bool is_run, void *data)
 	return 0;
 }
 EXPORT_SYMBOL(amd_iommu_update_ga);
+
+/*
+ * Note: THIS IS A HW BUG!!!
+ * Since IOMMU HW is currently walking nested page tables
+ * when trying to translate the completion wait semaphore
+ * where it should have been only walking the host table.
+ * Workaround the problem by :
+ *
+ *       - Setting up GVA=GPA in the guest table.
+ *
+ *       - Delay page table setting up to after IOMMU is fully
+ *         enabled by DO NOT load device drivers until finish booting.
+ *         (e.g. blacklist the modules and manually load the driver later).
+ *
+ *       - We will still see IO_PAGE_FAULT during booting the guest kernel.
+ *         but this should be safe for now.
+ */
+static int __quirk_viommu_setup_direct_guest_mapping(struct iommu_dev_data *dev_data,
+						     struct protection_domain *domain)
+{
+	int ret;
+	struct amd_iommu *iommu = rlookup_amd_iommu(dev_data->dev);
+	u64 pa = iommu_virt_to_phys((void *)iommu->cmd_sem);
+
+	printk("DEBUG: %s: HACK: map cmd_sem =%#lx, cmd_sem_pa=%#lx\n", __func__,
+		(unsigned long) iommu->cmd_sem, (unsigned long)pa);
+
+	ret = amd_iommu_map_pages(&domain->domain, pa, pa, 0x1000, 1,
+				  IOMMU_READ|IOMMU_WRITE, GFP_KERNEL, NULL);
+	if (ret) {
+		printk("DEBUG: %s: Fail to setup gva=gpa mapping for cmd_sem.\n", __func__);
+		return ret;
+	}
+
+	pa = iommu_virt_to_phys((void *)iommu->cmd_buf);
+
+	printk("DEBUG: %s: HACK: map cmd_buf =%#lx, cmd_buf_pa=%#lx\n", __func__,
+		(unsigned long) iommu->cmd_buf, (unsigned long)pa);
+
+	ret = amd_iommu_map_pages(&domain->domain, pa, pa, PAGE_SIZE, 2,
+				  IOMMU_READ|IOMMU_WRITE, GFP_KERNEL, NULL);
+	if (ret) {
+		printk("DEBUG: %s: Fail to setup gva=gpa mapping for cmd_buf.\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
 #endif
