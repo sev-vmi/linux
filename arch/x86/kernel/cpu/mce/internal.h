@@ -256,6 +256,7 @@ void mce_setup_common(struct mce *m);
 void mce_setup_for_cpu(unsigned int cpu, struct mce *m);
 
 #ifdef CONFIG_X86_MCE_AMD
+void mce_amd_handle_storm(int bank, bool on);
 extern bool amd_filter_mce(struct mce *m);
 bool amd_mce_usable_address(struct mce *m);
 void amd_handle_error(struct mce_hw_err *err);
@@ -287,6 +288,7 @@ static __always_inline void smca_extract_err_addr(struct mce_hw_err *err)
 }
 
 #else
+static inline void mce_amd_handle_storm(int bank, bool on) {}
 static inline bool amd_filter_mce(struct mce *m) { return false; }
 static inline bool amd_mce_usable_address(struct mce *m) { return false; }
 static inline void amd_handle_error(struct mce_hw_err *err) { }

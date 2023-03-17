@@ -1144,3 +1144,21 @@ int mce_threshold_create_device(unsigned int cpu)
 
 	return 0;
 }
+
+void mce_amd_handle_storm(int bank, bool on)
+{
+	struct threshold_bank **thr_banks = this_cpu_read(threshold_banks), *thr_bank;
+	struct threshold_block *block;
+
+	if (!thr_banks)
+		return;
+
+	thr_bank = thr_banks[bank];
+	if (!thr_bank)
+		return;
+
+	list_for_each_entry(block, &thr_bank->block_list, block_list) {
+		block->interrupt_enable = on;
+		set_interrupt_enable(block);
+	}
+}
