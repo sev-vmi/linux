@@ -369,11 +369,13 @@ static int restore_direct_map(u64 pfn, int npages)
 	for (i = 0; i < npages; i++) {
 		ret = set_direct_map_default_noflush(pfn_to_page(pfn + i));
 		if (ret)
-			goto cleanup;
+			break;
 	}
 
-cleanup:
-	WARN(ret > 0, "Failed to restore direct map for pfn 0x%llx\n", pfn + i);
+	if (ret)
+		pr_warn("Failed to restore direct map for pfn 0x%llx, ret: %d\n",
+			pfn + i, ret);
+
 	return ret;
 }
 
@@ -384,12 +386,15 @@ static int invalidate_direct_map(u64 pfn, int npages)
 	for (i = 0; i < npages; i++) {
 		ret = set_direct_map_invalid_noflush(pfn_to_page(pfn + i));
 		if (ret)
-			goto cleanup;
+			break;
 	}
 
-cleanup:
-	WARN(ret > 0, "Failed to invalidate direct map for pfn 0x%llx\n", pfn + i);
-	restore_direct_map(pfn, i);
+	if (ret) {
+		pr_warn("Failed to invalidate direct map for pfn 0x%llx, ret: %d\n",
+			pfn + i, ret);
+		restore_direct_map(pfn, i);
+	}
+
 	return ret;
 }
 
