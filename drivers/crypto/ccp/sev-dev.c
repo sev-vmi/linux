@@ -1866,7 +1866,7 @@ static int sev_ioctl_snp_get_config(struct sev_issue_cmd *argp)
 			/* Return the certs length to userspace */
 			input.certs_len = snp_certs->len;
 
-			ret = -ENOSR;
+			ret = -EIO;
 			goto e_done;
 		}
 
