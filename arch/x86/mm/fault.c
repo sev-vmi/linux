@@ -33,6 +33,7 @@
 #include <asm/kvm_para.h>		/* kvm_handle_async_pf		*/
 #include <asm/vdso.h>			/* fixup_vdso_exception()	*/
 #include <asm/irq_stack.h>
+#include <asm/sev-host.h>		/* sev_dump_rmpentry()		*/
 
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
@@ -1348,6 +1349,13 @@ void do_user_addr_fault(struct pt_regs *regs,
 		flags |= FAULT_FLAG_WRITE;
 	if (error_code & X86_PF_INSTR)
 		flags |= FAULT_FLAG_INSTRUCTION;
+
+	if (error_code & X86_PF_RMP) {
+		pr_err("Unexpected RMP page fault for address 0x%lx, terminating process\n",
+		       address);
+		do_sigbus(regs, error_code, address, VM_FAULT_SIGBUS);
+		return;
+	}
 
 #ifdef CONFIG_X86_64
 	/*
