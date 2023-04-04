@@ -893,7 +893,28 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (!sev_es_guest(kvm))
 		return -ENOTTY;
 
+	/* Handle BSP 0 first to ensure consistent measurement values are generated. */
 	kvm_for_each_vcpu(i, vcpu, kvm) {
+		if (vcpu->vcpu_id != 0)
+			continue;
+
+		ret = mutex_lock_killable(&vcpu->mutex);
+		if (ret)
+			return ret;
+
+		ret = __sev_launch_update_vmsa(kvm, vcpu, &argp->error);
+
+		mutex_unlock(&vcpu->mutex);
+		if (ret)
+			return ret;
+
+		break;
+	}
+
+	kvm_for_each_vcpu(i, vcpu, kvm) {
+		if (vcpu->vcpu_id == 0)
+			continue;
+
 		ret = mutex_lock_killable(&vcpu->mutex);
 		if (ret)
 			return ret;
