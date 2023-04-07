@@ -2470,7 +2470,7 @@ static int snp_get_instance_certs(struct kvm *kvm, struct kvm_sev_cmd *argp)
 
 	sev_snp_certs_put(snp_certs);
 
-	return 0;
+	return rc;
 }
 
 static void snp_replace_certs(struct kvm_sev_info *sev, struct sev_snp_certs *snp_certs)
