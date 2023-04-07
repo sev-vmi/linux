@@ -893,7 +893,7 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (!sev_es_guest(kvm))
 		return -ENOTTY;
 
-	/* Handle BSP 0 first to ensure consistent measurement values are generated. */
+	/* Handle boot vCPU first to ensure consistent measurement of initial state. */
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		if (vcpu->vcpu_id != 0)
 			continue;
@@ -911,6 +911,7 @@ static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		break;
 	}
 
+	/* Handle remaining vCPUs. */
 	kvm_for_each_vcpu(i, vcpu, kvm) {
 		if (vcpu->vcpu_id == 0)
 			continue;
