@@ -253,11 +253,16 @@ int acpi_map_cpuid(phys_cpuid_t phys_id, u32 acpi_id)
 
 int acpi_get_cpuid(acpi_handle handle, int type, u32 acpi_id)
 {
+	int ret;
+
 	phys_cpuid_t phys_id;
 
 	phys_id = acpi_get_phys_id(handle, type, acpi_id);
 
-	return acpi_map_cpuid(phys_id, acpi_id);
+	ret = acpi_map_cpuid(phys_id, acpi_id);
+	printk("FIXME:%s: phys_id:%d, acpi_id: %d, cpuid:%d\n",
+		__FUNCTION__, phys_id, acpi_id, ret);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(acpi_get_cpuid);
 
