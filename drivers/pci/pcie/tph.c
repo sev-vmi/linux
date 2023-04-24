@@ -612,8 +612,11 @@ bool pcie_tph_set_stte(struct pci_dev *dev, int msix_nr, int cpu,
 	if (!dev->stte_req_enable)
 		dev->stte_req_enable = req_enable;
 
-	if (!invoke_dsm(root_complex_acpi_handle(dev), cpu, 0, 0, false, 0,
-			&st_tag_out)) {
+	printk("FIXME:%s: cpu: %d, phys_id:%d, acpi_id:%d\n",
+		__FUNCTION__, cpu, cpu_physical_id(cpu), cpu_acpi_id(cpu));
+
+	if (!invoke_dsm(root_complex_acpi_handle(dev), cpu_physical_id(cpu), 0, 0,
+			false, 0, &st_tag_out)) {
 		WARN_ONCE(1, "_DSM did not return valid steering tag\n");
 		return false; /* can't write a tag we don't have*/
 	}
