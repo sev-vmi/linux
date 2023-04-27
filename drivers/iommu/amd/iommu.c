@@ -76,6 +76,7 @@ struct iommu_cmd {
 struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
+static void amd_iommu_domain_free(struct iommu_domain *dom);
 
 static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 			  struct gcr3_tbl_info *gcr3_info,
@@ -2187,6 +2188,11 @@ static int protection_domain_init_v2(struct protection_domain *pdom)
 	return 0;
 }
 
+static const struct iommu_domain_ops amd_svm_domain_ops = {
+	.set_dev_pasid = amd_iommu_set_dev_pasid,
+	.free	       = amd_iommu_domain_free
+};
+
 static struct protection_domain *protection_domain_alloc(unsigned int type)
 {
 	struct io_pgtable_ops *pgtbl_ops;
@@ -2221,6 +2227,9 @@ static struct protection_domain *protection_domain_alloc(unsigned int type)
 	case IOMMU_DOMAIN_UNMANAGED:
 		pgtable = AMD_IOMMU_V1;
 		break;
+	case IOMMU_DOMAIN_SVA:
+		domain->domain.ops = &amd_svm_domain_ops;
+		return domain;
 	default:
 		goto out_err;
 	}
@@ -2602,6 +2611,7 @@ const struct iommu_ops amd_iommu_ops = {
 	.def_domain_type = amd_iommu_def_domain_type,
 	.dev_enable_feat = amd_iommu_dev_enable_feature,
 	.dev_disable_feat = amd_iommu_dev_disable_feature,
+	.remove_dev_pasid = amd_iommu_remove_dev_pasid,
 	.default_domain_ops = &(const struct iommu_domain_ops) {
 		.attach_dev	= amd_iommu_attach_device,
 		.map_pages	= amd_iommu_map_pages,

@@ -922,6 +922,16 @@ static inline int get_hpet_devid(int id)
 	return -EINVAL;
 }
 
+static inline struct protection_domain *amd_iommu_get_pdomain(struct device *dev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
+
+	if (!dev_data || !dev_data->domain)
+		return NULL;
+
+	return dev_data->domain;
+}
+
 enum amd_iommu_intr_mode_type {
 	AMD_IOMMU_GUEST_IR_LEGACY,
 
