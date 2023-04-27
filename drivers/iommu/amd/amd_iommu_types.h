@@ -8,7 +8,9 @@
 #ifndef _ASM_X86_AMD_IOMMU_TYPES_H
 #define _ASM_X86_AMD_IOMMU_TYPES_H
 
+#include <linux/iommu.h>
 #include <linux/types.h>
+#include <linux/mmu_notifier.h>
 #include <linux/mutex.h>
 #include <linux/msi.h>
 #include <linux/list.h>
@@ -541,6 +543,16 @@ enum protection_domain_mode {
 	PD_MODE_V2,
 };
 
+/* Track PASID list for the protection domain */
+struct pdom_pasid_data {
+	/* PASID attached to the protection domain */
+	ioasid_t pasid;
+	/* Points to attached device data */
+	struct iommu_dev_data *dev_data;
+	/* Link to protection domain */
+	struct list_head pdom_link;
+};
+
 /*
  * This structure contains generic data for  IOMMU protection domains
  * independent of their use.
@@ -556,6 +568,9 @@ struct protection_domain {
 	enum protection_domain_mode pd_mode; /* Track page table type */
 	unsigned dev_cnt;	/* devices assigned to this domain */
 	unsigned dev_iommu[MAX_IOMMUS]; /* per-IOMMU reference count */
+
+	struct mmu_notifier mn;	/* mmu notifier for the SVA domain */
+	struct list_head pasid_list; /* List of pdom_pasid_data */
 };
 
 /*

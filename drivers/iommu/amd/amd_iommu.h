@@ -38,7 +38,15 @@ extern int amd_iommu_guest_ir;
 extern enum io_pgtable_fmt amd_iommu_pgtable;
 extern int amd_iommu_gpt_level;
 
+/* Protection domain ops */
+struct protection_domain *amd_iommu_sva_domain_alloc(
+				     struct protection_domain *pdom);
+void amd_iommu_domain_free(struct iommu_domain *dom);
+void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid);
+
+/* SVA/PASID */
 bool amd_iommu_pasid_supported(void);
+
 struct amd_iommu *get_amd_iommu(unsigned int idx);
 u8 amd_iommu_pc_get_max_banks(unsigned int idx);
 bool amd_iommu_pc_supported(void);
@@ -168,6 +176,11 @@ static inline struct amd_iommu *get_amd_iommu_from_dev(struct device *dev)
 		return NULL;
 
 	return container_of(iommu, struct amd_iommu, iommu);
+}
+
+static inline struct protection_domain *to_pdomain(struct iommu_domain *dom)
+{
+	return container_of(dom, struct protection_domain, domain);
 }
 
 bool translation_pre_enabled(struct amd_iommu *iommu);
