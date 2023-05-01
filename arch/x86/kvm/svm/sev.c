@@ -3671,7 +3671,7 @@ static void snp_handle_ext_guest_request(struct vcpu_svm *svm, gpa_t req_gpa, gp
 	struct kvm *kvm = vcpu->kvm;
 	unsigned long data_npages;
 	struct kvm_sev_info *sev;
-	unsigned long exitcode;
+	unsigned long exitcode = 0;
 	u64 data_gpa;
 	int err, rc;
 
