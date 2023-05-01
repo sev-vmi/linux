@@ -1466,9 +1466,11 @@ static int __sev_snp_init_locked(int *error)
 		data.list_paddr = __pa(snp_range_list);
 
 		/*
-		 * Before invoking SNP_INIT_EX with INIT_RMP=1, we need to ensure that all
-		 * dirty cache lines containing the RMP are flushed and this includes all
-		 * RMPUPDATES as they are cacheable writes to RMP.
+		 * Before invoking SNP_INIT_EX with INIT_RMP=1, make sure that
+		 * all dirty cache lines containing the RMP are flushed.
+		 *
+		 * NOTE: that includes writes via RMPUPDATE instructions, which
+		 * are also cacheable writes.
 		 */
 		wbinvd_on_all_cpus();
 
@@ -1477,9 +1479,9 @@ static int __sev_snp_init_locked(int *error)
 			return rc;
 	} else {
 		/*
-		 * Before invoking SNP_INIT_EX with INIT_RMP=1, we need to ensure that all
-		 * dirty cache lines containing the RMP are flushed and this includes all
-		 * RMPUPDATES as they are cacheable writes to RMP.
+		 * SNP_INIT is equivalent to SNP_INIT_EX with INIT_RMP=1, so
+		 * just as with that case, make sure all dirty cache lines
+		 * containing the RMP are flushed.
 		 */
 		wbinvd_on_all_cpus();
 
