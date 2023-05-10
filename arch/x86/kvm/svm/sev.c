@@ -68,6 +68,8 @@ module_param_named(sev_snp, sev_snp_enabled, bool, 0444);
 #define AP_RESET_HOLD_NAE_EVENT		1
 #define AP_RESET_HOLD_MSR_PROTO		2
 
+#define INITIAL_VMSA_GPA 0xFFFFFFFFF000
+
 static u8 sev_enc_bit;
 static DECLARE_RWSEM(sev_deactivate_lock);
 static DEFINE_MUTEX(sev_bitmap_lock);
@@ -2332,7 +2334,7 @@ static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 			return ret;
 
 		/* Transition the VMSA page to a firmware state. */
-		ret = rmp_make_private(pfn, -1, PG_LEVEL_4K, sev->asid, true);
+		ret = rmp_make_private(pfn, INITIAL_VMSA_GPA, PG_LEVEL_4K, sev->asid, true);
 		if (ret)
 			return ret;
 
