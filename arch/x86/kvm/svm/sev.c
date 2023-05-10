@@ -2170,6 +2170,8 @@ e_unpin:
 	return ret;
 }
 
+#define INITIAL_VMSA_GPA 0xFFFFFFFFF000
+
 static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 {
 	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
@@ -2189,7 +2191,7 @@ static int snp_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
 			return ret;
 
 		/* Transition the VMSA page to a firmware state. */
-		ret = rmp_make_private(pfn, -1, PG_LEVEL_4K, sev->asid, true);
+		ret = rmp_make_private(pfn, INITIAL_VMSA_GPA, PG_LEVEL_4K, sev->asid, true);
 		if (ret)
 			return ret;
 
