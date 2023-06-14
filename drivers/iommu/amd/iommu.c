@@ -2600,8 +2600,46 @@ static int amd_iommu_dev_disable_feature(struct device *dev,
 	return ret;
 }
 
+void amd_iommu_build_efr(u64 *efr, u64 *efr2)
+{
+	if (efr) {
+		*efr = (FEATURE_GT | FEATURE_GIOSUP | FEATURE_PPR);
+
+		/* 5-level v2 page table support */
+		*efr |= ((FEATURE_GATS_5LEVEL << FEATURE_GATS_SHIFT) &
+			 FEATURE_GATS_MASK);
+
+		/* 3-level GCR3 table support */
+		*efr |= ((FEATURE_GLX_3LEVEL << FEATURE_GLX_SHIFT) &
+			 FEATURE_GLX_MASK);
+
+		/* 16-bit PASMAX support */
+		*efr |= ((FEATURE_PASMAX_16 << FEATURE_PASMAX_SHIFT) &
+			 FEATURE_PASMAX_MASK);
+	}
+
+	if (efr2)
+		*efr2 = 0;
+}
+
+static void *amd_iommu_hw_info(struct device *dev, u32 *length, u32 *type)
+{
+	struct iommu_hw_info_amd *hwinfo;
+
+	hwinfo = kzalloc(sizeof(*hwinfo), GFP_KERNEL);
+	if (!hwinfo)
+		return ERR_PTR(-ENOMEM);
+
+	*length = sizeof(*hwinfo);
+	*type = IOMMU_HW_INFO_TYPE_AMD;
+
+	amd_iommu_build_efr(&hwinfo->efr, &hwinfo->efr2);
+	return hwinfo;
+}
+
 const struct iommu_ops amd_iommu_ops = {
 	.capable 		= amd_iommu_capable,
+	.hw_info		= amd_iommu_hw_info,
 	.domain_alloc 		= amd_iommu_domain_alloc,
 	.probe_device 		= amd_iommu_probe_device,
 	.release_device 	= amd_iommu_release_device,
