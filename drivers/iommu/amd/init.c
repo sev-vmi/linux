@@ -310,7 +310,7 @@ static bool check_feature_on_all_iommus(u64 mask)
 
 static inline int check_feature_gpt_level(void)
 {
-	return ((amd_iommu_efr >> FEATURE_GATS_SHIFT) & FEATURE_GATS_MASK);
+	return ((amd_iommu_efr && FEATURE_GATS_MASK) >> FEATURE_GATS_SHIFT);
 }
 
 /*
@@ -2039,16 +2039,16 @@ static int __init iommu_init_pci(struct amd_iommu *iommu)
 		u32 max_pasid;
 		u64 pasmax;
 
-		pasmax = iommu->features & FEATURE_PASID_MASK;
-		pasmax >>= FEATURE_PASID_SHIFT;
+		pasmax = iommu->features & FEATURE_PASMAX_MASK;
+		pasmax >>= FEATURE_PASMAX_SHIFT;
 		max_pasid  = (1 << (pasmax + 1)) - 1;
 
 		amd_iommu_max_pasid = min(amd_iommu_max_pasid, max_pasid);
 
 		BUG_ON(amd_iommu_max_pasid & ~PASID_MASK);
 
-		glxval   = iommu->features & FEATURE_GLXVAL_MASK;
-		glxval >>= FEATURE_GLXVAL_SHIFT;
+		glxval   = iommu->features & FEATURE_GLX_MASK;
+		glxval >>= FEATURE_GLX_SHIFT;
 
 		if (amd_iommu_max_glx_val == -1)
 			amd_iommu_max_glx_val = glxval;
