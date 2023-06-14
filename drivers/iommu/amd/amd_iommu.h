@@ -114,6 +114,8 @@ void amd_iommu_domain_flush_complete(struct protection_domain *domain);
 void amd_iommu_domain_flush_tlb_pde(struct protection_domain *domain);
 int amd_iommu_flush_tlb(struct protection_domain *domain, u32 pasid);
 
+void amd_iommu_build_efr(u64 *efr, u64 *efr2);
+
 #ifdef CONFIG_IRQ_REMAP
 int amd_iommu_create_irq_domain(struct amd_iommu *iommu);
 #else
