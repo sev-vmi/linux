@@ -2847,8 +2847,44 @@ const struct iommu_dirty_ops amd_dirty_ops = {
 	.read_and_clear_dirty = amd_iommu_read_and_clear_dirty,
 };
 
+void amd_iommu_build_efr(u64 *efr, u64 *efr2)
+{
+	/* Build the EFR against the current hardware capabilities */
+	if (efr) {
+		*efr = 0ULL;
+		*efr |= (amd_iommu_efr & FEATURE_GT);
+		*efr |= (amd_iommu_efr & FEATURE_GIOSUP);
+		*efr |= (amd_iommu_efr & FEATURE_PPR);
+		*efr |= (amd_iommu_efr & FEATURE_GATS_MASK);
+		*efr |= (amd_iommu_efr & FEATURE_GLX_MASK);
+		*efr |= (amd_iommu_efr & FEATURE_PASMAX_MASK);
+		pr_debug("%s: efr=%#llx\n", __func__, *efr);
+	}
+
+	if (efr2) {
+		*efr2 = 0ULL;
+		pr_debug("%s: efr2=%#llx\n", __func__, *efr);
+	}
+}
+
+static void *amd_iommu_hw_info(struct device *dev, u32 *length, u32 *type)
+{
+	struct iommu_hw_info_amd *hwinfo;
+
+	hwinfo = kzalloc(sizeof(*hwinfo), GFP_KERNEL);
+	if (!hwinfo)
+		return ERR_PTR(-ENOMEM);
+
+	*length = sizeof(*hwinfo);
+	*type = IOMMU_HW_INFO_TYPE_AMD;
+
+	amd_iommu_build_efr(&hwinfo->efr, &hwinfo->efr2);
+	return hwinfo;
+}
+
 const struct iommu_ops amd_iommu_ops = {
 	.capable = amd_iommu_capable,
+	.hw_info = amd_iommu_hw_info,
 	.domain_alloc = amd_iommu_domain_alloc,
 	.domain_alloc_user = amd_iommu_domain_alloc_user,
 	.probe_device = amd_iommu_probe_device,
