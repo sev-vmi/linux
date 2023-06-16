@@ -1553,6 +1553,42 @@ static void free_gcr3_table(struct protection_domain *domain)
 	free_page((unsigned long)domain->gcr3_tbl);
 }
 
+static void set_dte_entry_v2(struct amd_iommu *iommu,
+			     struct protection_domain *domain,
+			     u64 *gcr3_tbl, u64 *pte_root, u64 *flags)
+{
+	u64 gcr3 = iommu_virt_to_phys(gcr3_tbl);
+	u64 glx  = domain->glx;
+	u64 tmp;
+
+	if (!(domain->flags & PD_IOMMUV2_MASK))
+		return;
+
+	if ((domain->flags & PD_GIOV_MASK) &&
+	    iommu_feature(iommu, FEATURE_GIOSUP))
+		*pte_root |= DTE_FLAG_GIOV;
+
+	*pte_root |= DTE_FLAG_GV;
+	*pte_root |= (glx & DTE_GLX_MASK) << DTE_GLX_SHIFT;
+
+	/* First mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	*flags    &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	*flags    &= ~tmp;
+
+	/* Encode GCR3 table into DTE */
+	tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
+	*pte_root |= tmp;
+
+	tmp = DTE_GCR3_VAL_B(gcr3) << DTE_GCR3_SHIFT_B;
+	*flags    |= tmp;
+
+	tmp = DTE_GCR3_VAL_C(gcr3) << DTE_GCR3_SHIFT_C;
+	*flags    |= tmp;
+}
+
 void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 		   struct protection_domain *domain, bool ats, bool ppr)
 {
@@ -1586,38 +1622,12 @@ void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 			pte_root |= 1ULL << DEV_ENTRY_PPR;
 	}
 
-	if (domain->flags & PD_IOMMUV2_MASK) {
-		u64 gcr3 = iommu_virt_to_phys(domain->gcr3_tbl);
-		u64 glx  = domain->glx;
-		u64 tmp;
+	set_dte_entry_v2(iommu, domain, domain->gcr3_tbl, &pte_root, &flags);
 
-		pte_root |= DTE_FLAG_GV;
-		pte_root |= (glx & DTE_GLX_MASK) << DTE_GLX_SHIFT;
-
-		/* First mask out possible old values for GCR3 table */
-		tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
-		flags    &= ~tmp;
-
-		tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
-		flags    &= ~tmp;
-
-		/* Encode GCR3 table into DTE */
-		tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
-		pte_root |= tmp;
-
-		tmp = DTE_GCR3_VAL_B(gcr3) << DTE_GCR3_SHIFT_B;
-		flags    |= tmp;
-
-		tmp = DTE_GCR3_VAL_C(gcr3) << DTE_GCR3_SHIFT_C;
-		flags    |= tmp;
-
-		if (amd_iommu_gpt_level == PAGE_MODE_5_LEVEL) {
-			dev_table[devid].data[2] |=
-				((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
-		}
-
-		if (domain->flags & PD_GIOV_MASK)
-			pte_root |= DTE_FLAG_GIOV;
+	if ((domain->flags & PD_IOMMUV2_MASK) &&
+	    amd_iommu_gpt_level == PAGE_MODE_5_LEVEL) {
+		dev_table[devid].data[2] |=
+			((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
 	}
 
 	flags &= ~DEV_DOMID_MASK;
