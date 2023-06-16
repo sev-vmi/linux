@@ -16,6 +16,7 @@ extern void iommu_feature_disable(struct amd_iommu *iommu, u8 bit);
 extern u8 __iomem * __init iommu_map_mmio_space(u64 address, u64 end);
 extern void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 			  struct protection_domain *domain,
+			  u64 *gcr3_tbl,
 			  bool ats, bool ppr);
 extern int iommu_flush_dte(struct amd_iommu *iommu, u16 devid);
 extern struct protection_domain *to_pdomain(struct iommu_domain *dom);

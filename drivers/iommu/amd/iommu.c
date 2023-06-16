@@ -1590,7 +1590,9 @@ static void set_dte_entry_v2(struct amd_iommu *iommu,
 }
 
 void set_dte_entry(struct amd_iommu *iommu, u16 devid,
-		   struct protection_domain *domain, bool ats, bool ppr)
+		   struct protection_domain *domain,
+		   u64 *gcr3_tbl,
+		   bool ats, bool ppr)
 {
 	u64 pte_root = 0;
 	u64 flags = 0;
@@ -1622,7 +1624,7 @@ void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 			pte_root |= 1ULL << DEV_ENTRY_PPR;
 	}
 
-	set_dte_entry_v2(iommu, domain, domain->gcr3_tbl, &pte_root, &flags);
+	set_dte_entry_v2(iommu, domain, gcr3_tbl, &pte_root, &flags);
 
 	if ((domain->flags & PD_IOMMUV2_MASK) &&
 	    amd_iommu_gpt_level == PAGE_MODE_5_LEVEL) {
@@ -1686,7 +1688,7 @@ static void do_attach(struct iommu_dev_data *dev_data,
 	domain->dev_cnt                 += 1;
 
 	/* Update device table */
-	set_dte_entry(iommu, dev_data->devid, domain,
+	set_dte_entry(iommu, dev_data->devid, domain, domain->gcr3_tbl,
 		      ats, dev_data->iommu_v2);
 	clone_aliases(iommu, dev_data->dev);
 
@@ -1965,7 +1967,7 @@ static void update_device_table(struct protection_domain *domain)
 
 		if (!iommu)
 			continue;
-		set_dte_entry(iommu, dev_data->devid, domain,
+		set_dte_entry(iommu, dev_data->devid, domain, domain->gcr3_tbl,
 			      dev_data->ats.enabled, dev_data->iommu_v2);
 		clone_aliases(iommu, dev_data->dev);
 	}
