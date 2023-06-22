@@ -814,7 +814,7 @@ struct iommu_dev_data {
 	struct protection_domain *domain; /* Domain the device is bound to */
 	struct device *dev;
 	u16 devid;			  /* PCI Device ID */
-	bool iommu_v2;			  /* Device can make use of IOMMUv2 */
+	u32 flags;			  /* Holds AMD_IOMMU_DEVICE_FLAG_<*> */
 	struct {
 		bool enabled;
 		int qdep;
