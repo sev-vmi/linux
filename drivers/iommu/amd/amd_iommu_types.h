@@ -815,10 +815,8 @@ struct iommu_dev_data {
 	struct device *dev;
 	u16 devid;			  /* PCI Device ID */
 	u32 flags;			  /* Holds AMD_IOMMU_DEVICE_FLAG_<*> */
-	struct {
-		bool enabled;
-		int qdep;
-	} ats;				  /* ATS state */
+	int  ats_qdep;
+	bool ats_enabled;		  /* ATS state */
 	bool pri_tlp;			  /* PASID TLB required for
 					     PPR completions */
 	bool use_vapic;			  /* Enable device to use vapic mode */
