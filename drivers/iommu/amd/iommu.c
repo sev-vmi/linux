@@ -2162,6 +2162,63 @@ static void protection_domain_free(struct protection_domain *domain)
 	kfree(domain);
 }
 
+/*******************************
+ * SVA-related helper functions
+ */
+static inline bool pdom_is_pt_mode(struct protection_domain *pdom)
+{
+	return (pdom->domain.type == IOMMU_DOMAIN_IDENTITY);
+}
+
+static inline bool pdom_is_v2_pgtbl_mode(struct protection_domain *pdom)
+{
+	return (pdom->iop.pgd != NULL);
+}
+
+int amd_iommu_sva_gcr3_init(struct iommu_dev_data *dev_data, int pasids)
+{
+	struct protection_domain *pdom = dev_data->domain;
+	unsigned long flags;
+	int ret = 0;
+
+	/*
+	 * We cannot support SVA w/ existing v1 page table in the same domain
+	 * since it will be nested. However, existing domain w/ v2 pagetable
+	 * can be used for SVA.
+	 */
+	if (pdom->pd_mode == PD_MODE_V1)
+		return -EOPNOTSUPP;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	/* Allocate GCR3 table */
+	if (pdom_is_pt_mode(dev_data->domain))
+		ret = setup_gcr3_table(dev_data, pasids);
+
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+	return ret;
+}
+
+int amd_iommu_sva_gcr3_uninit(struct iommu_dev_data *dev_data)
+{
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	if (gcr3_info->pasid_cnt) {
+		spin_unlock_irqrestore(&dev_data->lock, flags);
+		return -EBUSY;
+	}
+
+	/* Free GCR3 table */
+	if (pdom_is_pt_mode(dev_data->domain))
+		free_gcr3_table(dev_data);
+
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+	return 0;
+}
+
 static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 {
 	u64 *pt_root = NULL;
@@ -2578,6 +2635,9 @@ static int amd_iommu_dev_enable_feature(struct device *dev,
 	int ret;
 
 	switch (feat) {
+	case IOMMU_DEV_FEAT_SVA:
+		ret = amd_iommu_sva_enable(dev);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -2591,6 +2651,9 @@ static int amd_iommu_dev_disable_feature(struct device *dev,
 	int ret;
 
 	switch (feat) {
+	case IOMMU_DEV_FEAT_SVA:
+		ret = amd_iommu_sva_disable(dev);
+		break;
 	default:
 		ret = -EINVAL;
 		break;

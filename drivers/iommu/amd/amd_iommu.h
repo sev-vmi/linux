@@ -46,6 +46,10 @@ bool amd_iommu_sva_supported(void);
 int amd_iommu_set_dev_pasid(struct iommu_domain *domain,
 			    struct device *dev, ioasid_t pasid);
 void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid);
+int amd_iommu_sva_enable(struct device *dev);
+int amd_iommu_sva_disable(struct device *dev);
+int amd_iommu_sva_gcr3_init(struct iommu_dev_data *dev_data, int pasids);
+int amd_iommu_sva_gcr3_uninit(struct iommu_dev_data *dev_data);
 
 struct amd_iommu *get_amd_iommu(unsigned int idx);
 u8 amd_iommu_pc_get_max_banks(unsigned int idx);
