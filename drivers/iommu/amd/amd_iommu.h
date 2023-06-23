@@ -46,6 +46,8 @@ void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid);
 
 /* SVA/PASID */
 bool amd_iommu_pasid_supported(void);
+int amd_iommu_gcr3_init(struct iommu_dev_data *dev_data, ioasid_t pasids);
+void amd_iommu_gcr3_uninit(struct iommu_dev_data *dev_data);
 
 struct amd_iommu *get_amd_iommu(unsigned int idx);
 u8 amd_iommu_pc_get_max_banks(unsigned int idx);

@@ -11,6 +11,66 @@
 
 #include "amd_iommu.h"
 
+
+static inline bool is_gcr3_table_empty(struct iommu_dev_data *dev_data)
+{
+	return (dev_data->gcr3_info.pasid_cnt == 0);
+}
+
+static inline bool is_pasid_enabled(struct iommu_dev_data *dev_data)
+{
+	if (dev_data->gcr3_info.gcr3_tbl != NULL &&
+	    !is_gcr3_table_empty(dev_data)) {
+		return true;
+	}
+
+	return false;
+}
+
+static int iommu_pasid_enable(struct iommu_dev_data *dev_data)
+{
+	struct device *dev = dev_data->dev;
+	int ret = 0;
+
+	spin_lock(&dev_data->lock);
+
+	if (is_pasid_enabled(dev_data))
+		goto out;
+
+	if (!amd_iommu_pasid_supported()) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	/* attach_device path enables device PASID feature */
+	if (!dev_data->pasid_enabled) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = amd_iommu_gcr3_init(dev_data, dev->iommu->max_pasids);
+
+out:
+	spin_unlock(&dev_data->lock);
+	return ret;
+}
+
+static void iommu_pasid_disable(struct iommu_dev_data *dev_data)
+{
+	spin_lock(&dev_data->lock);
+
+	if (!is_gcr3_table_empty(dev_data))
+		goto out;
+
+	if (dev_data->gcr3_info.gcr3_tbl == NULL)
+		goto out;
+
+	amd_iommu_gcr3_uninit(dev_data);
+
+out:
+	spin_unlock(&dev_data->lock);
+}
+
 static void dev_pasid_remove(struct pdom_pasid_data *pasid_data)
 {
 	/* make it visible */
@@ -103,6 +163,13 @@ static int iommu_sva_set_dev_pasid(struct iommu_domain *domain,
 	/* Use SVA protection domain lock */
 	spin_lock_irqsave(&sva_pdom->lock, flags);
 
+	/* Make sure PASID is enabled */
+	if (!is_pasid_enabled(dev_data)) {
+		ret = iommu_pasid_enable(dev_data);
+		if (ret)
+			goto out;
+	}
+
 	/* Add PASID to protection domain pasid list */
 	pasid_data = kzalloc(sizeof(*pasid_data), GFP_KERNEL);
 	if (pasid_data == NULL) {
@@ -150,6 +217,7 @@ void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid)
 	struct pdom_pasid_data *pasid_data;
 	struct protection_domain *sva_pdom;
 	struct iommu_domain *domain;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
 	unsigned long flags;
 
 	if (pasid == 0 || pasid >= dev->iommu->max_pasids)
@@ -173,6 +241,10 @@ void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid)
 	}
 
 	dev_pasid_remove(pasid_data);
+
+	/* Remove GCR3 table */
+	if (is_gcr3_table_empty(dev_data))
+		iommu_pasid_disable(dev_data);
 
 	spin_unlock_irqrestore(&sva_pdom->lock, flags);
 }
