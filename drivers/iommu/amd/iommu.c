@@ -2162,6 +2162,50 @@ static void protection_domain_free(struct protection_domain *domain)
 	kfree(domain);
 }
 
+/*******************************
+ * PASID setup related helper functions
+ */
+static inline bool pdom_is_pt_mode(struct protection_domain *pdom)
+{
+	return (pdom->domain.type == IOMMU_DOMAIN_IDENTITY);
+}
+
+static inline bool pdom_is_v2_pgtbl_mode(struct protection_domain *pdom)
+{
+	return (pdom->iop.pgd != NULL);
+}
+
+int amd_iommu_gcr3_init(struct iommu_dev_data *dev_data, int pasids)
+{
+	struct protection_domain *pdom = dev_data->domain;
+	int ret = 0;
+
+	lockdep_assert_held(&dev_data->lock);
+
+	/*
+	 * We cannot support PASID w/ existing v1 page table in the same domain
+	 * since it will be nested. However, existing domain w/ v2 page table
+	 * can be used for PASID.
+	 */
+	if (pdom->pd_mode == PD_MODE_V1)
+		return -EOPNOTSUPP;
+
+	/* Allocate GCR3 table */
+	if (pdom_is_pt_mode(dev_data->domain))
+		ret = setup_gcr3_table(dev_data, pasids);
+
+	return ret;
+}
+
+void amd_iommu_gcr3_uninit(struct iommu_dev_data *dev_data)
+{
+	lockdep_assert_held(&dev_data->lock);
+
+	/* Free GCR3 table */
+	if (pdom_is_pt_mode(dev_data->domain))
+		free_gcr3_table(dev_data);
+}
+
 static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 {
 	u64 *pt_root = NULL;
@@ -2579,6 +2623,9 @@ static int amd_iommu_dev_enable_feature(struct device *dev,
 	int ret;
 
 	switch (feat) {
+	case IOMMU_DEV_FEAT_SVA:
+		ret = 0;
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -2592,6 +2639,9 @@ static int amd_iommu_dev_disable_feature(struct device *dev,
 	int ret;
 
 	switch (feat) {
+	case IOMMU_DEV_FEAT_SVA:
+		ret = 0;
+		break;
 	default:
 		ret = -EINVAL;
 		break;

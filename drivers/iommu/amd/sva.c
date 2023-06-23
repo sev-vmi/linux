@@ -12,6 +12,60 @@
 
 #include "amd_iommu.h"
 
+static inline bool is_pasid_enabled(struct iommu_dev_data *dev_data)
+{
+	if (dev_data->gcr3_info.gcr3_tbl != NULL &&
+	    dev_data->gcr3_info.pasid_cnt != 0)
+		return true;
+
+	return false;
+}
+
+static int amd_iommu_pasid_enable(struct iommu_dev_data *dev_data)
+{
+	struct device *dev = dev_data->dev;
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	if (dev_data->gcr3_info.gcr3_tbl != NULL &&
+	    dev_data->gcr3_info.pasid_cnt != 0)
+		goto out;
+
+	if (!amd_iommu_sva_supported()) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (!dev_data->pasid_enabled) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = amd_iommu_gcr3_init(dev_data, dev->iommu->max_pasids);
+
+out:
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+	return ret;
+}
+
+static void amd_iommu_pasid_disable(struct iommu_dev_data *dev_data)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	if (dev_data->gcr3_info.gcr3_tbl == NULL)
+		return;
+
+	if (dev_data->gcr3_info.pasid_cnt != 0)
+		return;
+
+	amd_iommu_gcr3_uninit(dev_data);
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+}
+
 static void sva_mn_invalidate_range(struct mmu_notifier *mn,
 				    struct mm_struct *mm,
 				    unsigned long start, unsigned long end)
@@ -59,6 +113,13 @@ int amd_iommu_set_dev_pasid(struct iommu_domain *domain,
 
 	/* Use SVA protection domain lock */
 	spin_lock_irqsave(&sva_pdom->lock, flags);
+
+	/* Make sure PASID is enabled */
+	if (!is_pasid_enabled(dev_data)) {
+		ret = amd_iommu_pasid_enable(dev_data);
+		if (ret)
+			goto out;
+	}
 
 	/* Add PASID to protection domain pasid list */
 	pasid_data = kzalloc(sizeof(*pasid_data), GFP_KERNEL);
@@ -150,6 +211,8 @@ void amd_iommu_remove_dev_pasid(struct device *dev, ioasid_t pasid)
 
 	/* Update GCR3 table and flush IOTLB */
 	amd_iommu_clear_gcr3(dev_data, pasid);
+
+	amd_iommu_pasid_disable(dev_data);
 
 	spin_unlock_irqrestore(&sva_pdom->lock, flags);
 
