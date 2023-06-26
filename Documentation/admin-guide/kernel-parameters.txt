@@ -313,16 +313,14 @@
 			fullflush - Deprecated, equivalent to iommu.strict=1
 			off	  - do not initialize any AMD IOMMU found in
 				    the system
-			force_isolation - Force device isolation for all
-					  devices. The IOMMU driver is not
-					  allowed anymore to lift isolation
-					  requirements as needed. This option
-					  does not override iommu=pt
+			force_isolation - Deprecated, use pgtbl_v{1/2} instead.
 			force_enable - Force enable the IOMMU on platforms known
 				       to be buggy with IOMMU enabled. Use this
 				       option with care.
 			pgtbl_v1     - Use v1 page table for DMA-API (Default).
+			               This option does not override iommu=pt
 			pgtbl_v2     - Use v2 page table for DMA-API.
+			               This option does not override iommu=pt
 			irtcachedis  - Disable Interrupt Remapping Table (IRT) caching.
 
 	amd_iommu_dump=	[HW,X86-64]

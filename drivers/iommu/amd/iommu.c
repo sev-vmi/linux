@@ -2538,9 +2538,9 @@ static int amd_iommu_def_domain_type(struct device *dev)
 
 	/*
 	 * By default we use passthrough mode for SVA capable device.
-	 * But if amd_iommu=pgtbl_v{1/2}/force_isolation is set, we ignore
-	 * the capability for the device so it will be forced to go into
-	 * translation mode with appropriate page table.
+	 * But if amd_iommu=pgtbl_v{1/2} is set, we ignore the capability
+	 * for the device so it will be forced to go into translation
+	 * mode with appropriate page table.
 	 */
 	if (amd_iommu_force_isolation)
 		return 0;
