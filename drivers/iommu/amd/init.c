@@ -3438,8 +3438,10 @@ static int __init parse_amd_iommu_options(char *str)
 		} else if (strncmp(str, "force_isolation", 15) == 0) {
 			amd_iommu_force_isolation = true;
 		} else if (strncmp(str, "pgtbl_v1", 8) == 0) {
+			amd_iommu_force_isolation = true;
 			amd_iommu_pgtable = AMD_IOMMU_V1;
 		} else if (strncmp(str, "pgtbl_v2", 8) == 0) {
+			amd_iommu_force_isolation = true;
 			amd_iommu_pgtable = AMD_IOMMU_V2;
 		} else if (strncmp(str, "irtcachedis", 11) == 0) {
 			amd_iommu_irtcachedis = true;

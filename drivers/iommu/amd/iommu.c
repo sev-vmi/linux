@@ -512,16 +512,9 @@ static int iommu_init_device(struct amd_iommu *iommu, struct device *dev)
 	dev_data->dev = dev;
 	setup_aliases(iommu, dev);
 
-	/*
-	 * By default we use passthrough mode for IOMMUv2 capable device.
-	 * But if amd_iommu=force_isolation is set (e.g. to debug DMA to
-	 * invalid address), we ignore the capability for the device so
-	 * it'll be forced to go into translation mode.
-	 */
-	if ((iommu_default_passthrough() || !amd_iommu_force_isolation) &&
-	    dev_is_pci(dev) && amd_iommu_gt_ppr_supported()) {
+	/* Discover device SVA capabilities if IOMMU supports SVA */
+	if (dev_is_pci(dev) && amd_iommu_gt_ppr_supported())
 		dev_data->flags = pdev_get_caps(to_pci_dev(dev));
-	}
 
 	dev_iommu_priv_set(dev, dev_data);
 
@@ -2541,6 +2534,15 @@ static int amd_iommu_def_domain_type(struct device *dev)
 
 	dev_data = dev_iommu_priv_get(dev);
 	if (!dev_data)
+		return 0;
+
+	/*
+	 * By default we use passthrough mode for SVA capable device.
+	 * But if amd_iommu=pgtbl_v{1/2}/force_isolation is set, we ignore
+	 * the capability for the device so it will be forced to go into
+	 * translation mode with appropriate page table.
+	 */
+	if (amd_iommu_force_isolation)
 		return 0;
 
 	/*
