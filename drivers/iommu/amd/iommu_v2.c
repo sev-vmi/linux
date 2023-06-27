@@ -111,9 +111,6 @@ static struct device_state *get_device_state(u32 sbdf)
 
 static void free_device_state(struct device_state *dev_state)
 {
-	struct iommu_group *group;
-	struct iommu_domain *domain = &dev_state->pdom->domain;
-
 	/* Get rid of any remaining pasid states */
 	free_pasid_states(dev_state);
 
@@ -123,20 +120,8 @@ static void free_device_state(struct device_state *dev_state)
 	 */
 	wait_event(dev_state->wq, !atomic_read(&dev_state->count));
 
-	/*
-	 * First detach device from domain - No more PRI requests will arrive
-	 * from that device after it is unbound from the IOMMUv2 domain.
-	 */
-	group = iommu_group_get(&dev_state->pdev->dev);
-	if (WARN_ON(!group))
-		return;
-
-	iommu_detach_group(domain, group);
-
-	iommu_group_put(group);
-
-	/* Everything is down now, free the IOMMUv2 domain */
-	iommu_domain_free(domain);
+	amd_iommu_v2api_gcr3_uninit(dev_state->pdev);
+	amd_iommu_v2api_domain_uninit(dev_state->pdom);
 
 	/* Finally get rid of the device-state */
 	kfree(dev_state);
@@ -735,9 +720,7 @@ EXPORT_SYMBOL(amd_iommu_unbind_pasid);
 
 int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 {
-	struct iommu_domain *domain;
 	struct device_state *dev_state;
-	struct iommu_group *group;
 	unsigned long flags;
 	int ret, tmp;
 	u32 sbdf;
@@ -774,6 +757,7 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	init_waitqueue_head(&dev_state->wq);
 	dev_state->pdev  = pdev;
 	dev_state->sbdf = sbdf;
+	dev_state->pdom = dev_data->domain;
 
 	tmp = pasids;
 	for (dev_state->pasid_levels = 0; (tmp - 1) & ~0x1ff; tmp >>= 9)
@@ -787,39 +771,20 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	if (dev_state->states == NULL)
 		goto out_free_dev_state;
 
-	domain = iommu_domain_alloc(&pci_bus_type);
-	if (domain == NULL)
+	ret = amd_iommu_v2api_domain_init(dev_data->domain);
+	if (ret)
 		goto out_free_states;
 
-	/* Retrieve new protection_domain that has just been allocated */
-	dev_state->pdom = to_pdomain(domain);
-
-	/* See iommu_is_default_domain() */
-	domain->type = IOMMU_DOMAIN_IDENTITY;
-	amd_iommu_domain_direct_map(&dev_state->pdom->domain);
-
-	ret = amd_iommu_domain_enable_v2(domain, pasids);
+	ret = amd_iommu_v2api_gcr3_init(pdev, pasids);
 	if (ret)
-		goto out_free_domain;
-
-	group = iommu_group_get(&pdev->dev);
-	if (!group) {
-		ret = -EINVAL;
-		goto out_free_domain;
-	}
-
-	ret = iommu_attach_group(domain, group);
-	if (ret != 0)
-		goto out_drop_group;
-
-	iommu_group_put(group);
+		goto out_uninit_domain;
 
 	spin_lock_irqsave(&state_lock, flags);
 
 	if (__get_device_state(sbdf) != NULL) {
 		spin_unlock_irqrestore(&state_lock, flags);
 		ret = -EBUSY;
-		goto out_free_domain;
+		goto out_uninit_gcr3;
 	}
 
 	list_add_tail(&dev_state->list, &state_list);
@@ -828,11 +793,11 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 
 	return 0;
 
-out_drop_group:
-	iommu_group_put(group);
+out_uninit_gcr3:
+	amd_iommu_v2api_gcr3_uninit(dev_state->pdev);
 
-out_free_domain:
-	iommu_domain_free(domain);
+out_uninit_domain:
+	amd_iommu_v2api_domain_uninit(dev_state->pdom);
 
 out_free_states:
 	free_page((unsigned long)dev_state->states);
