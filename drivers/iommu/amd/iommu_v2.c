@@ -55,7 +55,7 @@ struct device_state {
 	atomic_t count;
 	struct pci_dev *pdev;
 	struct pasid_state **states;
-	struct iommu_domain *domain;
+	struct protection_domain *pdom;
 	int pasid_levels;
 	int max_pasids;
 	amd_iommu_invalid_ppr_cb inv_ppr_cb;
@@ -112,6 +112,7 @@ static struct device_state *get_device_state(u32 sbdf)
 static void free_device_state(struct device_state *dev_state)
 {
 	struct iommu_group *group;
+	struct iommu_domain *domain = &dev_state->pdom->domain;
 
 	/* Get rid of any remaining pasid states */
 	free_pasid_states(dev_state);
@@ -130,12 +131,12 @@ static void free_device_state(struct device_state *dev_state)
 	if (WARN_ON(!group))
 		return;
 
-	iommu_detach_group(dev_state->domain, group);
+	iommu_detach_group(domain, group);
 
 	iommu_group_put(group);
 
 	/* Everything is down now, free the IOMMUv2 domain */
-	iommu_domain_free(dev_state->domain);
+	iommu_domain_free(domain);
 
 	/* Finally get rid of the device-state */
 	kfree(dev_state);
@@ -269,9 +270,7 @@ static void put_pasid_state_wait(struct pasid_state *pasid_state)
 
 static void unbind_pasid(struct pasid_state *pasid_state)
 {
-	struct iommu_domain *domain;
-
-	domain = pasid_state->device_state->domain;
+	struct device_state *dev_state = pasid_state->device_state;
 
 	/*
 	 * Mark pasid_state as invalid, no more faults will we added to the
@@ -283,7 +282,7 @@ static void unbind_pasid(struct pasid_state *pasid_state)
 	smp_wmb();
 
 	/* After this the device/pasid can't access the mm anymore */
-	amd_iommu_domain_clear_gcr3(domain, pasid_state->pasid);
+	amd_iommu_domain_clear_gcr3(&dev_state->pdom->domain, pasid_state->pasid);
 
 	/* Make sure no more pending faults are in the queue */
 	flush_workqueue(iommu_wq);
@@ -369,10 +368,10 @@ static void mn_invalidate_range(struct mmu_notifier *mn,
 	dev_state   = pasid_state->device_state;
 
 	if ((start ^ (end - 1)) < PAGE_SIZE)
-		amd_iommu_flush_page(dev_state->domain, pasid_state->pasid,
+		amd_iommu_flush_page(&dev_state->pdom->domain, pasid_state->pasid,
 				     start);
 	else
-		amd_iommu_flush_tlb(dev_state->domain, pasid_state->pasid);
+		amd_iommu_flush_tlb(&dev_state->pdom->domain, pasid_state->pasid);
 }
 
 static void mn_release(struct mmu_notifier *mn, struct mm_struct *mm)
@@ -651,7 +650,7 @@ int amd_iommu_bind_pasid(struct pci_dev *pdev, u32 pasid,
 	if (ret)
 		goto out_unregister;
 
-	ret = amd_iommu_domain_set_gcr3(dev_state->domain, pasid,
+	ret = amd_iommu_domain_set_gcr3(&dev_state->pdom->domain, pasid,
 					__pa(pasid_state->mm->pgd));
 	if (ret)
 		goto out_clear_state;
@@ -735,6 +734,7 @@ EXPORT_SYMBOL(amd_iommu_unbind_pasid);
 
 int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 {
+	struct iommu_domain *domain;
 	struct device_state *dev_state;
 	struct iommu_group *group;
 	unsigned long flags;
@@ -779,15 +779,19 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	if (dev_state->states == NULL)
 		goto out_free_dev_state;
 
-	dev_state->domain = iommu_domain_alloc(&pci_bus_type);
-	if (dev_state->domain == NULL)
+	domain = iommu_domain_alloc(&pci_bus_type);
+	if (domain == NULL)
 		goto out_free_states;
 
-	/* See iommu_is_default_domain() */
-	dev_state->domain->type = IOMMU_DOMAIN_IDENTITY;
-	amd_iommu_domain_direct_map(dev_state->domain);
+	/* Retrieve new protection_domain that has just been allocated */
+	dev_state->pdom = container_of(domain,
+				       struct protection_domain, domain);
 
-	ret = amd_iommu_domain_enable_v2(dev_state->domain, pasids);
+	/* See iommu_is_default_domain() */
+	domain->type = IOMMU_DOMAIN_IDENTITY;
+	amd_iommu_domain_direct_map(&dev_state->pdom->domain);
+
+	ret = amd_iommu_domain_enable_v2(domain, pasids);
 	if (ret)
 		goto out_free_domain;
 
@@ -797,7 +801,7 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 		goto out_free_domain;
 	}
 
-	ret = iommu_attach_group(dev_state->domain, group);
+	ret = iommu_attach_group(domain, group);
 	if (ret != 0)
 		goto out_drop_group;
 
@@ -821,7 +825,7 @@ out_drop_group:
 	iommu_group_put(group);
 
 out_free_domain:
-	iommu_domain_free(dev_state->domain);
+	iommu_domain_free(domain);
 
 out_free_states:
 	free_page((unsigned long)dev_state->states);
