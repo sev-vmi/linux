@@ -2229,7 +2229,11 @@ static struct protection_domain *protection_domain_alloc(unsigned int type)
 		ret = protection_domain_init_v1(domain, DEFAULT_PGTABLE_LEVEL);
 		break;
 	case AMD_IOMMU_V2:
-		ret = amd_iommu_v2_domain_init(domain, NULL, 1, PD_FLAG_V2DMA);
+		/*
+		 * Set up to support maximum number of PASIDs
+		 * supported by AMD IOMMU HW.
+		 */
+		ret = amd_iommu_v2_domain_init(domain, NULL, -1, PD_FLAG_V2DMA);
 		break;
 	default:
 		ret = -EINVAL;
