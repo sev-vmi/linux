@@ -2109,13 +2109,18 @@ int amd_iommu_v2_domain_init(struct protection_domain *pdom,
 			     struct pci_dev *pdev, int pasids, u32 pd_flags)
 {
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 
 	spin_lock_irqsave(&pdom->lock, flags);
 
 	switch (pd_flags) {
 	case PD_FLAG_V2API:
 		ret = v2api_domain_init(pdom);
+		break;
+	/* This gets called from domain allocation path */
+	case PD_FLAG_V2DMA:
+		pdom->domain.pgsize_bitmap = AMD_IOMMU_PGSIZES_V2;
+		pdom->flags |= PD_FLAG_GIOV;
 		break;
 	default:
 		ret = -EINVAL;
@@ -2179,19 +2184,6 @@ static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 	return 0;
 }
 
-static int protection_domain_init_v2(struct protection_domain *domain)
-{
-	domain->flags |= PD_FLAG_GIOV;
-
-	domain->domain.pgsize_bitmap = AMD_IOMMU_PGSIZES_V2;
-
-	if (setup_gcr3_table(domain, 1))
-		return -ENOMEM;
-
-	domain->flags |= PD_FLAG_V2DMA;
-	return 0;
-}
-
 static struct protection_domain *protection_domain_alloc(unsigned int type)
 {
 	struct io_pgtable_ops *pgtbl_ops;
@@ -2237,7 +2229,7 @@ static struct protection_domain *protection_domain_alloc(unsigned int type)
 		ret = protection_domain_init_v1(domain, DEFAULT_PGTABLE_LEVEL);
 		break;
 	case AMD_IOMMU_V2:
-		ret = protection_domain_init_v2(domain);
+		ret = amd_iommu_v2_domain_init(domain, NULL, 1, PD_FLAG_V2DMA);
 		break;
 	default:
 		ret = -EINVAL;
