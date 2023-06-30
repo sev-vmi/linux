@@ -321,6 +321,7 @@ static inline bool pdev_pasid_supported(struct iommu_dev_data *dev_data)
 
 static u32 pdev_get_caps(struct pci_dev *pdev)
 {
+	int features;
 	u32 flags = 0;
 
 	if (pci_ats_supported(pdev))
@@ -329,8 +330,16 @@ static u32 pdev_get_caps(struct pci_dev *pdev)
 	if (pci_pri_supported(pdev))
 		flags |= AMD_IOMMU_DEVICE_FLAG_PRI_SUP;
 
-	if (pci_pasid_features(pdev) >= 0)
+	features = pci_pasid_features(pdev);
+	if (features >= 0) {
 		flags |= AMD_IOMMU_DEVICE_FLAG_PASID_SUP;
+
+		if (features & PCI_PASID_CAP_EXEC)
+			flags |= AMD_IOMMU_DEVICE_FLAG_EXEC_SUP;
+
+		if (features & PCI_PASID_CAP_PRIV)
+			flags |= AMD_IOMMU_DEVICE_FLAG_PRIV_SUP;
+	}
 
 	return flags;
 }
@@ -2809,8 +2818,8 @@ EXPORT_SYMBOL(amd_iommu_complete_ppr);
 int amd_iommu_device_info(struct pci_dev *pdev,
                           struct amd_iommu_device_info *info)
 {
-	int max_pasids;
-	int pos;
+	struct device *dev = &pdev->dev;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
 
 	if (pdev == NULL || info == NULL)
 		return -EINVAL;
@@ -2820,29 +2829,9 @@ int amd_iommu_device_info(struct pci_dev *pdev,
 
 	memset(info, 0, sizeof(*info));
 
-	if (pci_ats_supported(pdev))
-		info->flags |= AMD_IOMMU_DEVICE_FLAG_ATS_SUP;
-
-	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
-	if (pos)
-		info->flags |= AMD_IOMMU_DEVICE_FLAG_PRI_SUP;
-
-	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PASID);
-	if (pos) {
-		int features;
-
-		max_pasids = 1 << (9 * (amd_iommu_max_glx_val + 1));
-		max_pasids = min(max_pasids, (1 << 20));
-
-		info->flags |= AMD_IOMMU_DEVICE_FLAG_PASID_SUP;
-		info->max_pasids = min(pci_max_pasids(pdev), max_pasids);
-
-		features = pci_pasid_features(pdev);
-		if (features & PCI_PASID_CAP_EXEC)
-			info->flags |= AMD_IOMMU_DEVICE_FLAG_EXEC_SUP;
-		if (features & PCI_PASID_CAP_PRIV)
-			info->flags |= AMD_IOMMU_DEVICE_FLAG_PRIV_SUP;
-	}
+	info->flags = dev_data->flags;
+	if (dev->iommu)
+		info->max_pasids = dev->iommu->max_pasids;
 
 	return 0;
 }
