@@ -1596,7 +1596,7 @@ static int setup_gcr3_table(struct protection_domain *domain, int pasids)
 		return -ENOMEM;
 
 	domain->glx      = levels;
-	domain->flags   |= PD_IOMMUV2_MASK;
+	domain->flags   |= PD_FLAG_GCR3;
 
 	amd_iommu_domain_update(domain);
 
@@ -1636,7 +1636,7 @@ static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 			pte_root |= 1ULL << DEV_ENTRY_PPR;
 	}
 
-	if (domain->flags & PD_IOMMUV2_MASK) {
+	if (domain->flags & PD_FLAG_GCR3) {
 		u64 gcr3 = iommu_virt_to_phys(domain->gcr3_tbl);
 		u64 glx  = domain->glx;
 		u64 tmp;
@@ -1666,7 +1666,7 @@ static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 				((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
 		}
 
-		if (domain->flags & PD_GIOV_MASK)
+		if (domain->flags & PD_FLAG_GIOV)
 			pte_root |= DTE_FLAG_GIOV;
 	}
 
@@ -1830,7 +1830,7 @@ static int attach_device(struct device *dev,
 		goto skip_ats_check;
 
 	pdev = to_pci_dev(dev);
-	if (domain->flags & PD_IOMMUV2_MASK) {
+	if (domain->flags & PD_FLAG_GCR3) {
 		struct iommu_domain *def_domain = iommu_get_dma_domain(dev);
 
 		ret = -EINVAL;
@@ -1911,7 +1911,7 @@ static void detach_device(struct device *dev)
 	if (!dev_is_pci(dev))
 		goto out;
 
-	if (domain->flags & PD_IOMMUV2_MASK && dev_data->iommu_v2)
+	if (domain->flags & PD_FLAG_GCR3 && dev_data->iommu_v2)
 		pdev_iommuv2_disable(to_pci_dev(dev));
 	else if (dev_data->ats.enabled)
 		pci_disable_ats(to_pci_dev(dev));
@@ -2062,7 +2062,7 @@ static void protection_domain_free(struct protection_domain *domain)
 	if (domain->iop.pgtbl_cfg.tlb)
 		free_io_pgtable_ops(&domain->iop.iop.ops);
 
-	if (domain->flags & PD_IOMMUV2_MASK)
+	if (domain->flags & PD_FLAG_GCR3)
 		free_gcr3_table(domain);
 
 	if (domain->iop.root)
@@ -2086,6 +2086,7 @@ static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 			return -ENOMEM;
 	}
 
+	domain->flags |= PD_FLAG_V1DMA;
 	amd_iommu_domain_set_pgtable(domain, pt_root, mode);
 
 	return 0;
@@ -2093,13 +2094,14 @@ static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 
 static int protection_domain_init_v2(struct protection_domain *domain)
 {
-	domain->flags |= PD_GIOV_MASK;
+	domain->flags |= PD_FLAG_GIOV;
 
 	domain->domain.pgsize_bitmap = AMD_IOMMU_PGSIZES_V2;
 
 	if (setup_gcr3_table(domain, 1))
 		return -ENOMEM;
 
+	domain->flags |= PD_FLAG_V2DMA;
 	return 0;
 }
 
@@ -2125,6 +2127,7 @@ static struct protection_domain *protection_domain_alloc(unsigned int type)
 	switch (type) {
 	/* No need to allocate io pgtable ops in passthrough mode */
 	case IOMMU_DOMAIN_IDENTITY:
+		domain->flags |= PD_FLAG_PT;
 		return domain;
 	case IOMMU_DOMAIN_DMA:
 		fallthrough;
@@ -2555,7 +2558,7 @@ int amd_iommu_domain_enable_v2(struct iommu_domain *dom, int pasids)
 	 * devices attached when it is switched into IOMMUv2 mode.
 	 */
 	ret = -EBUSY;
-	if (pdom->dev_cnt > 0 || pdom->flags & PD_IOMMUV2_MASK)
+	if (pdom->dev_cnt > 0 || pdom->flags & PD_FLAG_GCR3)
 		goto out;
 
 	if (!pdom->gcr3_tbl)
@@ -2574,7 +2577,7 @@ static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 	struct iommu_cmd cmd;
 	int i, ret;
 
-	if (!(domain->flags & PD_IOMMUV2_MASK))
+	if (!(domain->flags & PD_FLAG_GCR3))
 		return -EINVAL;
 
 	build_inv_iommu_pasid(&cmd, domain->id, pasid, address, size);

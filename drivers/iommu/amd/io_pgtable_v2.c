@@ -360,7 +360,7 @@ static void v2_free_pgtable(struct io_pgtable *iop)
 	struct amd_io_pgtable *pgtable = container_of(iop, struct amd_io_pgtable, iop);
 
 	pdom = container_of(pgtable, struct protection_domain, iop);
-	if (!(pdom->flags & PD_IOMMUV2_MASK))
+	if (!(pdom->flags & PD_FLAG_GCR3))
 		return;
 
 	/* Clear gcr3 entry */

@@ -443,13 +443,11 @@
 #define MAX_DOMAIN_ID 65536
 
 /* Protection domain flags */
-#define PD_DMA_OPS_MASK		BIT(0) /* domain used for dma_ops */
-#define PD_DEFAULT_MASK		BIT(1) /* domain is a default dma_ops
-					      domain for an IOMMU */
-#define PD_PASSTHROUGH_MASK	BIT(2) /* domain has no page
-					      translation */
-#define PD_IOMMUV2_MASK		BIT(3) /* domain has gcr3 table */
-#define PD_GIOV_MASK		BIT(4) /* domain enable GIOV support */
+#define PD_FLAG_PT		BIT(0) /* Passthrough mode */
+#define PD_FLAG_V1DMA		BIT(1) /* DMA-API mode w/ v1 page table */
+#define PD_FLAG_V2DMA		BIT(2) /* DMA-API mode w/ v2 page table */
+#define PD_FLAG_GCR3		BIT(3) /* domain has gcr3 table */
+#define PD_FLAG_GIOV		BIT(4) /* domain enable GIOV support */
 
 /* Timeout stuff */
 #define LOOP_TIMEOUT		100000
@@ -890,8 +888,6 @@ extern unsigned long *amd_iommu_pd_alloc_bitmap;
 
 /* Smallest max PASID supported by any IOMMU in the system */
 extern u32 amd_iommu_max_pasid;
-
-extern bool amd_iommu_v2_present;
 
 extern bool amd_iommu_force_isolation;
 
