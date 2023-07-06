@@ -351,6 +351,13 @@ static inline bool pdev_pasid_supported(struct iommu_dev_data *dev_data)
 	return (dev_data->flags & AMD_IOMMU_DEVICE_FLAG_PASID_SUP);
 }
 
+inline bool amd_iommu_pdev_pri_supported(struct pci_dev *pdev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+
+	return (dev_data->flags & AMD_IOMMU_DEVICE_FLAG_PRI_SUP);
+}
+
 static u32 pdev_get_caps(struct pci_dev *pdev)
 {
 	int features;
@@ -2760,11 +2767,11 @@ static bool amd_iommu_enforce_cache_coherency(struct iommu_domain *domain)
 static int amd_iommu_dev_enable_feature(struct device *dev,
 					enum iommu_dev_features feat)
 {
-	int ret;
+	int ret = 0;
 
 	switch (feat) {
 	case IOMMU_DEV_FEAT_SVA:
-		ret = 0;
+	case IOMMU_DEV_FEAT_IOPF:
 		break;
 	default:
 		ret = -EINVAL;
@@ -2776,11 +2783,11 @@ static int amd_iommu_dev_enable_feature(struct device *dev,
 static int amd_iommu_dev_disable_feature(struct device *dev,
 					 enum iommu_dev_features feat)
 {
-	int ret;
+	int ret = 0;
 
 	switch (feat) {
 	case IOMMU_DEV_FEAT_SVA:
-		ret = 0;
+	case IOMMU_DEV_FEAT_IOPF:
 		break;
 	default:
 		ret = -EINVAL;

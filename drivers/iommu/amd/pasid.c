@@ -71,6 +71,27 @@ out:
 	spin_unlock(&dev_data->lock);
 }
 
+static int iommu_setup_pasid_pri(struct iommu_dev_data *dev_data)
+{
+	struct pci_dev *pdev;
+	int ret;
+
+	if (is_pasid_enabled(dev_data))
+		return 0;
+
+	ret = iommu_pasid_enable(dev_data);
+	if (ret)
+		return ret;
+
+	pdev = dev_is_pci(dev_data->dev) ? to_pci_dev(dev_data->dev) : NULL;
+	if (!pdev || !amd_iommu_pdev_pri_supported(pdev))
+		return ret;
+
+	ret = amd_iommu_iopf_enable_device(dev_data->dev);
+
+	return ret;
+}
+
 static void dev_pasid_remove(struct pdom_pasid_data *pasid_data)
 {
 	/* make it visible */
@@ -163,12 +184,10 @@ static int iommu_sva_set_dev_pasid(struct iommu_domain *domain,
 	/* Use SVA protection domain lock */
 	spin_lock_irqsave(&sva_pdom->lock, flags);
 
-	/* Make sure PASID is enabled */
-	if (!is_pasid_enabled(dev_data)) {
-		ret = iommu_pasid_enable(dev_data);
-		if (ret)
-			goto out;
-	}
+	/* Make sure PASID/PRI is enabled */
+	ret = iommu_setup_pasid_pri(dev_data);
+	if (ret)
+		goto out;
 
 	/* Add PASID to protection domain pasid list */
 	pasid_data = kzalloc(sizeof(*pasid_data), GFP_KERNEL);
