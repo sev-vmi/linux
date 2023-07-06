@@ -1,0 +1,51 @@
+iommu/amd: SVA Support (Part 1) - cleanup/refactoring
+
+This is part 1 of the 3-part series to introduce Share Virtual Address
+(SVA) support, which focuses on cleaning up and refactoring the existing
+code in preparation for subsequent series.
+
+It contains the following enhancements:
+
+* Patch 1 - 10:
+  Clean up, refactoring and miscellaneous improvements.
+
+* Patch 11 - 16:
+  Modify logic to independently enable PCI capabilities (ATS/PASID/PRI)
+  for devices. This allows more flexibility in preparation for SVA and
+  IOPF supports.
+
+This patch series is based on top of iommu/next branch.
+Base commit : a5003e75a171
+
+This is also available at github :
+  <TODO : Add V4 link>
+
+Changes from v3 -> v4:
+  - Pass enum to set_dte_entry() instead of bool
+  - Used DIV_ROUND_UP instead of loop to calculate gcr3 levels
+
+
+v3 : https://lore.kernel.org/linux-iommu/20230804064216.835544-1-vasant.hegde@amd.com/T/#t
+
+Changes from v2 -> v3:
+  - Removed fallthrough from switch-case
+  - Added lockdep_assert_held() instead of comment on top of the function
+  - Moved macro defination (PPR_HANDLER_IOPF) to the patch where its
+    actually used
+  - Use helper function to allocate memory instead of get_zeroed_page()
+  - Converted boolean to bit fields
+
+v2 : https://lore.kernel.org/linux-iommu/20230728053609.165183-1-vasant.hegde@amd.com/T/#t
+
+Changes from v1 -> v2:
+  - Dropped GCR3 related changes from Part1. We are reworking
+    GCR3 management based on Jason's comment. We will post them
+    as separate part.
+  - Addressed review comment from Jason
+  - Added iommu_dev_data.ppr to track PPR status
+
+v1 : https://lore.kernel.org/linux-iommu/20230712141516.154144-1-vasant.hegde@amd.com/
+
+
+Thank you,
+Vasant / Suravee
