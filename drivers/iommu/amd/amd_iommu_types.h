@@ -803,6 +803,11 @@ struct devid_map {
 	bool cmd_line;
 };
 
+enum ppr_handlers {
+	PPR_HANDLER_NONE,	/* No handler specified */
+	PPR_HANDLER_V2API,	/* IOMMU v2 API ppr handler */
+};
+
 /*
  * This struct contains device specific data for the IOMMU
  */
@@ -820,6 +825,7 @@ struct iommu_dev_data {
 	u8 ats_enabled  :1;		  /* ATS state */
 	u8 pri_tlp      :1;		  /* PASID TLB required for
 					     PPR completions */
+	enum ppr_handlers ppr;
 	bool use_vapic;			  /* Enable device to use vapic mode */
 	bool defer_attach;
 
