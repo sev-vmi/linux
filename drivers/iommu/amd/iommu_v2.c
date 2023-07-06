@@ -740,6 +740,10 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	unsigned long flags;
 	int ret, tmp;
 	u32 sbdf;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+
+	if (!dev_data)
+		return -ENODEV;
 
 	might_sleep();
 
@@ -761,6 +765,9 @@ int amd_iommu_init_device(struct pci_dev *pdev, int pasids)
 	dev_state = kzalloc(sizeof(*dev_state), GFP_KERNEL);
 	if (dev_state == NULL)
 		return -ENOMEM;
+
+	/* Enable device for PPR support */
+	dev_data->ppr = PPR_HANDLER_V2API;
 
 	spin_lock_init(&dev_state->lock);
 	init_waitqueue_head(&dev_state->wq);
@@ -832,6 +839,8 @@ out_free_states:
 out_free_dev_state:
 	kfree(dev_state);
 
+	dev_data->ppr = PPR_HANDLER_NONE;
+
 	return ret;
 }
 EXPORT_SYMBOL(amd_iommu_init_device);
@@ -841,8 +850,9 @@ void amd_iommu_free_device(struct pci_dev *pdev)
 	struct device_state *dev_state;
 	unsigned long flags;
 	u32 sbdf;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
 
-	if (!amd_iommu_v2_supported())
+	if (!dev_data || !amd_iommu_v2_supported())
 		return;
 
 	sbdf = get_pci_sbdf_id(pdev);
@@ -858,6 +868,8 @@ void amd_iommu_free_device(struct pci_dev *pdev)
 	list_del(&dev_state->list);
 
 	spin_unlock_irqrestore(&state_lock, flags);
+
+	dev_data->ppr = PPR_HANDLER_NONE;
 
 	put_device_state(dev_state);
 	free_device_state(dev_state);
