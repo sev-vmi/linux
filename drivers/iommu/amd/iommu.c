@@ -2586,6 +2586,9 @@ static int amd_iommu_dev_enable_feature(struct device *dev,
 	case IOMMU_DEV_FEAT_SVA:
 		ret = amd_iommu_sva_enable(dev);
 		break;
+	case IOMMU_DEV_FEAT_IOPF:
+		ret = amd_iommu_iopf_enable(dev);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -2601,6 +2604,9 @@ static int amd_iommu_dev_disable_feature(struct device *dev,
 	switch (feat) {
 	case IOMMU_DEV_FEAT_SVA:
 		ret = amd_iommu_sva_disable(dev);
+		break;
+	case IOMMU_DEV_FEAT_IOPF:
+		ret = amd_iommu_iopf_disable(dev);
 		break;
 	default:
 		ret = -EINVAL;

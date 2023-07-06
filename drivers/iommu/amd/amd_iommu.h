@@ -67,6 +67,8 @@ int amd_iommu_iopf_remove_device(struct amd_iommu *iommu, struct device *dev);
 int amd_iommu_page_response(struct device *dev,
 			    struct iommu_fault_event *event,
 			    struct iommu_page_response *resp);
+int amd_iommu_iopf_enable(struct device *dev);
+int amd_iommu_iopf_disable(struct device *dev);
 
 struct amd_iommu *get_amd_iommu(unsigned int idx);
 u8 amd_iommu_pc_get_max_banks(unsigned int idx);
