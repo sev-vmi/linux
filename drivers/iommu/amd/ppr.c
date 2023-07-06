@@ -9,6 +9,7 @@
 #include <linux/amd-iommu.h>
 #include <linux/delay.h>
 #include <linux/mmu_notifier.h>
+#include <linux/pci-ats.h>
 
 #include "amd_iommu.h"
 #include "amd_iommu_types.h"
@@ -305,4 +306,59 @@ int amd_iommu_iopf_remove_device(struct amd_iommu *iommu, struct device *dev)
 out:
 	raw_spin_unlock_irqrestore(&iommu->lock, flags);
 	return ret;
+}
+
+static int amd_iommu_iopf_update(struct device *dev, bool enable)
+{
+	unsigned long flags;
+	int ret;
+	struct pci_dev *pdev = dev_is_pci(dev) ? to_pci_dev(dev) : NULL;
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev);
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
+	struct protection_domain *pdom = amd_iommu_get_pdomain(dev);
+
+	if (!pdev || !iommu || !dev_data)
+		return -EINVAL;
+
+	spin_lock_irqsave(&pdom->lock, flags);
+
+	if (enable) {
+		ret = amd_iommu_iopf_add_device(iommu, dev);
+		if (ret)
+			goto out;
+
+		dev_data->ppr = true;
+	} else {
+		ret = amd_iommu_iopf_remove_device(iommu, dev);
+		dev_data->ppr = false;
+	}
+
+	amd_iommu_domain_update(pdom);
+
+out:
+	spin_unlock_irqrestore(&pdom->lock, flags);
+	return ret;
+}
+
+int amd_iommu_iopf_enable(struct device *dev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
+
+	if (!(dev_data->flags & AMD_IOMMU_DEVICE_FLAG_PRI_SUP))
+		return -ENODEV;
+
+	if (!dev_data->ats_enabled || !dev_data->pri_enabled)
+		return -EINVAL;
+
+	return amd_iommu_iopf_update(dev, true);
+}
+
+int amd_iommu_iopf_disable(struct device *dev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
+
+	if (!dev_data->pri_enabled)
+		return -EINVAL;
+
+	return amd_iommu_iopf_update(dev, false);
 }
