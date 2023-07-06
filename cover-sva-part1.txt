@@ -1,0 +1,103 @@
+iommu/amd: SVA Support (Part 1) - cleanup/refactoring
+
+This is part 1 of the 4-part series to introduce Share Virtual Address
+(SVA) support, which focuses on cleaning up and refactoring the existing
+code in preparation for subsequent series.
+
+It contains the following enhancements:
+
+* Patch 1 - 7:
+  Clean up, refactoring and miscellaneous improvements.
+
+* Patch 8 - 9:
+  Use global functions to check iommu features
+
+* Patch 10 - 14:
+  Modify logic to independently enable PCI capabilities (ATS/PASID/PRI)
+  for devices. This allows more flexibility in preparation for SVA and
+  IOPF supports.
+
+This patch series is based on top of linux v6.6-rc1.
+Base commit : 0bb80ecc33a (Linux 6.6-rc1)
+
+This is also available at github :
+  https://github.com/AMDESE/linux/tree/iommu_sva_part1_v6_v6.6_rc1
+
+Thanks Jason, Jerry, Robin for reviewing previous versions and providing valuable
+feedbacks.
+
+
+Changes from v5 -> v6:
+  - Rebased on top v6.6-rc1
+  - Added Review-by tags
+
+v5: https://lore.kernel.org/linux-iommu/20230821104227.706997-1-vasant.hegde@amd.com/T/#t
+
+Changes from v4 -> v5:
+  - Changed dev_data.ppr from bool to bit field
+  - Reverted sysfs_emit that was changing existing behaviour
+
+v4 : https://lore.kernel.org/linux-iommu/20230815102202.565012-1-vasant.hegde@amd.com/T/#t
+
+Changes from v3 -> v4:
+  - Dropped patches that were touching iommu_v2.c as we will be deprecating
+    iommu_v2 module.
+  - Dropped Review-by tags for the patches which got modified (mostly the
+    patches that were touching iommu_v2.c code).
+  - Introduced new patch to use global EFR/EFR2 to check the iommu features
+  - Pass enum to set_dte_entry() instead of bool
+  - Used DIV_ROUND_UP instead of loop to calculate gcr3 levels
+
+v3 : https://lore.kernel.org/linux-iommu/20230804064216.835544-1-vasant.hegde@amd.com/T/#t
+
+Changes from v2 -> v3:
+  - Removed fallthrough from switch-case
+  - Added lockdep_assert_held() instead of comment on top of the function
+  - Moved macro defination (PPR_HANDLER_IOPF) to the patch where its
+    actually used
+  - Use helper function to allocate memory instead of get_zeroed_page()
+  - Converted boolean to bit fields
+
+v2 : https://lore.kernel.org/linux-iommu/20230728053609.165183-1-vasant.hegde@amd.com/T/#t
+
+Changes from v1 -> v2:
+  - Dropped GCR3 related changes from Part1. We are reworking
+    GCR3 management based on Jason's comment. We will post them
+    as separate part.
+  - Addressed review comment from Jason
+  - Added iommu_dev_data.ppr to track PPR status
+
+v1 : https://lore.kernel.org/linux-iommu/20230712141516.154144-1-vasant.hegde@amd.com/
+
+
+Thank you,
+Vasant / Suravee
+
+Suravee Suthikulpanit (8):
+  iommu/amd: Remove unused amd_io_pgtable.pt_root variable
+  iommu/amd: Consolidate timeout pre-define to amd_iommu_type.h
+  iommu/amd: Consolidate logic to allocate protection domain
+  iommu/amd: Introduce helper functions for managing GCR3 table
+  iommu/amd: Miscellaneous clean up when free domain
+  iommu/amd: Consolidate feature detection and reporting logic
+  iommu/amd: Modify logic for checking GT and PPR features
+  iommu/amd: Introduce iommu_dev_data.ppr
+
+Vasant Hegde (6):
+  iommu/amd: Refactor protection domain allocation code
+  iommu/amd: Do not set amd_iommu_pgtable in pass-through mode
+  iommu/amd: Rename ats related variables
+  iommu/amd: Introduce iommu_dev_data.flags to track device capabilities
+  iommu/amd: Enable device ATS/PASID/PRI capabilities independently
+  iommu/amd: Initialize iommu_device->max_pasids
+
+ drivers/iommu/amd/amd_iommu.h       |  28 +-
+ drivers/iommu/amd/amd_iommu_types.h |  31 +-
+ drivers/iommu/amd/init.c            | 116 +++-----
+ drivers/iommu/amd/io_pgtable_v2.c   |   8 +-
+ drivers/iommu/amd/iommu.c           | 442 +++++++++++++++-------------
+ 5 files changed, 322 insertions(+), 303 deletions(-)
+
+-- 
+2.31.1
+
