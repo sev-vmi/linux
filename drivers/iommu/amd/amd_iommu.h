@@ -24,6 +24,7 @@ int amd_iommu_init_devices(void);
 void amd_iommu_uninit_devices(void);
 void amd_iommu_init_notifier(void);
 void amd_iommu_set_rlookup_table(struct amd_iommu *iommu, u16 devid);
+struct amd_iommu *amd_iommu_rlookup_iommu(struct device *dev);
 
 #ifdef CONFIG_AMD_IOMMU_DEBUGFS
 void amd_iommu_debugfs_setup(struct amd_iommu *iommu);
