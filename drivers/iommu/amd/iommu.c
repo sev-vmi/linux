@@ -431,15 +431,12 @@ static void pdev_enable_caps(struct pci_dev *pdev)
 {
 	pdev_enable_cap_ats(pdev);
 	pdev_enable_cap_pasid(pdev);
-	amd_iommu_pdev_enable_cap_pri(pdev);
-
 }
 
 static void pdev_disable_caps(struct pci_dev *pdev)
 {
 	pdev_disable_cap_ats(pdev);
 	pdev_disable_cap_pasid(pdev);
-	amd_iommu_pdev_disable_cap_pri(pdev);
 }
 
 /*
@@ -2106,7 +2103,32 @@ static void protection_domain_free(struct protection_domain *domain)
 	kfree(domain);
 }
 
-static int v2api_domain_init(struct protection_domain *pdom)
+static inline int v2api_pdev_init(struct pci_dev *pdev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+
+	if (dev_data->pri_enabled)
+		return -EBUSY;
+
+	/* V2API mode needs ATS, PASID and PRI support */
+	if (!dev_data->ats_enabled || !dev_data->pasid_enabled)
+		return -EINVAL;
+
+	return amd_iommu_pdev_enable_cap_pri(pdev);
+}
+
+static inline void v2api_pdev_uninit(struct pci_dev *pdev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+
+	if (!dev_data->pri_enabled)
+		return;
+
+	amd_iommu_pdev_disable_cap_pri(pdev);
+}
+
+static int v2api_domain_init(struct protection_domain *pdom,
+			     struct pci_dev *pdev)
 {
 	/* V2API is already enabled for this domain */
 	if (!!(pdom->flags & PD_FLAG_V2API))
@@ -2128,7 +2150,7 @@ static int v2api_domain_init(struct protection_domain *pdom)
 	if (pdom->iop.pgtbl_cfg.tlb)
 		free_io_pgtable_ops(&pdom->iop.iop.ops);
 
-	return 0;
+	return v2api_pdev_init(pdev);
 }
 
 int amd_iommu_v2_domain_init(struct protection_domain *pdom,
@@ -2141,7 +2163,7 @@ int amd_iommu_v2_domain_init(struct protection_domain *pdom,
 
 	switch (pd_flags) {
 	case PD_FLAG_V2API:
-		ret = v2api_domain_init(pdom);
+		ret = v2api_domain_init(pdom, pdev);
 		break;
 	/* This gets called from domain allocation path */
 	case PD_FLAG_V2DMA:
@@ -2179,6 +2201,14 @@ void amd_iommu_v2_domain_uninit(struct protection_domain *pdom,
 		return;
 
 	spin_lock_irqsave(&pdom->lock, flags);
+
+	switch (pd_flags) {
+	case PD_FLAG_V2API:
+		v2api_pdev_uninit(pdev);
+		break;
+	default:
+		break;
+	}
 
 	/*
 	 * If device is booted with passthrough mode then clear guest
