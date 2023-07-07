@@ -217,7 +217,7 @@ static int clone_alias(struct pci_dev *pdev, u16 alias, void *data)
 	if (devid == alias)
 		return 0;
 
-	iommu = rlookup_amd_iommu(&pdev->dev);
+	iommu = get_amd_iommu_from_dev(&pdev->dev);
 	if (!iommu)
 		return 0;
 
@@ -1407,7 +1407,7 @@ static int device_flush_iotlb(struct iommu_dev_data *dev_data,
 	int qdep;
 
 	qdep     = dev_data->ats_qdep;
-	iommu    = rlookup_amd_iommu(dev_data->dev);
+	iommu    = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
 		return -EINVAL;
 
@@ -1434,7 +1434,7 @@ static int device_flush_dte(struct iommu_dev_data *dev_data)
 	u16 alias;
 	int ret;
 
-	iommu = rlookup_amd_iommu(dev_data->dev);
+	iommu = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
 		return -EINVAL;
 
@@ -1805,7 +1805,7 @@ static void do_attach(struct iommu_dev_data *dev_data,
 	struct amd_iommu *iommu;
 	bool ats;
 
-	iommu = rlookup_amd_iommu(dev_data->dev);
+	iommu = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
 		return;
 	ats   = dev_data->ats_enabled;
@@ -1835,7 +1835,7 @@ static void do_detach(struct iommu_dev_data *dev_data)
 	struct protection_domain *domain = dev_data->domain;
 	struct amd_iommu *iommu;
 
-	iommu = rlookup_amd_iommu(dev_data->dev);
+	iommu = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
 		return;
 
@@ -1989,7 +1989,7 @@ static void amd_iommu_release_device(struct device *dev)
 	if (!check_device(dev))
 		return;
 
-	iommu = rlookup_amd_iommu(dev);
+	iommu = get_amd_iommu_from_dev(dev);
 	if (!iommu)
 		return;
 
@@ -2016,7 +2016,7 @@ static void update_device_table(struct protection_domain *domain)
 	struct iommu_dev_data *dev_data;
 
 	list_for_each_entry(dev_data, &domain->dev_list, list) {
-		struct amd_iommu *iommu = rlookup_amd_iommu(dev_data->dev);
+		struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
 
 		if (!iommu)
 			continue;
@@ -2237,7 +2237,7 @@ static int amd_iommu_attach_device(struct iommu_domain *dom,
 {
 	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
 	struct protection_domain *domain = to_pdomain(dom);
-	struct amd_iommu *iommu = rlookup_amd_iommu(dev);
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev);
 	int ret;
 
 	/*
@@ -2388,7 +2388,7 @@ static void amd_iommu_get_resv_regions(struct device *dev,
 		return;
 
 	devid = PCI_SBDF_TO_DEVID(sbdf);
-	iommu = rlookup_amd_iommu(dev);
+	iommu = get_amd_iommu_from_dev(dev);
 	if (!iommu)
 		return;
 	pci_seg = iommu->pci_seg;
@@ -2560,7 +2560,7 @@ static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 			continue;
 
 		qdep  = dev_data->ats_qdep;
-		iommu = rlookup_amd_iommu(dev_data->dev);
+		iommu = get_amd_iommu_from_dev(dev_data->dev);
 		if (!iommu)
 			continue;
 		build_inv_iotlb_pasid(&cmd, dev_data->devid, pasid,
@@ -2715,7 +2715,7 @@ int amd_iommu_complete_ppr(struct pci_dev *pdev, u32 pasid,
 	struct iommu_cmd cmd;
 
 	dev_data = dev_iommu_priv_get(&pdev->dev);
-	iommu    = rlookup_amd_iommu(&pdev->dev);
+	iommu    = get_amd_iommu_from_dev(&pdev->dev);
 	if (!iommu)
 		return -ENODEV;
 
@@ -2835,7 +2835,7 @@ static int set_remap_table_entry_alias(struct pci_dev *pdev, u16 alias,
 {
 	struct irq_remap_table *table = data;
 	struct amd_iommu_pci_seg *pci_seg;
-	struct amd_iommu *iommu = rlookup_amd_iommu(&pdev->dev);
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(&pdev->dev);
 
 	if (!iommu)
 		return -EINVAL;
