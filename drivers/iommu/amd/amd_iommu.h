@@ -144,6 +144,13 @@ static inline void *alloc_pgtable_page(int nid, gfp_t gfp)
 	return page ? page_address(page) : NULL;
 }
 
+static inline struct amd_iommu *get_amd_iommu_from_dev(struct device *dev)
+{
+	struct iommu_device *iommu = iommu_get_iommu_dev(dev);
+
+	return container_of(iommu, struct amd_iommu, iommu);
+}
+
 bool translation_pre_enabled(struct amd_iommu *iommu);
 bool amd_iommu_is_attach_deferred(struct device *dev);
 int __init add_special_device(u8 type, u8 id, u32 *devid, bool cmd_line);
