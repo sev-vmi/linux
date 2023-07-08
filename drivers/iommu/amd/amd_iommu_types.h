@@ -824,6 +824,8 @@ struct iommu_dev_data {
 	u32 flags;			  /* Holds AMD_IOMMU_DEVICE_FLAG_<*> */
 	int  ats_qdep;
 	bool ats_enabled;		  /* ATS state */
+	bool pri_enabled;		  /* PRI state */
+	bool pasid_enabled;		  /* PASID state */
 	bool pri_tlp;			  /* PASID TLB required for
 					     PPR completions */
 	enum ppr_handlers ppr;
