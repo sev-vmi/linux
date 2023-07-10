@@ -1,0 +1,56 @@
+iommu/amd: SVA Support (Part 4) - SVA and IOPF
+
+This is part 4 of the 4-part series to introduce Share Virtual Address
+(SVA) support for devices, which can support PCI ATS, PASID and PRI
+capabilities. These devices are referred to as SVA-capable devices in
+this series.
+
+It contains the following enhancements:
+
+* Patch 1 - 4:
+  Rename, add support to enable/disable features, update DTE etc.
+
+* Patch 5 - 6:
+  Introduce SVA support
+
+* Patch 7 - 12:
+  Add IOPF support
+
+
+This patch series is based on top of SVA Part 3.
+  https://lore.kernel.org/linux-iommu/20230816174031.634453-1-vasant.hegde@amd.com/T/#t
+
+Also depends on :
+  1) Tina's SVA domain improvement
+     https://lore.kernel.org/linux-iommu/20230827084401.819852-1-tina.zhang@intel.com/
+
+  2) Baolu's IOPF improvement
+     https://lore.kernel.org/linux-iommu/cbfbe969-1a92-52bf-f00c-3fb89feefd66@linux.intel.com/
+
+
+This is also available at github :
+  https://github.com/AMDESE/linux/tree/iommu_sva_part4_v3_v6.6_rc5
+
+
+Thanks everyone who reviewed previous version and provided valuable feedbacks.
+
+Changes from v2 -> v3:
+  - Rename sva.c -> pasid.c
+  - Changed amd_iommu_sva_supported() -> amd_iommu_pasid_supported()
+  - Added patch to update/flush DTE
+  - Rework part of SVA support
+  - Move IOPF enablement to PASID bind time
+
+v2: https://lore.kernel.org/linux-iommu/20230911121046.1025732-1-vasant.hegde@amd.com/T/#u
+
+Changes from v1 -> v2:
+  - Added new patch to fix PASID override issue in GCR3 table
+  - Complete rework of SVA code on top of Tina's SVA series.
+  - Rework SVA enable code
+  - Reworked IOPF handler code on top of Baolu's IOPF improvement series.
+
+
+v1: https://lore.kernel.org/linux-iommu/20230823140415.729050-1-vasant.hegde@amd.com/T/#t
+
+Thank you,
+Vasant / Suravee
