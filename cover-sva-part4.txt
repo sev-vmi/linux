@@ -1,0 +1,30 @@
+iommu/amd: SVA Support (Part 4) - SVA and IOPF
+
+This is part 4 of the 4-part series to introduce Share Virtual Address
+(SVA) support for devices, which can support PCI ATS, PASID and PRI
+capabilities. These devices are referred to as SVA-capable devices in
+this series.
+
+Patch series organization
+-------------------------
+
+This series is organized as following:
+
+* Patch 1 - 2:
+  Rename / add support to enable/disable features
+
+* Patch 3 - 4:
+  Introduce SVA support
+
+* Patch 5 - 10:
+  Add IOPF support
+
+This patch series is based on top of SVA Part 3 [1].
+  [1] https://lore.kernel.org/linux-iommu/20230816174031.634453-1-vasant.hegde@amd.com/
+
+This is also available at github :
+  https://github.com/AMDESE/linux/tree/iommu_sva_part4_v1_v6.5_rc1
+
+
+Thank you,
+Vasant / Suravee
