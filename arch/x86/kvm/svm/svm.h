@@ -94,7 +94,7 @@ struct kvm_sev_info {
 	atomic_t migration_in_progress;
 	u64 snp_init_flags;
 	void *snp_context;      /* SNP guest context page */
-	u64 sev_features;	/* Features set at VMSA creation */
+	u64 sev_features[SVM_SEV_VMPL_MAX]; /* Features set at VMSA creation */
 	struct sev_snp_certs *snp_certs;
 	struct mutex guest_req_lock; /* Lock for guest request handling */
 };
