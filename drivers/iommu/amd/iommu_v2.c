@@ -271,6 +271,7 @@ static void put_pasid_state_wait(struct pasid_state *pasid_state)
 static void unbind_pasid(struct pasid_state *pasid_state)
 {
 	struct device_state *dev_state = pasid_state->device_state;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&dev_state->pdev->dev);
 
 	/*
 	 * Mark pasid_state as invalid, no more faults will we added to the
@@ -282,7 +283,7 @@ static void unbind_pasid(struct pasid_state *pasid_state)
 	smp_wmb();
 
 	/* After this the device/pasid can't access the mm anymore */
-	amd_iommu_domain_clear_gcr3(dev_state->pdom, pasid_state->pasid);
+	amd_iommu_clear_gcr3(dev_data, pasid_state->pasid);
 
 	/* Make sure no more pending faults are in the queue */
 	flush_workqueue(iommu_wq);
@@ -605,6 +606,7 @@ int amd_iommu_bind_pasid(struct pci_dev *pdev, u32 pasid,
 	struct mm_struct *mm;
 	u32 sbdf;
 	int ret;
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
 
 	might_sleep();
 
@@ -650,8 +652,7 @@ int amd_iommu_bind_pasid(struct pci_dev *pdev, u32 pasid,
 	if (ret)
 		goto out_unregister;
 
-	ret = amd_iommu_domain_set_gcr3(dev_state->pdom, pasid,
-					__pa(pasid_state->mm->pgd));
+	ret = amd_iommu_set_gcr3(dev_data, pasid, __pa(pasid_state->mm->pgd));
 	if (ret)
 		goto out_clear_state;
 

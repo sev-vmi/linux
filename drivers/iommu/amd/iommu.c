@@ -78,6 +78,11 @@ struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
 
+static int __set_gcr3(struct iommu_dev_data *dev_data,
+		       u32 pasid, unsigned long gcr3);
+
+static int __clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid);
+
 /****************************************************************************
  *
  * Helper functions
@@ -2735,65 +2740,75 @@ static u64 *__get_gcr3_pte(u64 *root, int level, u32 pasid, bool alloc)
 	return pte;
 }
 
-static int __set_gcr3(struct protection_domain *domain, u32 pasid,
-		      unsigned long cr3)
+static int __set_gcr3(struct iommu_dev_data *dev_data,
+		      u32 pasid, unsigned long gcr3)
 {
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 	u64 *pte;
 
-	if (domain->iop.mode != PAGE_MODE_NONE)
-		return -EINVAL;
+	lockdep_assert_held(&dev_data->lock);
 
-	pte = __get_gcr3_pte(domain->gcr3_tbl, domain->glx, pasid, true);
+	pte = __get_gcr3_pte(gcr3_info->gcr3_tbl,
+			     gcr3_info->glx, pasid, true);
 	if (pte == NULL)
 		return -ENOMEM;
 
-	*pte = (cr3 & PAGE_MASK) | GCR3_VALID;
+	*pte = (gcr3 & PAGE_MASK) | GCR3_VALID;
+	__amd_iommu_flush_tlb(dev_data->domain, pasid);
 
-	return __amd_iommu_flush_tlb(domain, pasid);
+	return 0;
 }
 
-static int __clear_gcr3(struct protection_domain *domain, u32 pasid)
+int amd_iommu_set_gcr3(struct iommu_dev_data *dev_data, u32 pasid,
+		       unsigned long gcr3)
 {
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	int ret;
+
+	spin_lock(&dev_data->lock);
+
+	ret = __set_gcr3(dev_data, pasid, gcr3);
+	if (!ret)
+		gcr3_info->pasid_cnt++;
+
+	spin_unlock(&dev_data->lock);
+	return ret;
+}
+EXPORT_SYMBOL(amd_iommu_set_gcr3);
+
+static int __clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid)
+{
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 	u64 *pte;
 
-	if (domain->iop.mode != PAGE_MODE_NONE)
+	lockdep_assert_held(&dev_data->lock);
+
+	pte = __get_gcr3_pte(gcr3_info->gcr3_tbl,
+			     gcr3_info->glx, pasid, false);
+	if (pte == NULL)
 		return -EINVAL;
 
-	pte = __get_gcr3_pte(domain->gcr3_tbl, domain->glx, pasid, false);
-	if (pte == NULL)
-		return 0;
-
 	*pte = 0;
+	__amd_iommu_flush_tlb(dev_data->domain, pasid);
 
-	return __amd_iommu_flush_tlb(domain, pasid);
+	return 0;
 }
 
-int amd_iommu_domain_set_gcr3(struct protection_domain *domain, u32 pasid,
-			      unsigned long cr3)
+int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid)
 {
-	unsigned long flags;
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 	int ret;
 
-	spin_lock_irqsave(&domain->lock, flags);
-	ret = __set_gcr3(domain, pasid, cr3);
-	spin_unlock_irqrestore(&domain->lock, flags);
+	spin_lock(&dev_data->lock);
 
+	ret = __clear_gcr3(dev_data, pasid);
+	if (!ret)
+		gcr3_info->pasid_cnt--;
+
+	spin_unlock(&dev_data->lock);
 	return ret;
 }
-EXPORT_SYMBOL(amd_iommu_domain_set_gcr3);
-
-int amd_iommu_domain_clear_gcr3(struct protection_domain *domain, u32 pasid)
-{
-	unsigned long flags;
-	int ret;
-
-	spin_lock_irqsave(&domain->lock, flags);
-	ret = __clear_gcr3(domain, pasid);
-	spin_unlock_irqrestore(&domain->lock, flags);
-
-	return ret;
-}
-EXPORT_SYMBOL(amd_iommu_domain_clear_gcr3);
+EXPORT_SYMBOL(amd_iommu_clear_gcr3);
 
 int amd_iommu_complete_ppr(struct pci_dev *pdev, u32 pasid,
 			   int status, int tag)
