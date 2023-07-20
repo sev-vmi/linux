@@ -77,6 +77,11 @@ struct kmem_cache *amd_iommu_irq_cache;
 
 static void detach_device(struct device *dev);
 
+static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
+			  struct gcr3_tbl_info *gcr3_info,
+			  struct protection_domain *domain, bool ats,
+			  bool ppr);
+
 static int __set_gcr3(struct iommu_dev_data *dev_data,
 		       u32 pasid, unsigned long gcr3);
 
@@ -1664,16 +1669,27 @@ static void free_gcr3_tbl_level2(u64 *tbl)
 	}
 }
 
-static void free_gcr3_table(struct protection_domain *domain)
+static void free_gcr3_table(struct iommu_dev_data *dev_data)
 {
-	if (domain->glx == 2)
-		free_gcr3_tbl_level2(domain->gcr3_tbl);
-	else if (domain->glx == 1)
-		free_gcr3_tbl_level1(domain->gcr3_tbl);
-	else
-		BUG_ON(domain->glx != 0);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
 
-	free_page((unsigned long)domain->gcr3_tbl);
+	if (gcr3_info->glx == 2)
+		free_gcr3_tbl_level2(gcr3_info->gcr3_tbl);
+	else if (gcr3_info->glx == 1)
+		free_gcr3_tbl_level1(gcr3_info->gcr3_tbl);
+	else
+		WARN_ON_ONCE(gcr3_info->glx != 0);
+
+	gcr3_info->glx = 0;
+
+	set_dte_entry(iommu, dev_data->devid, NULL, dev_data->domain,
+		      dev_data->ats_enabled, dev_data->ppr);
+	clone_aliases(iommu, dev_data->dev);
+	device_flush_dte(dev_data);
+
+	free_page((unsigned long)gcr3_info->gcr3_tbl);
+	gcr3_info->gcr3_tbl = NULL;
 }
 
 /*
@@ -1692,28 +1708,37 @@ static int get_gcr3_levels(int pasids)
 	return levels ? (DIV_ROUND_UP(levels, 9) - 1) : levels;
 }
 
-/* Note: This function expects iommu_domain->lock to be held prior calling the function. */
-static int setup_gcr3_table(struct protection_domain *domain, int pasids)
+static int setup_gcr3_table(struct iommu_dev_data *dev_data, int pasids)
 {
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
 	int levels = get_gcr3_levels(pasids);
 
 	if (levels > amd_iommu_max_glx_val)
 		return -EINVAL;
 
-	domain->gcr3_tbl = alloc_pgtable_page(domain->nid, GFP_ATOMIC);
-	if (domain->gcr3_tbl == NULL)
+	if (gcr3_info->gcr3_tbl)
+		return -EBUSY;
+
+	gcr3_info->gcr3_tbl = alloc_pgtable_page(dev_to_node(dev_data->dev),
+						 GFP_ATOMIC);
+	if (gcr3_info->gcr3_tbl == NULL)
 		return -ENOMEM;
 
-	domain->glx      = levels;
-	domain->flags   |= PD_IOMMUV2_MASK;
+	gcr3_info->glx = levels;
 
-	amd_iommu_domain_update(domain);
+	set_dte_entry(iommu, dev_data->devid, &dev_data->gcr3_info,
+		      dev_data->domain, dev_data->ats_enabled, dev_data->ppr);
+	clone_aliases(iommu, dev_data->dev);
+	device_flush_dte(dev_data);
 
 	return 0;
 }
 
 static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
-			  struct protection_domain *domain, bool ats, bool ppr)
+			  struct gcr3_tbl_info *gcr3_info,
+			  struct protection_domain *domain, bool ats,
+			  bool ppr)
 {
 	u64 pte_root = 0;
 	u64 flags = 0;
@@ -1743,9 +1768,9 @@ static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 	if (ppr)
 		pte_root |= 1ULL << DEV_ENTRY_PPR;
 
-	if (domain->flags & PD_IOMMUV2_MASK) {
-		u64 gcr3 = iommu_virt_to_phys(domain->gcr3_tbl);
-		u64 glx  = domain->glx;
+	if (gcr3_info && gcr3_info->gcr3_tbl) {
+		u64 gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
+		u64 glx  = gcr3_info->glx;
 		u64 tmp;
 
 		pte_root |= DTE_FLAG_GV;
@@ -1773,7 +1798,7 @@ static void set_dte_entry(struct amd_iommu *iommu, u16 devid,
 				((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
 		}
 
-		if (domain->flags & PD_GIOV_MASK)
+		if (gcr3_info->giov)
 			pte_root |= DTE_FLAG_GIOV;
 	}
 
@@ -1820,7 +1845,7 @@ static int _init_gcr3_tbl(struct iommu_dev_data *dev_data)
 	 * By default, setup GCR3 table to support MAX PASIDs
 	 * support by the IOMMU HW.
 	 */
-	return setup_gcr3_table(dev_data->domain, -1);
+	return setup_gcr3_table(dev_data, -1);
 }
 
 static inline void _destroy_gcr3_tbl(struct iommu_dev_data *dev_data)
@@ -1828,7 +1853,7 @@ static inline void _destroy_gcr3_tbl(struct iommu_dev_data *dev_data)
 	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 
 	gcr3_info->giov = false;
-	free_gcr3_table(dev_data->domain);
+	free_gcr3_table(dev_data);
 }
 
 static int do_attach(struct iommu_dev_data *dev_data,
@@ -1869,8 +1894,8 @@ static int do_attach(struct iommu_dev_data *dev_data,
 	}
 
 	/* Update device table */
-	set_dte_entry(iommu, dev_data->devid, domain,
-		      ats, dev_data->ppr);
+	set_dte_entry(iommu, dev_data->devid, &dev_data->gcr3_info,
+		      domain, ats, dev_data->ppr);
 	clone_aliases(iommu, dev_data->dev);
 
 	device_flush_dte(dev_data);
@@ -2073,8 +2098,9 @@ static void update_device_table(struct protection_domain *domain)
 
 		if (!iommu)
 			continue;
-		set_dte_entry(iommu, dev_data->devid, domain,
-			      dev_data->ats_enabled, dev_data->ppr);
+
+		set_dte_entry(iommu, dev_data->devid, &dev_data->gcr3_info,
+			      domain, dev_data->ats_enabled, dev_data->ppr);
 		clone_aliases(iommu, dev_data->dev);
 	}
 }
