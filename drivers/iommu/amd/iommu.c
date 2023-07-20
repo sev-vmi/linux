@@ -2732,7 +2732,7 @@ static int __flush_pasid(struct protection_domain *domain, u32 pasid,
 	struct iommu_cmd cmd;
 	int i, ret;
 
-	if (!(domain->flags & PD_IOMMUV2_MASK))
+	if (!(domain->pd_mode & PD_MODE_V2))
 		return -EINVAL;
 
 	build_inv_iommu_pasid(&cmd, domain->id, pasid, address, size);
