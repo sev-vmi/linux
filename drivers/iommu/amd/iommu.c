@@ -92,7 +92,7 @@ static void set_dte_entry(struct amd_iommu *iommu,
  */
 static inline ioasid_t pdom_get_default_pasid(struct protection_domain *pdom)
 {
-	return (pdom && (pdom->flags & PD_IOMMUV2_MASK)) ?
+	return (pdom && (pdom->pd_mode == PD_MODE_V2)) ?
 		IOMMU_NO_PASID : IOMMU_PASID_INVALID;
 }
 
