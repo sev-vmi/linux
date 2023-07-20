@@ -1809,15 +1809,38 @@ static void clear_dte_entry(struct amd_iommu *iommu, u16 devid)
 	amd_iommu_apply_erratum_63(iommu, devid);
 }
 
-static void do_attach(struct iommu_dev_data *dev_data,
-		      struct protection_domain *domain)
+static int _init_gcr3_tbl(struct iommu_dev_data *dev_data)
+{
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+
+	/* By default, GCR3 is set to support non-PASID devices. */
+	gcr3_info->giov = true;
+
+	/*
+	 * By default, setup GCR3 table to support MAX PASIDs
+	 * support by the IOMMU HW.
+	 */
+	return setup_gcr3_table(dev_data->domain, -1);
+}
+
+static inline void _destroy_gcr3_tbl(struct iommu_dev_data *dev_data)
+{
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+
+	gcr3_info->giov = false;
+	free_gcr3_table(dev_data->domain);
+}
+
+static int do_attach(struct iommu_dev_data *dev_data,
+		     struct protection_domain *domain)
 {
 	struct amd_iommu *iommu;
 	bool ats;
+	int ret = 0;
 
 	iommu = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
-		return;
+		return -EINVAL;
 	ats   = dev_data->ats_enabled;
 
 	/* Update data structures */
@@ -1832,12 +1855,27 @@ static void do_attach(struct iommu_dev_data *dev_data,
 	domain->dev_iommu[iommu->index] += 1;
 	domain->dev_cnt                 += 1;
 
+	if (domain->pd_mode == PD_MODE_V2) {
+		ret = _init_gcr3_tbl(dev_data);
+		if (ret)
+			return ret;
+
+		ret = __set_gcr3(dev_data, 0,
+				 iommu_virt_to_phys(domain->iop.pgd));
+		if (ret) {
+			_destroy_gcr3_tbl(dev_data);
+			return ret;
+		}
+	}
+
 	/* Update device table */
 	set_dte_entry(iommu, dev_data->devid, domain,
 		      ats, dev_data->ppr);
 	clone_aliases(iommu, dev_data->dev);
 
 	device_flush_dte(dev_data);
+
+	return ret;
 }
 
 static void do_detach(struct iommu_dev_data *dev_data)
@@ -1848,6 +1886,11 @@ static void do_detach(struct iommu_dev_data *dev_data)
 	iommu = get_amd_iommu_from_dev(dev_data->dev);
 	if (!iommu)
 		return;
+
+	if (domain->pd_mode == PD_MODE_V2) {
+		__clear_gcr3(dev_data, 0);
+		_destroy_gcr3_tbl(dev_data);
+	}
 
 	/* Update data structures */
 	dev_data->domain = NULL;
@@ -1894,7 +1937,7 @@ static int attach_device(struct device *dev,
 	if (dev_is_pci(dev))
 		pdev_enable_caps(to_pci_dev(dev));
 
-	do_attach(dev_data, domain);
+	ret = do_attach(dev_data, domain);
 
 	/*
 	 * We might boot into a crash-kernel here. The crashed kernel
