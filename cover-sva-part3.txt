@@ -1,0 +1,51 @@
+iommu/amd: SVA Support (part 3) - refactor support for GCR3 table
+
+This is part 3 of the 4-part series to introduce Share Virtual
+Address (SVA) support, which focuses on refactoring GCR3 table.
+This moves GCR3 related information from protection domain
+structure to iommu_dev_data (per device) structure.
+
+It contains the following enhancements:
+
+* Patch 1 - 2:
+  Cleanup and introduce helper function
+
+* Patch 3 - 12:
+  Introduce per device GCR3 table, per device domain ID, invalidation based
+  on per device and code refactoring
+
+* Patch 13:
+  Remove unused variable from protection domain structure
+
+This patch series is based on top of Improve TLB invalidation logic [1] :
+  [1] https://lore.kernel.org/linux-iommu/20231006101624.5912-1-vasant.hegde@amd.com/T/#t
+
+This is also available at github :
+  https://github.com/AMDESE/linux/tree/iommu_sva_part3_v3_v6.6_rc5
+
+
+v3 : https://lore.kernel.org/linux-iommu/20231013151652.6008-1-vasant.hegde@amd.com/T/#t
+
+Changes from v2 -> v3:
+  - Dropped "iommu/amd: Use struct protection_domain in helper functions" as flush related
+    functions are already fixed and set_gcr3 related functions is reworked in this series.
+  - Removed moving to_pdomain() function from this series. It will be introduced
+    in SVA series where it will be used.
+  - Added per device domain ID and per device invalidation functions
+  - Added functions to flush TLB for the given device
+  - Added Review-by tags
+
+v2 : https://lore.kernel.org/linux-iommu/20230816174031.634453-1-vasant.hegde@amd.com/T/#t
+
+Changes from v1 - v2:
+  - Dropped iommu_v2 module related support as newly introduced Part2
+    removed iommu_v2 module.
+  - Moved Patch 'Use struct protection_domain in helper functions' from Part1 to
+    Part3
+  - Updated get_amd_iommu_from_dev() to retrieve iommu from device structure
+  - Removed 'PD_MODE_PT'
+
+v1 : https://lore.kernel.org/linux-iommu/20230808100232.5977-1-vasant.hegde@amd.com/T/#t
+
+Thank you,
+Vasant / Suravee
