@@ -1,0 +1,41 @@
+iommu/amd: SVA Support (part 3) - refactor support for GCR3 table
+
+This is part 3 of the 4-part series to introduce Share Virtual
+Address (SVA) support, which focuses on refactoring GCR3 table.
+This moves GCR3 related information from protection domain
+structure to iommu_dev_data (per device) structure.
+
+It contains the following enhancements:
+
+* Patch 1 - 2:
+  Rename helper function
+
+* Patch 3 - 9:
+  Introduce per device GCR3 table and code refactoring
+
+* Patch 10:
+  Remove unused variable from protection domain structure
+
+This patch series is based on top of SVA Part 2 [1] :
+  <TODO: Update Part 2 link>
+  Part2 v1 -> https://lore.kernel.org/linux-iommu/673b7081-801b-d24b-ea75-33c5847951b4@amd.com/T/#t
+
+This is also available at github :
+  <TODO: Update github link>
+  V2 -> https://github.com/AMDESE/linux/tree/iommu_sva_part3_v2_v6.5_rc1
+
+
+v2 : https://lore.kernel.org/linux-iommu/20230816174031.634453-1-vasant.hegde@amd.com/T/#t
+
+Changes from v1 - v2:
+  - Dropped iommu_v2 module related support as newly introduced Part2
+    removed iommu_v2 module.
+  - Moved Patch 'Use struct protection_domain in helper functions' from Part1 to
+    Part3
+  - Updated get_amd_iommu_from_dev() to retrieve iommu from device structure
+  - Removed 'PD_MODE_PT'
+
+v1 : https://lore.kernel.org/linux-iommu/20230808100232.5977-1-vasant.hegde@amd.com/T/#t
+
+Thank you,
+Vasant / Suravee
