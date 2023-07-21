@@ -64,6 +64,12 @@ int amd_iommu_set_gcr3(struct iommu_dev_data *dev_data,
 		       u32 pasid, unsigned long gcr3);
 int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, u32 pasid);
 
+/* v2 API init */
+int amd_iommu_v2api_domain_init(struct protection_domain *pdom);
+void amd_iommu_v2api_domain_uninit(struct protection_domain *pdom);
+int amd_iommu_v2api_gcr3_init(struct pci_dev *pdev, int pasids);
+int amd_iommu_v2api_gcr3_uninit(struct pci_dev *pdev);
+
 int amd_iommu_register_ppr_notifier(struct notifier_block *nb);
 int amd_iommu_unregister_ppr_notifier(struct notifier_block *nb);
 void amd_iommu_domain_direct_map(struct iommu_domain *dom);

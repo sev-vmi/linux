@@ -2179,6 +2179,101 @@ static void protection_domain_free(struct protection_domain *domain)
 	kfree(domain);
 }
 
+/*******************************
+ * V2API-related helper functions
+ * Note: Separate these out for now. It will be removed when
+ *       deprecate the AMD IOMMU v2 API support.
+ */
+int amd_iommu_v2api_domain_init(struct protection_domain *pdom)
+{
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&pdom->lock, flags);
+
+	/* Only allow v2API support on pass-through domain. */
+	if (pdom->pd_mode != PD_MODE_PT) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	pdom->pd_mode = PD_MODE_V2;
+
+out:
+	spin_unlock_irqrestore(&pdom->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL(amd_iommu_v2api_domain_init);
+
+void amd_iommu_v2api_domain_uninit(struct protection_domain *pdom)
+{
+	unsigned long flags;
+
+	if (!pdom)
+		return;
+
+	spin_lock_irqsave(&pdom->lock, flags);
+	/* Switch back to pass-through mode */
+	pdom->pd_mode = PD_MODE_PT;
+	spin_unlock_irqrestore(&pdom->lock, flags);
+}
+EXPORT_SYMBOL(amd_iommu_v2api_domain_uninit);
+
+int amd_iommu_v2api_gcr3_init(struct pci_dev *pdev, int pasids)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	/* V2API mode needs ATS, PASID and PRI support */
+	if (!dev_data->ats_enabled || !dev_data->pri_enabled ||
+	    !dev_data->pasid_enabled) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/*
+	 * V2API is supported on passthrough domain only.
+	 * Hence we cannot support GIOV for V2API.
+	 */
+	gcr3_info->giov = false;
+	gcr3_info->pasid_cnt = 0;
+
+	/* Allocate GCR3 table */
+	ret = setup_gcr3_table(dev_data, pasids);
+
+out:
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL(amd_iommu_v2api_gcr3_init);
+
+int amd_iommu_v2api_gcr3_uninit(struct pci_dev *pdev)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&dev_data->lock, flags);
+
+	if (gcr3_info->pasid_cnt) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	free_gcr3_table(dev_data);
+
+out:
+	spin_unlock_irqrestore(&dev_data->lock, flags);
+	return ret;
+}
+EXPORT_SYMBOL(amd_iommu_v2api_gcr3_uninit);
+
+
 static int protection_domain_init_v1(struct protection_domain *domain, int mode)
 {
 	u64 *pt_root = NULL;
