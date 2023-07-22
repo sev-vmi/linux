@@ -575,6 +575,7 @@ struct protection_domain {
 	int nid;		/* Node ID */
 	enum protection_domain_mode pd_mode; /* Track page table type */
 	unsigned dev_cnt;	/* devices assigned to this domain */
+	unsigned v2_refcnt;	/* reference counter for v2 pagetable usage */
 	unsigned dev_iommu[MAX_IOMMUS]; /* per-IOMMU reference count */
 
 	struct mmu_notifier mn;	/* mmu notifier for the SVA domain */

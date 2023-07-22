@@ -1828,6 +1828,7 @@ static int do_attach(struct iommu_dev_data *dev_data,
 			_destroy_gcr3_tbl(dev_data);
 			return ret;
 		}
+		domain->v2_refcnt++;
 	}
 
 	/* Update device table */
@@ -1851,6 +1852,7 @@ static void do_detach(struct iommu_dev_data *dev_data)
 
 	if (domain->pd_mode == PD_MODE_V2) {
 		__clear_gcr3(dev_data, 0);
+		domain->v2_refcnt--;
 		_destroy_gcr3_tbl(dev_data);
 	}
 
