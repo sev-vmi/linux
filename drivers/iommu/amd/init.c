@@ -3667,7 +3667,6 @@ bool amd_iommu_v2_supported(void)
 	 */
 	return amd_iommu_gt_ppr_supported() && !amd_iommu_snp_en;
 }
-EXPORT_SYMBOL(amd_iommu_v2_supported);
 
 struct amd_iommu *get_amd_iommu(unsigned int idx)
 {
