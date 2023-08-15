@@ -1,0 +1,41 @@
+iommu/amd: SVA Support (part 2) - deprecate iommu_v2 module
+
+This is part 2 of the 4-part series to introduce Share Virtual Address
+(SVA) support. This series removes iommu_v2 module support.
+
+AMD GPU driver which was the only in-kernel user of iommu_v2 module is
+removed dependency on iommu_v2 module. These changes are already in
+upstream (v6.6 merge window).
+
+Also subsequent series will add SVA spuport in AMD IOMMU driver. Device
+drivers are expected to use common SVA framework to enable device
+PASID/PRI features.
+
+Hence this series removes iommu_v2 module and the functions used to support
+iommu_v2 module. Note that there are certain functions (ex: PPR interrupt
+handling code) which will be used in subsequent series for SVA support.
+Hence not removed those functions.
+
+This patch series is based on top of iommu/next branch (Commit 8e5ab3f54a10).
+
+Changes from v3 -> v4:
+  - Rebased on top of iommu/next branch
+  - Added 'Tested-by'
+
+v3 : https://lore.kernel.org/linux-iommu/20230921093140.6162-1-vasant.hegde@amd.com/T/#t
+
+Changes from v2 -> v3:
+  - Updated description as AMD GPU related changes are merged in v6.6 merge window
+  - Few other updated to description based on Jerry's suggestion
+  - Added Reviewed-by tags
+
+v2 : https://lore.kernel.org/linux-iommu/20230821104956.707235-1-vasant.hegde@amd.com/T/#t
+
+Changes from v1 -> v2:
+  - Added patch to revert commit 2380f1e8195e
+
+v1 : https://lore.kernel.org/linux-iommu/20230815103255.565295-1-vasant.hegde@amd.com/
+
+
+Thank you,
+Vasant / Suravee
