@@ -53,6 +53,12 @@ struct rmpentry {
  */
 #define RMPTABLE_CPU_BOOKKEEPING_SZ	0x4000
 
+/*
+ * RMP_END can never be zero as RMP_END[12:0] is fixed at 0x1fff.
+ * To check for a "zero" value, check RMP_END[63:13].
+ */
+#define RMP_END_VALUE_MASK		GENMASK_ULL(63, 13)
+
 /* Mask to apply to a PFN to get the first PFN of a 2MB page */
 #define PFN_PMD_MASK	(~((1ULL << (PMD_SHIFT - PAGE_SHIFT)) - 1))
 
@@ -118,8 +124,13 @@ bool snp_get_rmptable_info(u64 *start, u64 *len)
 	rdmsrl(MSR_AMD64_RMP_BASE, rmp_base);
 	rdmsrl(MSR_AMD64_RMP_END, rmp_end);
 
-	if (!rmp_base || !rmp_end) {
+	if (!rmp_base || !(rmp_end & RMP_END_VALUE_MASK)) {
 		pr_err("Memory for the RMP table has not been reserved by BIOS\n");
+		return false;
+	}
+
+	if (rmp_base > rmp_end) {
+		pr_err("RMP configuration not valid: base=%#llx, end=%#llx\n", rmp_base, rmp_end);
 		return false;
 	}
 
