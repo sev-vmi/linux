@@ -40,7 +40,6 @@
 #define MASK_OVERFLOW_HI  0x00010000
 #define MASK_ERR_COUNT_HI 0x00000FFF
 #define MASK_BLKPTR_LO    0xFF000000
-#define MCG_XBLK_ADDR     0xC0000400
 
 /* MCA Interrupt Configuration register, one per CPU */
 #define MSR_CU_DEF_ERR		0xC0000410
@@ -649,11 +648,10 @@ static u32 smca_get_block_address(unsigned int bank, unsigned int block,
 	return MSR_AMD64_SMCA_MCx_MISCy(bank, block - 1);
 }
 
-static u32 get_block_address(u32 current_addr, u32 low, u32 high,
-			     unsigned int bank, unsigned int block,
+static u32 get_block_address(unsigned int bank, unsigned int block,
 			     unsigned int cpu)
 {
-	u32 addr = 0, offset = 0;
+	u32 addr = 0;
 
 	if ((bank >= per_cpu(mce_num_banks, cpu)) || (block >= NR_BLOCKS))
 		return addr;
@@ -661,18 +659,22 @@ static u32 get_block_address(u32 current_addr, u32 low, u32 high,
 	if (mce_flags.smca)
 		return smca_get_block_address(bank, block, cpu);
 
+	if (bank != 4)
+		return mca_msr_reg(bank, MCA_MISC);
+
 	/* Fall back to method we used for older processors: */
 	switch (block) {
 	case 0:
 		addr = mca_msr_reg(bank, MCA_MISC);
 		break;
 	case 1:
-		offset = ((low & MASK_BLKPTR_LO) >> 21);
-		if (offset)
-			addr = MCG_XBLK_ADDR + offset;
+		addr = 0xC0000408;
+		break;
+	case 2:
+		addr = 0xC0000409;
 		break;
 	default:
-		addr = ++current_addr;
+		break;
 	}
 	return addr;
 }
@@ -819,7 +821,7 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 		disable_err_thresholding(c, bank);
 
 		for (block = 0; block < NR_BLOCKS; ++block) {
-			address = get_block_address(address, low, high, bank, block, cpu);
+			address = get_block_address(bank, block, cpu);
 			if (!address)
 				break;
 
@@ -1256,7 +1258,7 @@ static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb
 	if (err)
 		goto out_free;
 recurse:
-	address = get_block_address(address, low, high, bank, ++block, cpu);
+	address = get_block_address(bank, ++block, cpu);
 	if (!address)
 		return 0;
 
