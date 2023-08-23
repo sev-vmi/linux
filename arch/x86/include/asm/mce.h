@@ -59,8 +59,6 @@
  *  - TCC bit is present in MCx_STATUS.
  */
 #define MCI_CONFIG_MCAX		0x1
-#define MCI_IPID_MCATYPE	0xFFFF0000
-#define MCI_IPID_HWID		0xFFF
 
 /*
  * Note that the full MCACOD field of IA32_MCi_STATUS MSR is
@@ -342,7 +340,7 @@ extern int mce_threshold_create_device(unsigned int cpu);
 extern int mce_threshold_remove_device(unsigned int cpu);
 
 void mce_amd_feature_init(struct cpuinfo_x86 *c);
-enum smca_bank_types smca_get_bank_type(unsigned int cpu, unsigned int bank);
+enum smca_bank_types smca_get_bank_type(u64 ipid);
 #else
 
 static inline int mce_threshold_create_device(unsigned int cpu)		{ return 0; };

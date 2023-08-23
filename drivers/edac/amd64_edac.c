@@ -1041,7 +1041,7 @@ static int fixup_node_id(int node_id, struct mce *m)
 	/* MCA_IPID[InstanceIdHi] give the AMD Node ID for the bank. */
 	u8 nid = (m->ipid >> 44) & 0xF;
 
-	if (smca_get_bank_type(m->extcpu, m->bank) != SMCA_UMC_V2)
+	if (smca_get_bank_type(m->ipid) != SMCA_UMC_V2)
 		return node_id;
 
 	/* Nodes below the GPU base node are CPU nodes and don't need a fixup. */
