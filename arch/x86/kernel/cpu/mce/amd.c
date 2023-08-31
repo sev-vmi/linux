@@ -84,24 +84,10 @@ static const char * const smca_umc_block_names[] = {
 
 #define HWID_MCATYPE(hwid, mcatype) (((hwid) << 16) | (mcatype))
 
-struct smca_hwid {
-	unsigned int bank_type;	/* Use with smca_bank_types for easy indexing. */
-	u32 hwid_mcatype;	/* (hwid,mcatype) tuple */
-};
-
-struct smca_bank {
-	const struct smca_hwid *hwid;
-	u32 id;			/* Value of MCA_IPID[InstanceId]. */
-	u8 sysfs_id;		/* Value used for sysfs name. */
-};
-
 struct sysfs_bank_id {
 	enum smca_bank_types bank_type;
 	u8 sysfs_id;
 };
-
-static DEFINE_PER_CPU_READ_MOSTLY(struct smca_bank[MAX_NR_BANKS], smca_banks);
-static DEFINE_PER_CPU_READ_MOSTLY(u8[N_SMCA_BANK_TYPES], smca_bank_counts);
 
 static const char * const smca_names[] = {
 	[SMCA_LS ... SMCA_LS_V2]	= "load_store",
@@ -147,83 +133,6 @@ static const char *smca_get_name(enum smca_bank_types t)
 	return smca_names[t];
 }
 
-static enum smca_bank_types smca_get_bank_type_old(unsigned int cpu, unsigned int bank)
-{
-	struct smca_bank *b;
-
-	if (bank >= MAX_NR_BANKS)
-		return N_SMCA_BANK_TYPES;
-
-	b = &per_cpu(smca_banks, cpu)[bank];
-	if (!b->hwid)
-		return N_SMCA_BANK_TYPES;
-
-	return b->hwid->bank_type;
-}
-
-static const struct smca_hwid smca_hwid_mcatypes_old[] = {
-	/* { bank_type, hwid_mcatype } */
-
-	/* Reserved type */
-	{ SMCA_RESERVED, HWID_MCATYPE(0x00, 0x0)	},
-
-	/* ZN Core (HWID=0xB0) MCA types */
-	{ SMCA_LS,	 HWID_MCATYPE(0xB0, 0x0)	},
-	{ SMCA_LS_V2,	 HWID_MCATYPE(0xB0, 0x10)	},
-	{ SMCA_IF,	 HWID_MCATYPE(0xB0, 0x1)	},
-	{ SMCA_L2_CACHE, HWID_MCATYPE(0xB0, 0x2)	},
-	{ SMCA_DE,	 HWID_MCATYPE(0xB0, 0x3)	},
-	/* HWID 0xB0 MCATYPE 0x4 is Reserved */
-	{ SMCA_EX,	 HWID_MCATYPE(0xB0, 0x5)	},
-	{ SMCA_FP,	 HWID_MCATYPE(0xB0, 0x6)	},
-	{ SMCA_L3_CACHE, HWID_MCATYPE(0xB0, 0x7)	},
-
-	/* Data Fabric MCA types */
-	{ SMCA_CS,	 HWID_MCATYPE(0x2E, 0x0)	},
-	{ SMCA_PIE,	 HWID_MCATYPE(0x2E, 0x1)	},
-	{ SMCA_CS_V2,	 HWID_MCATYPE(0x2E, 0x2)	},
-	{ SMCA_MA_LLC,	 HWID_MCATYPE(0x2E, 0x4)	},
-
-	/* Unified Memory Controller MCA type */
-	{ SMCA_UMC,	 HWID_MCATYPE(0x96, 0x0)	},
-	{ SMCA_UMC_V2,	 HWID_MCATYPE(0x96, 0x1)	},
-
-	/* Parameter Block MCA type */
-	{ SMCA_PB,	 HWID_MCATYPE(0x05, 0x0)	},
-
-	/* Platform Security Processor MCA type */
-	{ SMCA_PSP,	 HWID_MCATYPE(0xFF, 0x0)	},
-	{ SMCA_PSP_V2,	 HWID_MCATYPE(0xFF, 0x1)	},
-
-	/* System Management Unit MCA type */
-	{ SMCA_SMU,	 HWID_MCATYPE(0x01, 0x0)	},
-	{ SMCA_SMU_V2,	 HWID_MCATYPE(0x01, 0x1)	},
-
-	/* Microprocessor 5 Unit MCA type */
-	{ SMCA_MP5,	 HWID_MCATYPE(0x01, 0x2)	},
-
-	/* MPDMA MCA type */
-	{ SMCA_MPDMA,	 HWID_MCATYPE(0x01, 0x3)	},
-
-	/* Northbridge IO Unit MCA type */
-	{ SMCA_NBIO,	 HWID_MCATYPE(0x18, 0x0)	},
-
-	/* PCI Express Unit MCA type */
-	{ SMCA_PCIE,	 HWID_MCATYPE(0x46, 0x0)	},
-	{ SMCA_PCIE_V2,	 HWID_MCATYPE(0x46, 0x1)	},
-
-	{ SMCA_XGMI_PCS, HWID_MCATYPE(0x50, 0x0)	},
-	{ SMCA_NBIF,	 HWID_MCATYPE(0x6C, 0x0)	},
-	{ SMCA_SHUB,	 HWID_MCATYPE(0x80, 0x0)	},
-	{ SMCA_SATA,	 HWID_MCATYPE(0xA8, 0x0)	},
-	{ SMCA_USB,	 HWID_MCATYPE(0xAA, 0x0)	},
-	{ SMCA_USR_DP,	 HWID_MCATYPE(0x170, 0x0)	},
-	{ SMCA_USR_CP,	 HWID_MCATYPE(0x180, 0x0)	},
-	{ SMCA_GMI_PCS,  HWID_MCATYPE(0x241, 0x0)	},
-	{ SMCA_XGMI_PHY, HWID_MCATYPE(0x259, 0x0)	},
-	{ SMCA_WAFL_PHY, HWID_MCATYPE(0x267, 0x0)	},
-	{ SMCA_GMI_PHY,	 HWID_MCATYPE(0x269, 0x0)	},
-};
 
 /* Keep sorted first by HWID then by McaType. */
 static const u32 smca_hwid_mcatypes[] = {
@@ -477,6 +386,67 @@ static bool threshold_interrupt_capable(unsigned int bank, u64 mca_misc)
 	return FIELD_GET(MISC_INTP, mca_misc);
 }
 
+static const char *bank4_names(const struct threshold_block *b)
+{
+	switch (b->address) {
+	/* MSR4_MISC0 */
+	case 0x00000413:
+		return "dram";
+
+	case 0xc0000408:
+		return "ht_links";
+
+	case 0xc0000409:
+		return "l3_cache";
+
+	default:
+		WARN(1, "Funny MSR: 0x%08x\n", b->address);
+		return "";
+	}
+};
+
+static const char *get_name(unsigned int bank, struct sysfs_bank_id bank_ids[],
+			    u8 bank_counts[], struct threshold_block *thr_block)
+{
+	enum smca_bank_types bank_type = bank_ids[bank].bank_type;
+
+	if (!mce_flags.smca) {
+		if (thr_block && bank == 4)
+			return bank4_names(thr_block);
+
+		return th_names[bank];
+	}
+
+	/* Give a generic name for new unrecognized bank types. */
+	if (bank_type >= N_SMCA_BANK_TYPES) {
+		if (thr_block) {
+			snprintf(buf_mcatype, MAX_MCATYPE_NAME_LEN,
+				 "thr_block_%u", thr_block->block);
+		} else {
+			snprintf(buf_mcatype, MAX_MCATYPE_NAME_LEN,
+				 "thr_bank_%u", bank);
+		}
+
+		return buf_mcatype;
+	}
+
+	if (thr_block && (bank_type == SMCA_UMC || bank_type == SMCA_UMC_V2)) {
+		if (thr_block->block < ARRAY_SIZE(smca_umc_block_names))
+			return smca_umc_block_names[thr_block->block];
+
+		/* Give a generic name for new unrecognized UMC blocks. */
+		snprintf(buf_mcatype, MAX_MCATYPE_NAME_LEN, "thr_block_%u", thr_block->block);
+		return buf_mcatype;
+	}
+
+	if (bank_counts[bank_type] == 1)
+		return smca_get_name(bank_type);
+
+	snprintf(buf_mcatype, MAX_MCATYPE_NAME_LEN,
+		 "%s_%u", smca_get_name(bank_type), bank_ids[bank].sysfs_id);
+	return buf_mcatype;
+}
+
 static void configure_threshold_block(struct threshold_bank *thr_bank, unsigned int bank,
 				      unsigned int block, u64 mca_intr_cfg)
 {
@@ -643,53 +613,6 @@ static bool configure_threshold_bank(struct threshold_bank **thr_banks, unsigned
 	return true;
 }
 
-static void smca_configure_old(unsigned int bank, unsigned int cpu)
-{
-	u8 *bank_counts = this_cpu_ptr(smca_bank_counts);
-	const struct smca_hwid *s_hwid;
-	unsigned int i, hwid_mcatype;
-	u32 high, low;
-
-	if (rdmsr_safe(MSR_AMD64_SMCA_MCx_IPID(bank), &low, &high)) {
-		pr_warn("Failed to read MCA_IPID for bank %d\n", bank);
-		return;
-	}
-
-	hwid_mcatype = HWID_MCATYPE(high & MCI_IPID_HWID_OLD,
-				    (high & MCI_IPID_MCATYPE_OLD) >> 16);
-
-	for (i = 0; i < ARRAY_SIZE(smca_hwid_mcatypes_old); i++) {
-		s_hwid = &smca_hwid_mcatypes_old[i];
-
-		if (hwid_mcatype == s_hwid->hwid_mcatype) {
-			this_cpu_ptr(smca_banks)[bank].hwid = s_hwid;
-			this_cpu_ptr(smca_banks)[bank].id = low;
-			this_cpu_ptr(smca_banks)[bank].sysfs_id = bank_counts[s_hwid->bank_type]++;
-			break;
-		}
-	}
-}
-
-static const char *bank4_names(const struct threshold_block *b)
-{
-	switch (b->address) {
-	/* MSR4_MISC0 */
-	case 0x00000413:
-		return "dram";
-
-	case 0xc0000408:
-		return "ht_links";
-
-	case 0xc0000409:
-		return "l3_cache";
-
-	default:
-		WARN(1, "Funny MSR: 0x%08x\n", b->address);
-		return "";
-	}
-};
-
-
 static bool lvt_interrupt_supported(unsigned int bank, u32 msr_high_bits)
 {
 	/*
@@ -750,7 +673,8 @@ bool amd_filter_mce(struct mce *m)
 	return false;
 }
 
-static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank)
+static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank, unsigned int bank,
+					 struct sysfs_bank_id bank_ids[], u8 bank_counts[])
 {
 	/* There may be empty banks in the array. Skip them. */
 	if (!thr_bank)
@@ -758,6 +682,8 @@ static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank)
 
 	/* kref is set to 1. */
 	kobject_init(&thr_bank->kobj, &threshold_bank_ktype);
+	kobject_set_name(&thr_bank->kobj,
+			 get_name(bank, bank_ids, bank_counts, NULL));
 }
 
 static u64 get_mca_intr_cfg(void)
@@ -777,8 +703,7 @@ static u64 get_mca_intr_cfg(void)
 void mce_amd_feature_init(struct cpuinfo_x86 *c)
 {
 	struct threshold_bank **thr_banks = this_cpu_read(threshold_banks);
-	unsigned int num_banks = this_cpu_read(mce_num_banks);
-	unsigned int bank, cpu = smp_processor_id();
+	unsigned int bank, num_banks = this_cpu_read(mce_num_banks);
 	struct sysfs_bank_id bank_ids[MAX_NR_BANKS];
 	u64 mca_intr_cfg = get_mca_intr_cfg();
 	u8 bank_counts[N_SMCA_BANK_TYPES];
@@ -793,9 +718,6 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 	memset(bank_counts, 0, N_SMCA_BANK_TYPES * sizeof(u8));
 
 	for (bank = 0; bank < num_banks; ++bank) {
-		if (mce_flags.smca)
-			smca_configure_old(bank, cpu);
-
 		configure_smca(bank, mca_intr_cfg);
 		thr_banks_enabled |= configure_threshold_bank(thr_banks, bank, mca_intr_cfg);
 		save_bank_type(bank, bank_ids, bank_counts);
@@ -807,7 +729,7 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 	}
 
 	for (bank = 0; bank < num_banks; bank++)
-		init_threshold_bank_kobjects(thr_banks[bank]);
+		init_threshold_bank_kobjects(thr_banks[bank], bank, bank_ids, bank_counts);
 
 	this_cpu_write(threshold_banks, thr_banks);
 }
@@ -1161,36 +1083,6 @@ static const struct kobj_type threshold_ktype = {
 	.release		= threshold_block_release,
 };
 
-static const char *get_name(unsigned int cpu, unsigned int bank, struct threshold_block *b)
-{
-	enum smca_bank_types bank_type;
-
-	if (!mce_flags.smca) {
-		if (b && bank == 4)
-			return bank4_names(b);
-
-		return th_names[bank];
-	}
-
-	bank_type = smca_get_bank_type_old(cpu, bank);
-	if (bank_type >= N_SMCA_BANK_TYPES)
-		return NULL;
-
-	if (b && (bank_type == SMCA_UMC || bank_type == SMCA_UMC_V2)) {
-		if (b->block < ARRAY_SIZE(smca_umc_block_names))
-			return smca_umc_block_names[b->block];
-		return NULL;
-	}
-
-	if (per_cpu(smca_bank_counts, cpu)[bank_type] == 1)
-		return smca_get_name(bank_type);
-
-	snprintf(buf_mcatype, MAX_MCATYPE_NAME_LEN,
-		 "%s_%u", smca_get_name(bank_type),
-			  per_cpu(smca_banks, cpu)[bank].sysfs_id);
-	return buf_mcatype;
-}
-
 static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb,
 				     unsigned int bank, unsigned int block,
 				     u32 address)
@@ -1236,7 +1128,7 @@ static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb
 	else
 		tb->blocks = b;
 
-	err = kobject_init_and_add(&b->kobj, &threshold_ktype, tb->kobj_old, get_name(cpu, bank, b));
+	err = kobject_init_and_add(&b->kobj, &threshold_ktype, tb->kobj_old, NULL);
 	if (err)
 		goto out_free;
 recurse:
@@ -1266,7 +1158,7 @@ static int threshold_create_bank(struct threshold_bank **bp, unsigned int cpu,
 {
 	struct device *dev = this_cpu_read(mce_device);
 	struct threshold_bank *b = NULL;
-	const char *name = get_name(cpu, bank, NULL);
+	const char *name = NULL;
 	int err = 0;
 
 	if (!dev)
