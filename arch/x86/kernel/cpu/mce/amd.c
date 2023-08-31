@@ -31,10 +31,6 @@
 /* MCA_MISC register, up to 5 per MCA bank */
 #define NR_BLOCKS			5
 #define THRESHOLD_MAX			0xFFF
-#define INT_TYPE_APIC     0x00020000
-#define MASK_VALID_HI     0x80000000
-#define MASK_CNTP_HI      0x40000000
-#define MASK_LOCKED_HI    0x20000000
 #define MISC_VALID			BIT_ULL(63)
 #define MISC_CNTP			BIT_ULL(62)
 #define MISC_LOCKED			BIT_ULL(61)
@@ -240,24 +236,15 @@ struct threshold_block {
 	/* sysfs object */
 	struct kobject		kobj;
 	/* List of threshold blocks within this block's MCA bank. */
-	struct list_head	miscj;
 	struct list_head	block_list;
 };
 
 struct threshold_bank {
-	struct kobject		*kobj_old;
 	struct kobject		kobj;
-	struct threshold_block	*blocks;
 	struct list_head	block_list;
 };
 
 static DEFINE_PER_CPU(struct threshold_bank **, threshold_banks);
-
-/*
- * A list of the banks enabled on each logical CPU. Controls which respective
- * descriptors to initialize later in mce_threshold_create_device().
- */
-static DEFINE_PER_CPU(u64, bank_map);
 
 static void amd_threshold_interrupt(void);
 static void amd_deferred_error_interrupt(void);
@@ -611,21 +598,6 @@ static bool configure_threshold_bank(struct threshold_bank **thr_banks, unsigned
 
 	thr_banks[bank] = thr_bank;
 	return true;
-}
-
-static bool lvt_interrupt_supported(unsigned int bank, u32 msr_high_bits)
-{
-	/*
-	 * bank 4 supports APIC LVT interrupts implicitly since forever.
-	 */
-	if (bank == 4)
-		return true;
-
-	/*
-	 * IntP: interrupt present; if this bit is set, the thresholding
-	 * bank can generate APIC LVT interrupts
-	 */
-	return msr_high_bits & BIT(28);
 }
 
 static void enable_deferred_error_interrupt(u64 mca_intr_cfg)
@@ -1092,185 +1064,40 @@ static const struct attribute_group *threshold_block_groups[] = {
 	NULL,
 };
 
-static void threshold_block_release(struct kobject *kobj);
-
-static const struct kobj_type threshold_ktype = {
-	.sysfs_ops		= &kobj_sysfs_ops,
-	.default_groups		= threshold_block_groups,
-	.release		= threshold_block_release,
-};
-
-static const struct kobj_type threshold_block_ktype = {
-	.default_groups		= threshold_block_groups,
-	.release		= threshold_block_release,
-};
-
-static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb,
-				     unsigned int bank, unsigned int block,
-				     u32 address)
-{
-	struct threshold_block *b = NULL;
-	u32 low, high;
-	int err;
-
-	if ((bank >= this_cpu_read(mce_num_banks)) || (block >= NR_BLOCKS))
-		return 0;
-
-	if (rdmsr_safe(address, &low, &high))
-		return 0;
-
-	if (!(high & MASK_VALID_HI)) {
-		if (block)
-			goto recurse;
-		else
-			return 0;
-	}
-
-	if (!(high & MASK_CNTP_HI)  ||
-	     (high & MASK_LOCKED_HI))
-		goto recurse;
-
-	b = kzalloc(sizeof(struct threshold_block), GFP_KERNEL);
-	if (!b)
-		return -ENOMEM;
-
-	b->block		= block;
-	b->bank			= bank;
-	b->cpu			= cpu;
-	b->address		= address;
-	b->interrupt_enable	= 0;
-	b->interrupt_capable	= lvt_interrupt_supported(bank, high);
-	b->threshold_limit	= THRESHOLD_MAX;
-
-	INIT_LIST_HEAD(&b->miscj);
-
-	/* This is safe as @tb is not visible yet */
-	if (tb->blocks)
-		list_add(&b->miscj, &tb->blocks->miscj);
-	else
-		tb->blocks = b;
-
-	err = kobject_init_and_add(&b->kobj, &threshold_ktype, tb->kobj_old, NULL);
-	if (err)
-		goto out_free;
-recurse:
-	address = get_block_address(bank, ++block);
-	if (!address)
-		return 0;
-
-	err = allocate_threshold_blocks(cpu, tb, bank, block, address);
-	if (err)
-		goto out_free;
-
-	if (b)
-		kobject_uevent(&b->kobj, KOBJ_ADD);
-
-	return 0;
-
-out_free:
-	if (b) {
-		list_del(&b->miscj);
-		kobject_put(&b->kobj);
-	}
-	return err;
-}
-
-static int threshold_create_bank(struct threshold_bank **bp, unsigned int cpu,
-				 unsigned int bank)
-{
-	struct device *dev = this_cpu_read(mce_device);
-	struct threshold_bank *b = NULL;
-	const char *name = NULL;
-	int err = 0;
-
-	if (!dev)
-		return -ENODEV;
-
-	b = kzalloc(sizeof(struct threshold_bank), GFP_KERNEL);
-	if (!b) {
-		err = -ENOMEM;
-		goto out;
-	}
-
-	/* Associate the bank with the per-CPU MCE device */
-	b->kobj_old = kobject_create_and_add(name, &dev->kobj);
-	if (!b->kobj_old) {
-		err = -EINVAL;
-		goto out_free;
-	}
-
-	err = allocate_threshold_blocks(cpu, b, bank, 0, mca_msr_reg(bank, MCA_MISC));
-	if (err)
-		goto out_kobj;
-
-	bp[bank] = b;
-	return 0;
-
-out_kobj:
-	kobject_put(b->kobj_old);
-out_free:
-	kfree(b);
-out:
-	return err;
-}
-
 static void threshold_block_release(struct kobject *kobj)
 {
 	kfree(to_block(kobj));
 }
 
-static void deallocate_threshold_blocks(struct threshold_bank *bank)
-{
-	struct threshold_block *pos, *tmp;
-
-	list_for_each_entry_safe(pos, tmp, &bank->blocks->miscj, miscj) {
-		list_del(&pos->miscj);
-		kobject_put(&pos->kobj);
-	}
-
-	kobject_put(&bank->blocks->kobj);
-}
-
-static void threshold_remove_bank(struct threshold_bank *bank)
-{
-	if (!bank->blocks)
-		goto out_free;
-
-	deallocate_threshold_blocks(bank);
-
-out_free:
-	kobject_put(bank->kobj_old);
-	kfree(bank);
-}
-
-static void __threshold_remove_device(struct threshold_bank **bp)
-{
-	unsigned int bank, numbanks = this_cpu_read(mce_num_banks);
-
-	for (bank = 0; bank < numbanks; bank++) {
-		if (!bp[bank])
-			continue;
-
-		threshold_remove_bank(bp[bank]);
-		bp[bank] = NULL;
-	}
-	kfree(bp);
-}
+static const struct kobj_type threshold_block_ktype = {
+	.sysfs_ops		= &kobj_sysfs_ops,
+	.default_groups		= threshold_block_groups,
+	.release		= threshold_block_release,
+};
 
 int mce_threshold_remove_device(unsigned int cpu)
 {
-	struct threshold_bank **bp = this_cpu_read(threshold_banks);
+	struct threshold_bank **thr_banks, *thr_bank;
+	struct threshold_block *thr_block;
+	unsigned int bank;
 
-	if (!bp)
+	thr_banks = this_cpu_read(threshold_banks);
+	if (!thr_banks)
 		return 0;
 
-	/*
-	 * Clear the pointer before cleaning up, so that the interrupt won't
-	 * touch anything of this.
-	 */
-	this_cpu_write(threshold_banks, NULL);
+	for (bank = 0; bank < this_cpu_read(mce_num_banks); bank++) {
+		thr_bank = thr_banks[bank];
 
-	__threshold_remove_device(bp);
+		/* There may be empty banks in the array. Skip them. */
+		if (!thr_bank)
+			continue;
+
+		list_for_each_entry(thr_block, &thr_bank->block_list, block_list)
+			kobject_del(&thr_block->kobj);
+
+		kobject_del(&thr_bank->kobj);
+	}
+
 	return 0;
 }
 
@@ -1287,20 +1114,34 @@ int mce_threshold_remove_device(unsigned int cpu)
  */
 int mce_threshold_create_device(unsigned int cpu)
 {
-	unsigned int numbanks, bank;
-	struct threshold_bank **bp;
-	int err;
+	struct device *dev = this_cpu_read(mce_device);
+	struct threshold_bank **thr_banks, *thr_bank;
+	struct threshold_block *thr_block;
+	unsigned int bank;
 
-	if (!this_cpu_read(bank_map))
+	if (!dev)
 		return 0;
 
-	for (bank = 0; bank < numbanks; ++bank) {
-		if (!(this_cpu_read(bank_map) & BIT_ULL(bank)))
+	/* This is an optional interface, so no need to fail if it's not available. */
+	thr_banks = this_cpu_read(threshold_banks);
+	if (!thr_banks)
+		return 0;
+
+	for (bank = 0; bank < this_cpu_read(mce_num_banks); bank++) {
+		thr_bank = thr_banks[bank];
+
+		/* There may be empty banks in the array. Skip them. */
+		if (!thr_bank)
 			continue;
-		err = threshold_create_bank(bp, cpu, bank);
-		if (err) {
-			__threshold_remove_device(bp);
-			return err;
+
+		/* Skip failing banks. */
+		if (kobject_add(&thr_bank->kobj, &dev->kobj, NULL))
+			continue;
+
+		list_for_each_entry(thr_block, &thr_bank->block_list, block_list) {
+			/* Skip failing blocks. */
+			if (kobject_add(&thr_block->kobj, &thr_bank->kobj, NULL))
+				continue;
 		}
 	}
 
