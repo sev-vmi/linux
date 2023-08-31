@@ -336,7 +336,8 @@ struct threshold_block {
 };
 
 struct threshold_bank {
-	struct kobject		*kobj;
+	struct kobject		*kobj_old;
+	struct kobject		kobj;
 	struct threshold_block	*blocks;
 	struct list_head	block_list;
 };
@@ -576,6 +577,16 @@ static void save_bank_type(unsigned int bank, struct sysfs_bank_id bank_ids[], u
 	bank_ids[bank].sysfs_id = bank_counts[bank_type]++;
 }
 
+#define to_bank(k)	container_of(k, struct threshold_bank, kobj)
+static void threshold_bank_release(struct kobject *kobj)
+{
+	kfree(to_bank(kobj));
+}
+
+static const struct kobj_type threshold_bank_ktype = {
+	.release		= threshold_bank_release,
+};
+
 /*
  * Don't enable thresholding banks for the following conditions:
  * - MC4_MISC thresholding is not supported on Family 0x15.
@@ -739,6 +750,16 @@ bool amd_filter_mce(struct mce *m)
 	return false;
 }
 
+static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank)
+{
+	/* There may be empty banks in the array. Skip them. */
+	if (!thr_bank)
+		return;
+
+	/* kref is set to 1. */
+	kobject_init(&thr_bank->kobj, &threshold_bank_ktype);
+}
+
 static u64 get_mca_intr_cfg(void)
 {
 	u64 mca_intr_cfg;
@@ -784,6 +805,9 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 		kfree(thr_banks);
 		return;
 	}
+
+	for (bank = 0; bank < num_banks; bank++)
+		init_threshold_bank_kobjects(thr_banks[bank]);
 
 	this_cpu_write(threshold_banks, thr_banks);
 }
@@ -1212,7 +1236,7 @@ static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb
 	else
 		tb->blocks = b;
 
-	err = kobject_init_and_add(&b->kobj, &threshold_ktype, tb->kobj, get_name(cpu, bank, b));
+	err = kobject_init_and_add(&b->kobj, &threshold_ktype, tb->kobj_old, get_name(cpu, bank, b));
 	if (err)
 		goto out_free;
 recurse:
@@ -1255,8 +1279,8 @@ static int threshold_create_bank(struct threshold_bank **bp, unsigned int cpu,
 	}
 
 	/* Associate the bank with the per-CPU MCE device */
-	b->kobj = kobject_create_and_add(name, &dev->kobj);
-	if (!b->kobj) {
+	b->kobj_old = kobject_create_and_add(name, &dev->kobj);
+	if (!b->kobj_old) {
 		err = -EINVAL;
 		goto out_free;
 	}
@@ -1269,7 +1293,7 @@ static int threshold_create_bank(struct threshold_bank **bp, unsigned int cpu,
 	return 0;
 
 out_kobj:
-	kobject_put(b->kobj);
+	kobject_put(b->kobj_old);
 out_free:
 	kfree(b);
 out:
@@ -1301,7 +1325,7 @@ static void threshold_remove_bank(struct threshold_bank *bank)
 	deallocate_threshold_blocks(bank);
 
 out_free:
-	kobject_put(bank->kobj);
+	kobject_put(bank->kobj_old);
 	kfree(bank);
 }
 
