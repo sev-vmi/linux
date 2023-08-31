@@ -673,6 +673,21 @@ bool amd_filter_mce(struct mce *m)
 	return false;
 }
 
+static const struct kobj_type threshold_block_ktype;
+
+static void init_threshold_block_kobjects(struct threshold_bank *thr_bank,
+					  struct sysfs_bank_id bank_ids[],
+					  u8 bank_counts[])
+{
+	struct threshold_block *thr_block;
+
+	list_for_each_entry(thr_block, &thr_bank->block_list, block_list) {
+		kobject_init(&thr_block->kobj, &threshold_block_ktype);
+		kobject_set_name(&thr_block->kobj,
+				 get_name(thr_block->bank, bank_ids, bank_counts, thr_block));
+	}
+}
+
 static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank, unsigned int bank,
 					 struct sysfs_bank_id bank_ids[], u8 bank_counts[])
 {
@@ -684,6 +699,8 @@ static void init_threshold_bank_kobjects(struct threshold_bank *thr_bank, unsign
 	kobject_init(&thr_bank->kobj, &threshold_bank_ktype);
 	kobject_set_name(&thr_bank->kobj,
 			 get_name(bank, bank_ids, bank_counts, NULL));
+
+	init_threshold_block_kobjects(thr_bank, bank_ids, bank_counts);
 }
 
 static u64 get_mca_intr_cfg(void)
@@ -1079,6 +1096,11 @@ static void threshold_block_release(struct kobject *kobj);
 
 static const struct kobj_type threshold_ktype = {
 	.sysfs_ops		= &kobj_sysfs_ops,
+	.default_groups		= threshold_block_groups,
+	.release		= threshold_block_release,
+};
+
+static const struct kobj_type threshold_block_ktype = {
 	.default_groups		= threshold_block_groups,
 	.release		= threshold_block_release,
 };
