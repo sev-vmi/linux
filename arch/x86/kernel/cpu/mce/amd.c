@@ -95,6 +95,11 @@ struct smca_bank {
 	u8 sysfs_id;		/* Value used for sysfs name. */
 };
 
+struct sysfs_bank_id {
+	enum smca_bank_types bank_type;
+	u8 sysfs_id;
+};
+
 static DEFINE_PER_CPU_READ_MOSTLY(struct smca_bank[MAX_NR_BANKS], smca_banks);
 static DEFINE_PER_CPU_READ_MOSTLY(u8[N_SMCA_BANK_TYPES], smca_bank_counts);
 
@@ -554,6 +559,23 @@ static void configure_threshold_block(struct threshold_bank *thr_bank, unsigned 
 	wrmsrl(thr_block->address, mca_misc);
 }
 
+static void save_bank_type(unsigned int bank, struct sysfs_bank_id bank_ids[], u8 bank_counts[])
+{
+	enum smca_bank_types bank_type = N_SMCA_BANK_TYPES;
+	u64 ipid;
+
+	if (!mce_flags.smca)
+		return;
+
+	if (rdmsrl_safe(MSR_AMD64_SMCA_MCx_IPID(bank), &ipid))
+		return;
+
+	bank_type = smca_get_bank_type(ipid);
+
+	bank_ids[bank].bank_type = bank_type;
+	bank_ids[bank].sysfs_id = bank_counts[bank_type]++;
+}
+
 /*
  * Don't enable thresholding banks for the following conditions:
  * - MC4_MISC thresholding is not supported on Family 0x15.
@@ -736,7 +758,9 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 	struct threshold_bank **thr_banks = this_cpu_read(threshold_banks);
 	unsigned int num_banks = this_cpu_read(mce_num_banks);
 	unsigned int bank, cpu = smp_processor_id();
+	struct sysfs_bank_id bank_ids[MAX_NR_BANKS];
 	u64 mca_intr_cfg = get_mca_intr_cfg();
+	u8 bank_counts[N_SMCA_BANK_TYPES];
 	bool thr_banks_enabled = false;
 
 	enable_deferred_error_interrupt(mca_intr_cfg);
@@ -744,12 +768,16 @@ void mce_amd_feature_init(struct cpuinfo_x86 *c)
 	if (!thr_banks)
 		thr_banks = kcalloc(num_banks, sizeof(struct threshold_bank *), GFP_KERNEL);
 
+	memset(bank_ids, 0, MAX_NR_BANKS * sizeof(struct sysfs_bank_id));
+	memset(bank_counts, 0, N_SMCA_BANK_TYPES * sizeof(u8));
+
 	for (bank = 0; bank < num_banks; ++bank) {
 		if (mce_flags.smca)
 			smca_configure_old(bank, cpu);
 
 		configure_smca(bank, mca_intr_cfg);
 		thr_banks_enabled |= configure_threshold_bank(thr_banks, bank, mca_intr_cfg);
+		save_bank_type(bank, bank_ids, bank_counts);
 	}
 
 	if (!thr_banks_enabled) {
