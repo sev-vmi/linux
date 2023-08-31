@@ -1025,27 +1025,17 @@ static void reset_block(struct threshold_block *block)
 
 static void reset_thr_blocks(unsigned int bank)
 {
-	struct threshold_block *first_block = NULL, *block = NULL, *tmp = NULL;
-	struct threshold_bank **bp = this_cpu_read(threshold_banks);
+	struct threshold_bank **thr_banks = this_cpu_read(threshold_banks), *thr_bank;
+	struct threshold_block *block;
 
-	/*
-	 * Validate that the threshold bank has been initialized already. The
-	 * handler is installed at boot time, but on a hotplug event the
-	 * interrupt might fire before the data has been initialized.
-	 */
-	if (!bp || !bp[bank])
+	if (!thr_banks)
 		return;
 
-	first_block = bp[bank]->blocks;
-	if (!first_block)
+	thr_bank = thr_banks[bank];
+	if (!thr_bank)
 		return;
 
-	/*
-	 * The first block is also the head of the list. Check it first
-	 * before iterating over the rest.
-	 */
-	reset_block(first_block);
-	list_for_each_entry_safe(block, tmp, &first_block->miscj, miscj)
+	list_for_each_entry(block, &thr_bank->block_list, block_list)
 		reset_block(block);
 }
 
