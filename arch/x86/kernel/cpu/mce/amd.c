@@ -1148,7 +1148,15 @@ static struct attribute *default_attrs[] = {
 	&interrupt_enable.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(default);
+
+static const struct attribute_group default_group = {
+	.attrs		= default_attrs,
+};
+
+static const struct attribute_group *default_groups[] = {
+	&default_group,
+	NULL,
+};
 
 static void threshold_block_release(struct kobject *kobj);
 
