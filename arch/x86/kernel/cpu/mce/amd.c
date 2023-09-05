@@ -1142,7 +1142,7 @@ static struct kobj_attribute threshold_limit	= __ATTR_RW(threshold_limit);
 static struct kobj_attribute error_count	= __ATTR_RO(error_count);
 static struct kobj_attribute interrupt_enable	= __ATTR_RW(interrupt_enable);
 
-static struct attribute *default_attrs[] = {
+static struct attribute *threshold_block_attrs[] = {
 	&threshold_limit.attr,
 	&error_count.attr,
 	&interrupt_enable.attr,
@@ -1159,13 +1159,13 @@ static umode_t threshold_block_is_visible(struct kobject *kobj, struct attribute
 	return 0;
 }
 
-static const struct attribute_group default_group = {
-	.attrs		= default_attrs,
+static const struct attribute_group threshold_block_group = {
+	.attrs		= threshold_block_attrs,
 	.is_visible	= threshold_block_is_visible,
 };
 
-static const struct attribute_group *default_groups[] = {
-	&default_group,
+static const struct attribute_group *threshold_block_groups[] = {
+	&threshold_block_group,
 	NULL,
 };
 
@@ -1173,7 +1173,7 @@ static void threshold_block_release(struct kobject *kobj);
 
 static const struct kobj_type threshold_ktype = {
 	.sysfs_ops		= &kobj_sysfs_ops,
-	.default_groups		= default_groups,
+	.default_groups		= threshold_block_groups,
 	.release		= threshold_block_release,
 };
 
