@@ -1063,52 +1063,6 @@ void amd_handle_error(struct mce_hw_err *err)
 /*
  * Sysfs Interface
  */
-
-struct threshold_attr {
-	struct attribute attr;
-	ssize_t (*show) (struct threshold_block *, char *);
-	ssize_t (*store) (struct threshold_block *, const char *, size_t count);
-};
-
-#define SHOW_FIELDS(name)						\
-static ssize_t show_ ## name(struct threshold_block *b, char *buf)	\
-{									\
-	return sprintf(buf, "%lu\n", (unsigned long) b->name);		\
-}
-SHOW_FIELDS(interrupt_enable)
-
-static ssize_t
-store_interrupt_enable(struct threshold_block *b, const char *buf, size_t size)
-{
-	struct thresh_restart tr;
-	unsigned long new;
-
-	if (!b->interrupt_capable)
-		return -EINVAL;
-
-	if (kstrtoul(buf, 0, &new) < 0)
-		return -EINVAL;
-
-	b->interrupt_enable = !!new;
-
-	memset(&tr, 0, sizeof(tr));
-	tr.b		= b;
-
-	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
-		return -ENODEV;
-
-	return size;
-}
-
-#define RW_ATTR(val)							\
-static struct threshold_attr val = {					\
-	.attr	= {.name = __stringify(val), .mode = 0644 },		\
-	.show	= show_## val,						\
-	.store	= store_## val,						\
-};
-
-RW_ATTR(interrupt_enable);
-
 #define to_block(k)	container_of(k, struct threshold_block, kobj)
 
 static ssize_t threshold_limit_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -1155,51 +1109,51 @@ static ssize_t error_count_show(struct kobject *kobj, struct kobj_attribute *att
 				     (THRESHOLD_MAX - b->threshold_limit)));
 }
 
+static ssize_t interrupt_enable_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%lu\n", (unsigned long)to_block(kobj)->interrupt_enable);
+}
+
+static ssize_t interrupt_enable_store(struct kobject *kobj, struct kobj_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct threshold_block *b = to_block(kobj);
+	struct thresh_restart tr;
+	unsigned long new;
+
+	if (!b->interrupt_capable)
+		return -EINVAL;
+
+	if (kstrtoul(buf, 0, &new) < 0)
+		return -EINVAL;
+
+	b->interrupt_enable = !!new;
+
+	memset(&tr, 0, sizeof(tr));
+	tr.b		= b;
+
+	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
+		return -ENODEV;
+
+	return count;
+}
+
 static struct kobj_attribute threshold_limit	= __ATTR_RW(threshold_limit);
 static struct kobj_attribute error_count	= __ATTR_RO(error_count);
+static struct kobj_attribute interrupt_enable	= __ATTR_RW(interrupt_enable);
 
 static struct attribute *default_attrs[] = {
 	&threshold_limit.attr,
 	&error_count.attr,
-	NULL,	/* possibly interrupt_enable if supported, see below */
+	&interrupt_enable.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(default);
 
-#define to_attr(a)	container_of(a, struct threshold_attr, attr)
-
-static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	struct threshold_block *b = to_block(kobj);
-	struct threshold_attr *a = to_attr(attr);
-	ssize_t ret;
-
-	ret = a->show ? a->show(b, buf) : -EIO;
-
-	return ret;
-}
-
-static ssize_t store(struct kobject *kobj, struct attribute *attr,
-		     const char *buf, size_t count)
-{
-	struct threshold_block *b = to_block(kobj);
-	struct threshold_attr *a = to_attr(attr);
-	ssize_t ret;
-
-	ret = a->store ? a->store(b, buf, count) : -EIO;
-
-	return ret;
-}
-
-static const struct sysfs_ops threshold_ops = {
-	.show			= show,
-	.store			= store,
-};
-
 static void threshold_block_release(struct kobject *kobj);
 
 static const struct kobj_type threshold_ktype = {
-	.sysfs_ops		= &threshold_ops,
+	.sysfs_ops		= &kobj_sysfs_ops,
 	.default_groups		= default_groups,
 	.release		= threshold_block_release,
 };
