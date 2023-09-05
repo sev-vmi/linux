@@ -1076,7 +1076,6 @@ static ssize_t show_ ## name(struct threshold_block *b, char *buf)	\
 	return sprintf(buf, "%lu\n", (unsigned long) b->name);		\
 }
 SHOW_FIELDS(interrupt_enable)
-SHOW_FIELDS(threshold_limit)
 
 static ssize_t
 store_interrupt_enable(struct threshold_block *b, const char *buf, size_t size)
@@ -1094,31 +1093,6 @@ store_interrupt_enable(struct threshold_block *b, const char *buf, size_t size)
 
 	memset(&tr, 0, sizeof(tr));
 	tr.b		= b;
-
-	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
-		return -ENODEV;
-
-	return size;
-}
-
-static ssize_t
-store_threshold_limit(struct threshold_block *b, const char *buf, size_t size)
-{
-	struct thresh_restart tr;
-	unsigned long new;
-
-	if (kstrtoul(buf, 0, &new) < 0)
-		return -EINVAL;
-
-	if (new > THRESHOLD_MAX)
-		new = THRESHOLD_MAX;
-	if (new < 1)
-		new = 1;
-
-	memset(&tr, 0, sizeof(tr));
-	tr.old_limit = b->threshold_limit;
-	b->threshold_limit = new;
-	tr.b = b;
 
 	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
 		return -ENODEV;
@@ -1151,7 +1125,41 @@ static struct threshold_attr val = {					\
 };
 
 RW_ATTR(interrupt_enable);
-RW_ATTR(threshold_limit);
+
+#define to_block(k)	container_of(k, struct threshold_block, kobj)
+
+static ssize_t threshold_limit_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%lu\n", (unsigned long)to_block(kobj)->threshold_limit);
+}
+
+static ssize_t threshold_limit_store(struct kobject *kobj, struct kobj_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct threshold_block *b = to_block(kobj);
+	struct thresh_restart tr;
+	unsigned long new;
+
+	if (kstrtoul(buf, 0, &new) < 0)
+		return -EINVAL;
+
+	if (new > THRESHOLD_MAX)
+		new = THRESHOLD_MAX;
+	if (new < 1)
+		new = 1;
+
+	memset(&tr, 0, sizeof(tr));
+	tr.old_limit = b->threshold_limit;
+	b->threshold_limit = new;
+	tr.b = b;
+
+	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
+		return -ENODEV;
+
+	return count;
+}
+
+static struct kobj_attribute threshold_limit	= __ATTR_RW(threshold_limit);
 
 static struct attribute *default_attrs[] = {
 	&threshold_limit.attr,
@@ -1161,7 +1169,6 @@ static struct attribute *default_attrs[] = {
 };
 ATTRIBUTE_GROUPS(default);
 
-#define to_block(k)	container_of(k, struct threshold_block, kobj)
 #define to_attr(a)	container_of(a, struct threshold_attr, attr)
 
 static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
