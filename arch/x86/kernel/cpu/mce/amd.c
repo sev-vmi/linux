@@ -1100,23 +1100,6 @@ store_interrupt_enable(struct threshold_block *b, const char *buf, size_t size)
 	return size;
 }
 
-static ssize_t show_error_count(struct threshold_block *b, char *buf)
-{
-	u32 lo, hi;
-
-	/* CPU might be offline by now */
-	if (rdmsr_on_cpu(b->cpu, b->address, &lo, &hi))
-		return -ENODEV;
-
-	return sprintf(buf, "%u\n", ((hi & THRESHOLD_MAX) -
-				     (THRESHOLD_MAX - b->threshold_limit)));
-}
-
-static struct threshold_attr error_count = {
-	.attr = {.name = __stringify(error_count), .mode = 0444 },
-	.show = show_error_count,
-};
-
 #define RW_ATTR(val)							\
 static struct threshold_attr val = {					\
 	.attr	= {.name = __stringify(val), .mode = 0644 },		\
@@ -1159,7 +1142,21 @@ static ssize_t threshold_limit_store(struct kobject *kobj, struct kobj_attribute
 	return count;
 }
 
+static ssize_t error_count_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	struct threshold_block *b = to_block(kobj);
+	u32 lo, hi;
+
+	/* CPU might be offline by now */
+	if (rdmsr_on_cpu(b->cpu, b->address, &lo, &hi))
+		return -ENODEV;
+
+	return sprintf(buf, "%u\n", ((hi & THRESHOLD_MAX) -
+				     (THRESHOLD_MAX - b->threshold_limit)));
+}
+
 static struct kobj_attribute threshold_limit	= __ATTR_RW(threshold_limit);
+static struct kobj_attribute error_count	= __ATTR_RO(error_count);
 
 static struct attribute *default_attrs[] = {
 	&threshold_limit.attr,
