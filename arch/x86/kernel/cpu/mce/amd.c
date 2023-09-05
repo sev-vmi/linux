@@ -1149,8 +1149,19 @@ static struct attribute *default_attrs[] = {
 	NULL,
 };
 
+static umode_t threshold_block_is_visible(struct kobject *kobj, struct attribute *attr, int index)
+{
+	struct threshold_block *b = to_block(kobj);
+
+	if (strcmp(attr->name, "interrupt_enable") || b->interrupt_capable)
+		return attr->mode;
+
+	return 0;
+}
+
 static const struct attribute_group default_group = {
 	.attrs		= default_attrs,
+	.is_visible	= threshold_block_is_visible,
 };
 
 static const struct attribute_group *default_groups[] = {
@@ -1232,13 +1243,6 @@ static int allocate_threshold_blocks(unsigned int cpu, struct threshold_bank *tb
 	b->interrupt_enable	= 0;
 	b->interrupt_capable	= lvt_interrupt_supported(bank, high);
 	b->threshold_limit	= THRESHOLD_MAX;
-
-	if (b->interrupt_capable) {
-		default_attrs[2] = &interrupt_enable.attr;
-		b->interrupt_enable = 1;
-	} else {
-		default_attrs[2] = NULL;
-	}
 
 	INIT_LIST_HEAD(&b->miscj);
 
