@@ -1003,24 +1003,25 @@ out:
 	wrmsrl(MSR_AMD64_SMCA_MCx_DESTAT(err->m.bank), 0);
 }
 
+/* Called on target CPU when handling errors. */
 static void reset_block(struct threshold_block *block)
 {
-	struct thresh_restart tr;
-	u32 low = 0, high = 0;
+	u64 mca_misc;
 
 	if (!block)
 		return;
 
-	if (rdmsr_safe(block->address, &low, &high))
+	if (rdmsrl_safe(block->address, &mca_misc))
 		return;
 
-	if (!(high & MASK_OVERFLOW_HI))
+	if (!(FIELD_GET(MISC_OVERFLOW, mca_misc)))
 		return;
 
-	/* Reset threshold block after logging error. */
-	memset(&tr, 0, sizeof(tr));
-	tr.b = block;
-	threshold_restart_bank(&tr);
+	mca_misc &= ~MISC_OVERFLOW;
+	mca_misc &= ~MISC_ERRCNT;
+	mca_misc |= FIELD_PREP(MISC_ERRCNT, get_errcnt(block->threshold_limit));
+
+	wrmsrl(block->address, mca_misc);
 }
 
 static void reset_thr_blocks(unsigned int bank)
