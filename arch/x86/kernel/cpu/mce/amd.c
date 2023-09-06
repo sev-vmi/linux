@@ -35,11 +35,6 @@
 #define MASK_VALID_HI     0x80000000
 #define MASK_CNTP_HI      0x40000000
 #define MASK_LOCKED_HI    0x20000000
-#define MASK_LVTOFF_HI    0x00F00000
-#define MASK_COUNT_EN_HI  0x00080000
-#define MASK_INT_TYPE_HI  0x00060000
-#define MASK_OVERFLOW_HI  0x00010000
-#define MASK_ERR_COUNT_HI 0x00000FFF
 #define MISC_VALID			BIT_ULL(63)
 #define MISC_CNTP			BIT_ULL(62)
 #define MISC_LOCKED			BIT_ULL(61)
@@ -642,14 +637,6 @@ static void smca_configure_old(unsigned int bank, unsigned int cpu)
 	}
 }
 
-struct thresh_restart {
-	struct threshold_block	*b;
-	int			reset;
-	int			set_lvt_off;
-	int			lvt_off;
-	u16			old_limit;
-};
-
 static const char *bank4_names(const struct threshold_block *b)
 {
 	switch (b->address) {
@@ -683,85 +670,6 @@ static bool lvt_interrupt_supported(unsigned int bank, u32 msr_high_bits)
 	 * bank can generate APIC LVT interrupts
 	 */
 	return msr_high_bits & BIT(28);
-}
-
-static int lvt_off_valid(struct threshold_block *b, int apic, u32 lo, u32 hi)
-{
-	int msr = (hi & MASK_LVTOFF_HI) >> 20;
-
-	if (apic < 0) {
-		pr_err(FW_BUG "cpu %d, failed to setup threshold interrupt "
-		       "for bank %d, block %d (MSR%08X=0x%x%08x)\n", b->cpu,
-		       b->bank, b->block, b->address, hi, lo);
-		return 0;
-	}
-
-	if (apic != msr) {
-		/*
-		 * On SMCA CPUs, LVT offset is programmed at a different MSR, and
-		 * the BIOS provides the value. The original field where LVT offset
-		 * was set is reserved. Return early here:
-		 */
-		if (mce_flags.smca)
-			return 0;
-
-		pr_err(FW_BUG "cpu %d, invalid threshold interrupt offset %d "
-		       "for bank %d, block %d (MSR%08X=0x%x%08x)\n",
-		       b->cpu, apic, b->bank, b->block, b->address, hi, lo);
-		return 0;
-	}
-
-	return 1;
-};
-
-/* Reprogram MCx_MISC MSR behind this threshold bank. */
-static void threshold_restart_bank(void *_tr)
-{
-	struct thresh_restart *tr = _tr;
-	u32 hi, lo;
-
-	/* sysfs write might race against an offline operation */
-	if (!this_cpu_read(threshold_banks) && !tr->set_lvt_off)
-		return;
-
-	rdmsr(tr->b->address, lo, hi);
-
-	if (tr->b->threshold_limit < (hi & THRESHOLD_MAX))
-		tr->reset = 1;	/* limit cannot be lower than err count */
-
-	if (tr->reset) {		/* reset err count and overflow bit */
-		hi =
-		    (hi & ~(MASK_ERR_COUNT_HI | MASK_OVERFLOW_HI)) |
-		    (THRESHOLD_MAX - tr->b->threshold_limit);
-	} else if (tr->old_limit) {	/* change limit w/o reset */
-		int new_count = (hi & THRESHOLD_MAX) +
-		    (tr->old_limit - tr->b->threshold_limit);
-
-		hi = (hi & ~MASK_ERR_COUNT_HI) |
-		    (new_count & THRESHOLD_MAX);
-	}
-
-	/* clear IntType */
-	hi &= ~MASK_INT_TYPE_HI;
-
-	if (!tr->b->interrupt_capable)
-		goto done;
-
-	if (tr->set_lvt_off) {
-		if (lvt_off_valid(tr->b, tr->lvt_off, lo, hi)) {
-			/* set new lvt offset */
-			hi &= ~MASK_LVTOFF_HI;
-			hi |= tr->lvt_off << 20;
-		}
-	}
-
-	if (tr->b->interrupt_enable)
-		hi |= INT_TYPE_APIC;
-
- done:
-
-	hi |= MASK_COUNT_EN_HI;
-	wrmsr(tr->b->address, lo, hi);
 }
 
 static void enable_deferred_error_interrupt(u64 mca_intr_cfg)
@@ -1075,27 +983,37 @@ static ssize_t threshold_limit_show(struct kobject *kobj, struct kobj_attribute 
 	return sprintf(buf, "%lu\n", (unsigned long)to_block(kobj)->threshold_limit);
 }
 
+static void set_limit(void *p)
+{
+	struct threshold_block *thr_block = p;
+	u64 mca_misc;
+
+	if (thr_block->threshold_limit > THRESHOLD_MAX)
+		thr_block->threshold_limit = THRESHOLD_MAX;
+	else if (thr_block->threshold_limit < 1)
+		thr_block->threshold_limit = 1;
+
+	if (rdmsrl_safe(thr_block->address, &mca_misc))
+		return;
+
+	mca_misc &= ~MISC_ERRCNT;
+	mca_misc |= FIELD_PREP(MISC_ERRCNT, get_errcnt(thr_block->threshold_limit));
+
+	wrmsrl(thr_block->address, mca_misc);
+}
+
 static ssize_t threshold_limit_store(struct kobject *kobj, struct kobj_attribute *attr,
 				     const char *buf, size_t count)
 {
 	struct threshold_block *b = to_block(kobj);
-	struct thresh_restart tr;
 	unsigned long new;
 
 	if (kstrtoul(buf, 0, &new) < 0)
 		return -EINVAL;
 
-	if (new > THRESHOLD_MAX)
-		new = THRESHOLD_MAX;
-	if (new < 1)
-		new = 1;
-
-	memset(&tr, 0, sizeof(tr));
-	tr.old_limit = b->threshold_limit;
 	b->threshold_limit = new;
-	tr.b = b;
 
-	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
+	if (smp_call_function_single(b->cpu, set_limit, b, 1))
 		return -ENODEV;
 
 	return count;
