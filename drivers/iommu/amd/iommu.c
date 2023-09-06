@@ -2732,6 +2732,9 @@ static int __set_gcr3(struct iommu_dev_data *dev_data,
 	if (pte == NULL)
 		return -ENOMEM;
 
+	if (*pte & GCR3_VALID)
+		return -EBUSY;
+
 	*pte = (gcr3 & PAGE_MASK) | GCR3_VALID;
 	__amd_iommu_flush_tlb(dev_data->domain, pasid);
 
