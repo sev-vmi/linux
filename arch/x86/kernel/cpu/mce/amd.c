@@ -1119,25 +1119,34 @@ static ssize_t interrupt_enable_show(struct kobject *kobj, struct kobj_attribute
 	return sprintf(buf, "%lu\n", (unsigned long)to_block(kobj)->interrupt_enable);
 }
 
+static void set_interrupt_enable(void *p)
+{
+	struct threshold_block *thr_block = p;
+	u64 mca_misc;
+
+	if (rdmsrl_safe(thr_block->address, &mca_misc))
+		return;
+
+	mca_misc &= ~MISC_THR_LVT_OFFSET;
+
+	if (thr_block->interrupt_enable)
+		mca_misc |= FIELD_PREP(MISC_THR_LVT_OFFSET, INTR_TYPE_APIC);
+
+	wrmsrl(thr_block->address, mca_misc);
+}
+
 static ssize_t interrupt_enable_store(struct kobject *kobj, struct kobj_attribute *attr,
 				      const char *buf, size_t count)
 {
 	struct threshold_block *b = to_block(kobj);
-	struct thresh_restart tr;
 	unsigned long new;
-
-	if (!b->interrupt_capable)
-		return -EINVAL;
 
 	if (kstrtoul(buf, 0, &new) < 0)
 		return -EINVAL;
 
 	b->interrupt_enable = !!new;
 
-	memset(&tr, 0, sizeof(tr));
-	tr.b		= b;
-
-	if (smp_call_function_single(b->cpu, threshold_restart_bank, &tr, 1))
+	if (smp_call_function_single(b->cpu, set_interrupt_enable, b, 1))
 		return -ENODEV;
 
 	return count;
