@@ -802,6 +802,9 @@ bool sev_snp_init_protected_guest_state(struct kvm_vcpu *vcpu);
 int sev_gmem_prepare(struct kvm *kvm, struct kvm_memory_slot *slot,
 		     kvm_pfn_t pfn, gfn_t gfn, u8 *max_level);
 void sev_gmem_invalidate(struct kvm *kvm, kvm_pfn_t start, kvm_pfn_t end);
+bool sev_snp_is_rinj_active(struct kvm_vcpu *vcpu);
+bool sev_snp_nmi_blocked(struct kvm_vcpu *vcpu);
+bool sev_snp_interrupt_blocked(struct kvm_vcpu *vcpu);
 
 /* vmenter.S */
 

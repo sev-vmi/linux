@@ -3669,6 +3669,9 @@ bool svm_nmi_blocked(struct kvm_vcpu *vcpu)
 	if (!gif_set(svm))
 		return true;
 
+	if (sev_snp_is_rinj_active(vcpu))
+		return sev_snp_nmi_blocked(vcpu);
+
 	if (is_guest_mode(vcpu) && nested_exit_on_nmi(svm))
 		return false;
 
@@ -3700,6 +3703,9 @@ bool svm_interrupt_blocked(struct kvm_vcpu *vcpu)
 
 	if (!gif_set(svm))
 		return true;
+
+	if (sev_snp_is_rinj_active(vcpu))
+		return sev_snp_interrupt_blocked(vcpu);
 
 	if (is_guest_mode(vcpu)) {
 		/* As long as interrupts are being delivered...  */
