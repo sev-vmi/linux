@@ -1104,14 +1104,14 @@ static ssize_t threshold_limit_store(struct kobject *kobj, struct kobj_attribute
 static ssize_t error_count_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	struct threshold_block *b = to_block(kobj);
-	u32 lo, hi;
+	u64 mca_misc;
 
 	/* CPU might be offline by now */
-	if (rdmsr_on_cpu(b->cpu, b->address, &lo, &hi))
+	if (rdmsrl_on_cpu(b->cpu, b->address, &mca_misc))
 		return -ENODEV;
 
-	return sprintf(buf, "%u\n", ((hi & THRESHOLD_MAX) -
-				     (THRESHOLD_MAX - b->threshold_limit)));
+	return sprintf(buf, "%llu\n", (FIELD_GET(MISC_ERRCNT, mca_misc) -
+				       get_errcnt(b->threshold_limit)));
 }
 
 static ssize_t interrupt_enable_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
