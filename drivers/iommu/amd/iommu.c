@@ -1945,6 +1945,9 @@ static int __clear_gcr3(struct iommu_dev_data *dev_data, ioasid_t pasid)
 	if (pte == NULL)
 		return -EINVAL;
 
+	if (*pte & GCR3_VALID)
+		return -EBUSY;
+
 	*pte = 0;
 	amd_iommu_dev_flush_pasid_all(dev_data, pasid);
 
