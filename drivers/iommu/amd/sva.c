@@ -94,7 +94,7 @@ static void sva_mn_release(struct mmu_notifier *mn, struct mm_struct *mm)
 }
 
 static const struct mmu_notifier_ops sva_mn = {
-	.invalidate_range = sva_mn_invalidate_range,
+	.arch_invalidate_secondary_tlbs = sva_mn_invalidate_range,
 	.release = sva_mn_release,
 };
 

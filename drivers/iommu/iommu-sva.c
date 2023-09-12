@@ -7,6 +7,8 @@
 #include <linux/sched/mm.h>
 #include <linux/iommu.h>
 
+#include "iommu-priv.h"
+
 static DEFINE_MUTEX(iommu_sva_lock);
 
 /* Allocate a PASID for the mm within range (inclusive) */
