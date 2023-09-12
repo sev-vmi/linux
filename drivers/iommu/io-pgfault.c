@@ -11,6 +11,8 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 
+#include "iommu-priv.h"
+
 void iopf_free_group(struct iopf_group *group)
 {
 	struct iopf_fault *iopf, *next;
