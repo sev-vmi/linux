@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- *  (c) 2005-2016 Advanced Micro Devices, Inc.
+ *  (c) 2005-2023 Advanced Micro Devices, Inc.
  *
  *  Written by Jacob Shin - AMD, Inc.
- *  Maintained by: Borislav Petkov <bp@alien8.de>
+ *  Maintained by: Borislav Petkov <bp@alien8.de> and Yazen Ghannam <yazen.ghannam@amd.com>
  */
 #include <linux/bitfield.h>
 #include <linux/interrupt.h>
@@ -48,11 +48,8 @@
 #define INTR_CFG_LEGACY_DFR_INTR_TYPE	GENMASK_ULL(2, 1)
 #define INTR_TYPE_APIC			0x1
 
-/* Scalable MCA: */
 #define MCI_IPID_MCATYPE	GENMASK_ULL(47, 44)
 #define MCI_IPID_HWID		GENMASK_ULL(43, 32)
-#define MCI_IPID_MCATYPE_OLD	0xFFFF0000
-#define MCI_IPID_HWID_OLD	0xFFF
 
 /* MCA_CONFIG register, one per MCA bank */
 #define CFG_CE_INT_EN			BIT_ULL(40)
