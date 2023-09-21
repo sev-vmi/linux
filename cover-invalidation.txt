@@ -1,0 +1,27 @@
+Improve TLB invalidation logic
+
+Current code invalidates single page and entire range for the given
+domain ID. IOMMU hardware supports multiple page invalidation.
+This series adds support to invalidate range of pages.
+
+Also consolidate various invalidation functions, remove unused functions,
+re-arranges invalidation related functions.
+
+Note that this series doesn't add support for PASID based invalidation (except
+PASID 0 for v2 page table). We will include necessary changes in SVA series.
+
+Testing:
+  - This series is tested with v1 and v2 page table and it works fine.
+
+This patch series is based on top of SVA Part 2 [1] which in turn based on
+top of iommu/next branch (Commit 8e5ab3f54a10).
+  [1] https://lore.kernel.org/linux-iommu/20231006095706.5694-1-vasant.hegde@amd.com/T/#t
+
+This is also available at github :
+   https://github.com/AMDESE/linux/tree/iommu_flush_improvement_v1_v6.6_rc1
+
+
+v1: https://lore.kernel.org/linux-iommu/20231006101624.5912-1-vasant.hegde@amd.com/T/#t
+
+Thank you,
+Vasant
