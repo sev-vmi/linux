@@ -1,0 +1,36 @@
+Improve TLB invalidation logic
+
+Current code invalidates single page or entire range for the given
+domain ID. IOMMU hardware supports multiple page invalidation.
+This series adds support to invalidate range of pages. Also consolidate
+various invalidation functions.
+
+Note that this series doesn't add support for PASID based invalidation.
+We will include necessary changes in SVA series.
+
+Testing:
+  - This series is tested with v1 and v2 page table and it works fine.
+
+This patch series is based on top of v6.7-rc2.
+
+This is also available at github :
+   https://github.com/AMDESE/linux/tree/iommu_flush_improvement_v2_v6.7_rc2
+
+Thanks Jason for reviewing previous versions and providing valuable feedbacks.
+
+Changes from v1 -> v2:
+  - Rebased on top of v6.7-rc2
+  - Based on review comments removed PASID related helper functions
+  - Reworked domain_flush_pages() code path to detect/handle v2 page table flush.
+  - Re-organized code made it difficult to fix __set_gcr3() code path. It
+    still uses __amd_iommu_flush_tlb(). Also as part of SVA part3, we are
+    reworking this code path. Hence dropped __flush_pasid() removal
+    patch from this series. It will be added to SVA part3 series.
+  - Dropped code re-arragement patch as I think it should be done after removing
+    flush_pasid() related code. It will be added to SVA part3.
+
+
+v1: https://lore.kernel.org/linux-iommu/20231006101624.5912-1-vasant.hegde@amd.com/T/#t
+
+Thank you,
+Vasant
