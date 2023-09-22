@@ -13,8 +13,9 @@
 static int nfit_handle_mce(struct notifier_block *nb, unsigned long val,
 			void *data)
 {
-	struct mce *mce = (struct mce *)data;
+	struct mce_hw_err *err = (struct mce_hw_err *)data;
 	struct acpi_nfit_desc *acpi_desc;
+	struct mce *mce = &err->m;
 	struct nfit_spa *nfit_spa;
 
 	/* We only care about uncorrectable memory errors */
