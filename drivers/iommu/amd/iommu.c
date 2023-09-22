@@ -83,6 +83,22 @@ static void detach_device(struct device *dev);
  *
  ****************************************************************************/
 
+/*
+ * For invalidation request without PASID, get the pasid based on
+ * domain page table mode.
+ */
+static inline ioasid_t pdom_get_default_pasid(struct protection_domain *pdom)
+{
+	return (pdom && (pdom->flags & PD_IOMMUV2_MASK)) ?
+		IOMMU_NO_PASID : IOMMU_PASID_INVALID;
+}
+
+/* Used to select host/guest page table for invalidation */
+static inline bool is_pasid_valid(ioasid_t pasid)
+{
+	return (pasid != IOMMU_PASID_INVALID) ? true : false;
+}
+
 static inline int get_acpihid_device_id(struct device *dev,
 					struct acpihid_map_entry **entry)
 {
@@ -1380,12 +1396,13 @@ void amd_iommu_flush_all_caches(struct amd_iommu *iommu)
 /*
  * Command send function for flushing on-device TLB
  */
-static int device_flush_iotlb(struct iommu_dev_data *dev_data,
-			      u64 address, size_t size)
+static int device_flush_iotlb_range(struct iommu_dev_data *dev_data,
+				    ioasid_t pasid, u64 address, size_t size)
 {
 	struct amd_iommu *iommu;
 	struct iommu_cmd cmd;
 	int qdep;
+	bool gn = is_pasid_valid(pasid);
 
 	qdep     = dev_data->ats_qdep;
 	iommu    = rlookup_amd_iommu(dev_data->dev);
@@ -1393,7 +1410,7 @@ static int device_flush_iotlb(struct iommu_dev_data *dev_data,
 		return -EINVAL;
 
 	build_inv_iotlb_pages(&cmd, dev_data->devid, qdep, address,
-			      size, IOMMU_NO_PASID, false);
+			      size, pasid, gn);
 
 	return iommu_queue_command(iommu, &cmd);
 }
@@ -1439,8 +1456,11 @@ static int device_flush_dte(struct iommu_dev_data *dev_data)
 			return ret;
 	}
 
-	if (dev_data->ats_enabled)
-		ret = device_flush_iotlb(dev_data, 0, ~0UL);
+	if (dev_data->ats_enabled) {
+		ioasid_t pasid = pdom_get_default_pasid(dev_data->domain);
+
+		ret = device_flush_iotlb_range(dev_data, pasid, 0, ~0UL);
+	}
 
 	return ret;
 }
@@ -1476,7 +1496,8 @@ static void __domain_flush_pages(struct protection_domain *domain,
 		if (!dev_data->ats_enabled)
 			continue;
 
-		ret |= device_flush_iotlb(dev_data, address, size);
+		ret |= device_flush_iotlb_range(dev_data, IOMMU_PASID_INVALID,
+						address, size);
 	}
 
 	WARN_ON(ret);
