@@ -59,6 +59,7 @@
  *  - TCC bit is present in MCx_STATUS.
  */
 #define MCI_CONFIG_MCAX		0x1
+#define MCI_CONFIG_FRUTEXT	BIT_ULL(9)
 
 /*
  * Note that the full MCACOD field of IA32_MCi_STATUS MSR is
@@ -195,6 +196,7 @@ struct mce_hw_err {
 		struct {
 			u64 synd1;
 			u64 synd2;
+			u64 config;
 		} amd;
 	} vi;
 };
