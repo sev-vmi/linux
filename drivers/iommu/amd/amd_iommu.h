@@ -224,5 +224,7 @@ void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 				  u64 *root, int mode);
 struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
 
+int iommu_completion_wait(struct amd_iommu *iommu);
+
 extern bool amd_iommu_snp_en;
 #endif
