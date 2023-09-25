@@ -102,6 +102,106 @@ static int __init viommu_vf_vfcntl_init(struct amd_iommu *iommu)
 	return 0;
 }
 
+static void *alloc_private_region(struct amd_iommu *iommu,
+				  u64 base, size_t size)
+{
+	int ret;
+	void *region;
+
+	region  = (void *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
+						get_order(size));
+	if (!region)
+		return NULL;
+
+	ret = set_memory_uc((unsigned long)region, size >> PAGE_SHIFT);
+	if (ret)
+		goto err_out;
+
+	if (amd_iommu_v1_map_pages(&iommu->viommu_pdom->iop.iop.ops, base,
+				   iommu_virt_to_phys(region), PAGE_SIZE, (size / PAGE_SIZE),
+				   IOMMU_PROT_IR | IOMMU_PROT_IW, GFP_KERNEL, NULL))
+		goto err_out;
+
+	pr_debug("%s: base=%#llx, size=%#lx\n", __func__, base, size);
+
+	return region;
+
+err_out:
+	free_pages((unsigned long)region, get_order(size));
+	return NULL;
+}
+
+/* Set DTE for IOMMU device */
+static void set_iommu_private_space_dte(struct amd_iommu *iommu)
+{
+	u64 pte_root = 0;
+	u64 flags = 0;
+	u16 devid = iommu->devid;
+	struct protection_domain *pdom = iommu->viommu_pdom;
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+
+	pte_root = iommu_virt_to_phys(pdom->iop.root);
+	pte_root |= (pdom->iop.mode & DEV_ENTRY_MODE_MASK) << DEV_ENTRY_MODE_SHIFT;
+	pte_root |= DTE_FLAG_IR | DTE_FLAG_IW | DTE_FLAG_V | DTE_FLAG_TV;
+
+	flags = dev_table[devid].data[1];
+	flags &= ~DEV_DOMID_MASK;
+	flags |= pdom->id;
+
+	dev_table[devid].data[1]  = flags;
+	dev_table[devid].data[0]  = pte_root;
+
+	iommu_flush_dte(iommu, devid);
+	iommu_completion_wait(iommu);
+}
+
+static int viommu_private_space_init(struct amd_iommu *iommu)
+{
+	u64 pte_root = 0;
+	struct iommu_domain *dom;
+	struct protection_domain *pdom;
+
+	/*
+	 * Setup page table root pointer, Guest MMIO and
+	 * Cmdbuf Dirty Status regions.
+	 */
+	dom = amd_iommu_domain_alloc(IOMMU_DOMAIN_UNMANAGED);
+	if (!dom)
+		goto err_out;
+
+	pdom = to_pdomain(dom);
+	iommu->viommu_pdom = pdom;
+	set_iommu_private_space_dte(iommu);
+
+	iommu->guest_mmio = alloc_private_region(iommu,
+						 VIOMMU_GUEST_MMIO_BASE,
+						 VIOMMU_GUEST_MMIO_SIZE);
+	if (!iommu->guest_mmio)
+		goto err_out;
+
+	iommu->cmdbuf_dirty_mask = alloc_private_region(iommu,
+							VIOMMU_CMDBUF_DIRTY_STATUS_BASE,
+							VIOMMU_CMDBUF_DIRTY_STATUS_SIZE);
+	if (!iommu->cmdbuf_dirty_mask)
+		goto err_out;
+
+	pte_root = iommu_virt_to_phys(pdom->iop.root);
+	pr_debug("%s: devid=%#x, pte_root=%#llx(%#llx), guest_mmio=%#llx(%#llx), cmdbuf_dirty_mask=%#llx(%#llx)\n",
+		 __func__, iommu->devid, (unsigned long long)pdom->iop.root, pte_root,
+		 (unsigned long long)iommu->guest_mmio, iommu_virt_to_phys(iommu->guest_mmio),
+		 (unsigned long long)iommu->cmdbuf_dirty_mask,
+		 iommu_virt_to_phys(iommu->cmdbuf_dirty_mask));
+
+	return 0;
+err_out:
+	if (iommu->guest_mmio)
+		free_pages((unsigned long)iommu->guest_mmio, get_order(VIOMMU_GUEST_MMIO_SIZE));
+
+	if (dom)
+		amd_iommu_domain_free(dom);
+	return -ENOMEM;
+}
+
 /*
  * When IOMMU Virtualization is enabled, host software must:
  *	- allocate system memory for IOMMU private space
@@ -123,6 +223,10 @@ int __init iommu_init_viommu(struct amd_iommu *iommu)
 		goto err_out;
 
 	ret = viommu_vf_vfcntl_init(iommu);
+	if (ret)
+		goto err_out;
+
+	ret = viommu_private_space_init(iommu);
 	if (ret)
 		goto err_out;
 
