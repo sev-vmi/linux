@@ -41,6 +41,23 @@ struct amd_iommu *get_amd_iommu_from_devid(u16 devid)
 	return NULL;
 }
 
+static int viommu_enable(struct amd_iommu *iommu)
+{
+	if (!amd_iommu_viommu)
+		return -EINVAL;
+
+	/* The GstBufferTRPMode feature is checked by set and test */
+	if (!iommu_feature_enable_and_check(iommu, CONTROL_GSTBUFFERTRPMODE))
+		return -EINVAL;
+
+	if (check_feature2(FEATURE_GCR3TRPMODE))
+		iommu_feature_enable(iommu, CONTROL_GCR3TRPMODE);
+	iommu_feature_enable(iommu, CONTROL_VCMD_EN);
+	iommu_feature_enable(iommu, CONTROL_VIOMMU_EN);
+
+	return 0;
+}
+
 static int viommu_init_pci_vsc(struct amd_iommu *iommu)
 {
 	iommu->vsc_offset = pci_find_capability(iommu->dev, PCI_CAP_ID_VNDR);
@@ -218,6 +235,9 @@ int __init iommu_init_viommu(struct amd_iommu *iommu)
 	if (!amd_iommu_viommu)
 		return 0;
 
+	if (!check_feature(FEATURE_VIOMMU))
+		goto err_out;
+
 	ret = viommu_init_pci_vsc(iommu);
 	if (ret)
 		goto err_out;
@@ -227,6 +247,10 @@ int __init iommu_init_viommu(struct amd_iommu *iommu)
 		goto err_out;
 
 	ret = viommu_private_space_init(iommu);
+	if (ret)
+		goto err_out;
+
+	ret = viommu_enable(iommu);
 	if (ret)
 		goto err_out;
 
