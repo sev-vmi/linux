@@ -1465,23 +1465,42 @@ static int device_flush_dte(struct iommu_dev_data *dev_data)
 	return ret;
 }
 
-/*
- * TLB invalidation function which is called from the mapping functions.
- * It invalidates a single PTE if the range to flush is within a single
- * page. Otherwise it flushes the whole TLB of the IOMMU.
- */
-static void __domain_flush_pages(struct protection_domain *domain,
-				 u64 address, size_t size)
+/* Invalidate device IOTLB for all devices in the protection domain */
+static int domain_flush_dev_iotlb_range(struct protection_domain *pdom,
+					ioasid_t pasid, u64 address, size_t size)
 {
 	struct iommu_dev_data *dev_data;
-	struct iommu_cmd cmd;
-	int ret = 0, i;
+	int ret = 0;
 
-	build_inv_iommu_pages(&cmd, address, size, domain->id,
-			      IOMMU_NO_PASID, false);
+	list_for_each_entry(dev_data, &pdom->dev_list, list) {
+		/*
+		 * There might be non-ATS capable devices in the same
+		 * protection domain.
+		 */
+		if (!dev_data->ats_enabled)
+			continue;
+
+		ret |= device_flush_iotlb_range(dev_data, pasid, address, size);
+	}
+
+	return ret;
+}
+
+/*
+ * IOMMU TLB needs to be flushed before Device TLB to prevent device
+ * TLB refill from IOMMU TLB
+ */
+static int domain_flush_tlb_range(struct protection_domain *pdom,
+				  ioasid_t pasid, u64 address, size_t size)
+{
+	struct iommu_cmd cmd;
+	int i, ret = 0;
+	bool gn = is_pasid_valid(pasid);
+
+	build_inv_iommu_pages(&cmd, address, size, pdom->id, pasid, gn);
 
 	for (i = 0; i < amd_iommu_get_num_iommus(); ++i) {
-		if (!domain->dev_iommu[i])
+		if (!pdom->dev_iommu[i])
 			continue;
 
 		/*
@@ -1491,23 +1510,30 @@ static void __domain_flush_pages(struct protection_domain *domain,
 		ret |= iommu_queue_command(amd_iommus[i], &cmd);
 	}
 
-	list_for_each_entry(dev_data, &domain->dev_list, list) {
+	return ret;
+}
 
-		if (!dev_data->ats_enabled)
-			continue;
+/*
+ * TLB invalidation function which is called from the mapping functions.
+ * It flushes range of PTEs of the domain.
+ */
+static void __domain_flush_pages(struct protection_domain *pdom,
+				 ioasid_t pasid, u64 address, size_t size)
+{
+	int ret;
 
-		ret |= device_flush_iotlb_range(dev_data, IOMMU_PASID_INVALID,
-						address, size);
-	}
+	ret = domain_flush_tlb_range(pdom, pasid, address, size);
+
+	ret |= domain_flush_dev_iotlb_range(pdom, pasid, address, size);
 
 	WARN_ON(ret);
 }
 
 static void domain_flush_pages(struct protection_domain *domain,
-			       u64 address, size_t size)
+			       ioasid_t pasid, u64 address, size_t size)
 {
 	if (likely(!amd_iommu_np_cache)) {
-		__domain_flush_pages(domain, address, size);
+		__domain_flush_pages(domain, pasid, address, size);
 
 		/* Wait until IOMMU TLB and all device IOTLB flushes are complete */
 		amd_iommu_domain_flush_complete(domain);
@@ -1544,7 +1570,7 @@ static void domain_flush_pages(struct protection_domain *domain,
 
 		flush_size = 1ul << min_alignment;
 
-		__domain_flush_pages(domain, address, flush_size);
+		__domain_flush_pages(domain, pasid, address, flush_size);
 		address += flush_size;
 		size -= flush_size;
 	}
@@ -1557,7 +1583,9 @@ static void domain_flush_pages(struct protection_domain *domain,
 void amd_iommu_domain_flush_pages(struct protection_domain *pdom,
 				  u64 address, size_t size)
 {
-	return domain_flush_pages(pdom, address, size);
+	ioasid_t pasid = pdom_get_default_pasid(pdom);
+
+	return domain_flush_pages(pdom, pasid, address, size);
 }
 
 /* Flush the whole IO/TLB for a given protection domain - including PDE */
