@@ -1508,6 +1508,10 @@ static void domain_flush_pages(struct protection_domain *domain,
 {
 	if (likely(!amd_iommu_np_cache)) {
 		__domain_flush_pages(domain, address, size);
+
+		/* Wait until IOMMU TLB and all device IOTLB flushes are complete */
+		amd_iommu_domain_flush_complete(domain);
+
 		return;
 	}
 
@@ -1544,6 +1548,9 @@ static void domain_flush_pages(struct protection_domain *domain,
 		address += flush_size;
 		size -= flush_size;
 	}
+
+	/* Wait until IOMMU TLB and all device IOTLB flushes are complete */
+	amd_iommu_domain_flush_complete(domain);
 }
 
 /* Flush the whole IO/TLB for a given protection domain - including PDE */
@@ -1577,7 +1584,6 @@ static void domain_flush_np_cache(struct protection_domain *domain,
 
 		spin_lock_irqsave(&domain->lock, flags);
 		domain_flush_pages(domain, iova, size);
-		amd_iommu_domain_flush_complete(domain);
 		spin_unlock_irqrestore(&domain->lock, flags);
 	}
 }
@@ -1852,11 +1858,8 @@ static void do_detach(struct iommu_dev_data *dev_data)
 	/* Flush the DTE entry */
 	device_flush_dte(dev_data);
 
-	/* Flush IOTLB */
+	/* Flush IOTLB and wait for the flushes to finish */
 	amd_iommu_domain_flush_tlb_pde(domain);
-
-	/* Wait for the flushes to finish */
-	amd_iommu_domain_flush_complete(domain);
 
 	/* decrease reference counters - needs to happen after the flushes */
 	domain->dev_iommu[iommu->index] -= 1;
@@ -2034,7 +2037,6 @@ void amd_iommu_domain_update(struct protection_domain *domain)
 
 	/* Flush domain TLB(s) and wait for completion */
 	amd_iommu_domain_flush_tlb_pde(domain);
-	amd_iommu_domain_flush_complete(domain);
 }
 
 /*****************************************************************************
@@ -2445,7 +2447,6 @@ static void amd_iommu_flush_iotlb_all(struct iommu_domain *domain)
 
 	spin_lock_irqsave(&dom->lock, flags);
 	amd_iommu_domain_flush_tlb_pde(dom);
-	amd_iommu_domain_flush_complete(dom);
 	spin_unlock_irqrestore(&dom->lock, flags);
 }
 
@@ -2457,7 +2458,6 @@ static void amd_iommu_iotlb_sync(struct iommu_domain *domain,
 
 	spin_lock_irqsave(&dom->lock, flags);
 	domain_flush_pages(dom, gather->start, gather->end - gather->start + 1);
-	amd_iommu_domain_flush_complete(dom);
 	spin_unlock_irqrestore(&dom->lock, flags);
 }
 
