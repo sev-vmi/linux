@@ -78,6 +78,7 @@ int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, ioasid_t pasid);
  */
 void amd_iommu_flush_all_caches(struct amd_iommu *iommu);
 void amd_iommu_update_and_flush_device_table(struct protection_domain *domain);
+void amd_iommu_domain_free(struct iommu_domain *dom);
 void amd_iommu_domain_update(struct protection_domain *domain);
 void amd_iommu_domain_flush_complete(struct protection_domain *domain);
 void amd_iommu_domain_flush_pages(struct protection_domain *domain,
@@ -195,6 +196,8 @@ static inline void amd_iommu_apply_ivrs_quirks(void) { }
 void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 				  u64 *root, int mode);
 struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
+
+int iommu_completion_wait(struct amd_iommu *iommu);
 
 extern bool amd_iommu_snp_en;
 

@@ -24,8 +24,6 @@ enum iommufd_viommu_cmd {
 	IOMMUFD_CMD_IOMMU_DESTROY,
 	IOMMUFD_CMD_DEVICE_ATTACH,
 	IOMMUFD_CMD_DEVICE_DETACH,
-	IOMMUFD_CMD_DOMAIN_ATTACH,
-	IOMMUFD_CMD_DOMAIN_DETACH,
 	IOMMUFD_CMD_MMIO_ACCESS,
 };
 
@@ -70,29 +68,6 @@ struct amd_viommu_dev_info {
 
 #define VIOMMU_DEVICE_ATTACH	_IO(IOMMUFD_TYPE, IOMMUFD_CMD_DEVICE_ATTACH)
 #define VIOMMU_DEVICE_DETACH	_IO(IOMMUFD_TYPE, IOMMUFD_CMD_DEVICE_DETACH)
-
-/**
- * struct amd_viommu_dom_info - ioctl(VIOMMU_DOMAIN_[ATTACH|DETACH])
- * @size: sizeof(struct amd_viommu_dom_info)
- * @iommu_id: PCI device ID of the AMD IOMMU instance
- * @gid: guest ID
- * @hdev_id: host PCI device ID
- * @gdev_id: guest PCI device ID
- * @gdom_id: guest domain ID
- *
- * Attach / Detach domain of a PCI device to a HW-vIOMMU instance, and program
- * the IOMMU Domain ID mapping table for the specified guest.
- */
-struct amd_viommu_dom_info {
-	__u32	size;
-	__u32	iommu_id;
-	__u32	gid;
-	__u16	gdev_id;
-	__u16	gdom_id;
-};
-
-#define VIOMMU_DOMAIN_ATTACH	_IO(IOMMUFD_TYPE, IOMMUFD_CMD_DOMAIN_ATTACH)
-#define VIOMMU_DOMAIN_DETACH	_IO(IOMMUFD_TYPE, IOMMUFD_CMD_DOMAIN_DETACH)
 
 /**
  * struct amd_viommu_mmio_data- ioctl(VIOMMU_MMIO_ACCESS)
