@@ -2698,7 +2698,8 @@ static int __set_gcr3(struct protection_domain *domain, u32 pasid,
 
 	*pte = (cr3 & PAGE_MASK) | GCR3_VALID;
 
-	return __amd_iommu_flush_tlb(domain, pasid);
+	domain_flush_pages(domain, pasid, 0, CMD_INV_IOMMU_ALL_PAGES_ADDRESS);
+	return 0;
 }
 
 static int __clear_gcr3(struct protection_domain *domain, u32 pasid)
@@ -2714,7 +2715,8 @@ static int __clear_gcr3(struct protection_domain *domain, u32 pasid)
 
 	*pte = 0;
 
-	return __amd_iommu_flush_tlb(domain, pasid);
+	domain_flush_pages(domain, pasid, 0, CMD_INV_IOMMU_ALL_PAGES_ADDRESS);
+	return 0;
 }
 
 int amd_iommu_domain_set_gcr3(struct iommu_domain *dom, u32 pasid,
