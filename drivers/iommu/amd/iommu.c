@@ -1633,6 +1633,22 @@ static void amd_iommu_domain_flush_all(struct protection_domain *pdom)
 					    CMD_INV_IOMMU_ALL_PAGES_ADDRESS);
 }
 
+void amd_iommu_dev_flush_pasid_pages(struct iommu_dev_data *dev_data,
+				     ioasid_t pasid, u64 address, size_t size)
+{
+	device_flush_tlb_range(dev_data, pasid, address, size);
+
+	if (dev_data->ats_enabled)
+		device_flush_iotlb_range(dev_data, pasid, address, size);
+}
+
+void amd_iommu_dev_flush_pasid_all(struct iommu_dev_data *dev_data,
+				   ioasid_t pasid)
+{
+	amd_iommu_dev_flush_pasid_pages(dev_data, pasid, 0,
+					CMD_INV_IOMMU_ALL_PAGES_ADDRESS);
+}
+
 void amd_iommu_domain_flush_complete(struct protection_domain *domain)
 {
 	int i;
