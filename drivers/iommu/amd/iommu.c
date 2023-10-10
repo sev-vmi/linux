@@ -79,6 +79,7 @@ static void detach_device(struct device *dev);
 
 static void set_dte_entry(struct amd_iommu *iommu,
 			  struct iommu_dev_data *dev_data);
+static void clear_dte_entry(struct amd_iommu *iommu, u16 devid);
 
 /****************************************************************************
  *
@@ -1679,6 +1680,24 @@ static void domain_flush_np_cache(struct protection_domain *domain,
 }
 
 
+/* Update and flush DTE for the given device */
+void amd_iommu_dev_update_dte(struct iommu_dev_data *dev_data, bool set)
+{
+	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
+
+	if (!iommu)
+		return;
+
+	if (set)
+		set_dte_entry(iommu, dev_data);
+	else
+		clear_dte_entry(iommu, dev_data->devid);
+
+	clone_aliases(iommu, dev_data->dev);
+
+	device_flush_dte(dev_data);
+}
+
 /*
  * This function flushes the DTEs for all devices in domain
  */
@@ -1804,7 +1823,6 @@ static void free_gcr3_tbl_level2(u64 *tbl)
 static void free_gcr3_table(struct iommu_dev_data *dev_data)
 {
 	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
-	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
 
 	if (gcr3_info->glx == 2)
 		free_gcr3_tbl_level2(gcr3_info->gcr3_tbl);
@@ -1815,9 +1833,7 @@ static void free_gcr3_table(struct iommu_dev_data *dev_data)
 
 	gcr3_info->glx = 0;
 
-	set_dte_entry(iommu, dev_data);
-	clone_aliases(iommu, dev_data->dev);
-	device_flush_dte(dev_data);
+	amd_iommu_dev_update_dte(dev_data, true);
 
 	free_page((unsigned long)gcr3_info->gcr3_tbl);
 	gcr3_info->gcr3_tbl = NULL;
@@ -1842,7 +1858,6 @@ static int get_gcr3_levels(int pasids)
 static int setup_gcr3_table(struct iommu_dev_data *dev_data, int pasids)
 {
 	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
-	struct amd_iommu *iommu = get_amd_iommu_from_dev(dev_data->dev);
 	int levels = get_gcr3_levels(pasids);
 
 	if (levels > amd_iommu_max_glx_val)
@@ -1858,9 +1873,7 @@ static int setup_gcr3_table(struct iommu_dev_data *dev_data, int pasids)
 
 	gcr3_info->glx = levels;
 
-	set_dte_entry(iommu, dev_data);
-	clone_aliases(iommu, dev_data->dev);
-	device_flush_dte(dev_data);
+	amd_iommu_dev_update_dte(dev_data, true);
 
 	return 0;
 }
@@ -2138,10 +2151,7 @@ static int do_attach(struct iommu_dev_data *dev_data,
 	}
 
 	/* Update device table */
-	set_dte_entry(iommu, dev_data);
-	clone_aliases(iommu, dev_data->dev);
-
-	device_flush_dte(dev_data);
+	amd_iommu_dev_update_dte(dev_data, true);
 
 	return ret;
 }
@@ -2164,11 +2174,9 @@ static void do_detach(struct iommu_dev_data *dev_data)
 	/* Update data structures */
 	dev_data->domain = NULL;
 	list_del(&dev_data->list);
-	clear_dte_entry(iommu, dev_data->devid);
-	clone_aliases(iommu, dev_data->dev);
 
-	/* Flush the DTE entry */
-	device_flush_dte(dev_data);
+	/* Clear DTE and flush the entry */
+	amd_iommu_dev_update_dte(dev_data, false);
 
 	/* Flush IOTLB and wait for the flushes to finish */
 	amd_iommu_domain_flush_all(domain);
