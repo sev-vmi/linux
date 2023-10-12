@@ -9275,6 +9275,26 @@ static void bnxt_free_irq(struct bnxt *bp)
 	}
 }
 
+
+#define __BNXT_PRINT_IRQ
+
+#ifdef  __BNXT_PRINT_IRQ
+static void
+__print_bnxt_irq(struct bnxt_irq *irq)
+{
+ char buf[256];
+  
+	buf[0]=0;
+	cpumap_print_to_pagebuf(0, buf, irq->cpu_mask);
+	printk(" >>>> bnxt_irq: %p vector: %d msix_nr: %d have_cpumask: %d cpu_mask: 0x%s\n",
+				irq, irq->vector, irq->msix_nr, irq->have_cpumask, buf);
+}
+#else
+#define __print_bnxt_irq(irq) do { } while(0)
+#endif
+
+
+
 static void
 bnxt_irq_affinity_notify(struct irq_affinity_notify *notify,
 			const cpumask_t *mask)
@@ -9294,6 +9314,7 @@ bnxt_irq_affinity_notify(struct irq_affinity_notify *notify,
 			TPH_REQ_TPH_ONLY))
 	WARN_ONCE(1, "Error configuring steering tag\n");
 #endif
+	__print_bnxt_irq(irq);
 }
 
 
@@ -9379,10 +9400,13 @@ static int bnxt_request_irq(struct bnxt *bp)
 					TPH_MTYPE_TAG_VRAM,
 					TPH_REQ_TPH_ONLY)) {
 				WARN_ONCE(1, "Error configuring steering tag\n");
+				printk(">>> %s:%d Error configuring steering tag\n", __FUNCTION__, __LINE__);
 			} else {
+				printk(">>> %s:%d Steering tags configured\n", __FUNCTION__, __LINE__);
 				irq->bp = bp;
 				__bnxt_register_notify_irqchanges(irq);
 			}
+			__print_bnxt_irq(irq);
 #endif
 		}
 	}
