@@ -9275,6 +9275,50 @@ static void bnxt_free_irq(struct bnxt *bp)
 	}
 }
 
+static void
+bnxt_irq_affinity_notify(struct irq_affinity_notify *notify,
+			const cpumask_t *mask)
+{
+	char buf[256];
+	struct bnxt_irq *irq=container_of(notify, struct bnxt_irq, affinity_notify);
+
+	buf[0] = 0;
+	cpumap_print_to_pagebuf(0, buf, mask);
+	printk("New mask for IRQ @ %p vector: %d mask: %s\n", irq, irq->vector, buf);
+	cpumask_copy(irq->cpu_mask, mask);
+
+#ifdef CONFIG_PCIE_TPH
+	if (!pcie_tph_set_stte(irq->bp->pdev, irq->msix_nr,
+			cpumask_first(irq->cpu_mask),
+			TPH_MTYPE_TAG_VRAM,
+			TPH_REQ_TPH_ONLY))
+	WARN_ONCE(1, "Error configuring steering tag\n");
+#endif
+}
+
+
+
+
+static void bnxt_irq_affinity_release(struct kref __always_unused *ref)
+{}
+
+
+
+static inline void
+__bnxt_register_notify_irqchanges(struct bnxt_irq *irq)
+{
+	struct irq_affinity_notify *affinity_notify;
+
+	affinity_notify          = &irq->affinity_notify;
+	affinity_notify->irq     = irq->vector;
+	affinity_notify->notify  = bnxt_irq_affinity_notify;
+	affinity_notify->release = bnxt_irq_affinity_release;
+	irq_set_affinity_notifier(irq->vector, affinity_notify);
+}
+
+
+
+
 static int bnxt_request_irq(struct bnxt *bp)
 {
 	int i, j, rc = 0;
@@ -9319,6 +9363,7 @@ static int bnxt_request_irq(struct bnxt *bp)
 			int numa_node = dev_to_node(&bp->pdev->dev);
 
 			irq->have_cpumask = 1;
+			irq->msix_nr = i;
 			cpumask_set_cpu(cpumask_local_spread(i, numa_node),
 					irq->cpu_mask);
 			rc = irq_set_affinity_hint(irq->vector, irq->cpu_mask);
@@ -9328,6 +9373,17 @@ static int bnxt_request_irq(struct bnxt *bp)
 					    irq->vector);
 				break;
 			}
+#ifdef CONFIG_PCIE_TPH
+			if (!pcie_tph_set_stte(bp->pdev, i,
+					cpumask_first(irq->cpu_mask),
+					TPH_MTYPE_TAG_VRAM,
+					TPH_REQ_TPH_ONLY)) {
+				WARN_ONCE(1, "Error configuring steering tag\n");
+			} else {
+				irq->bp = bp;
+				__bnxt_register_notify_irqchanges(irq);
+			}
+#endif
 		}
 	}
 	return rc;

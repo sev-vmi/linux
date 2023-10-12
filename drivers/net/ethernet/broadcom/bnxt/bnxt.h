@@ -1007,12 +1007,15 @@ struct bnxt_napi {
 };
 
 struct bnxt_irq {
-	irq_handler_t	handler;
-	unsigned int	vector;
-	u8		requested:1;
-	u8		have_cpumask:1;
-	char		name[IFNAMSIZ + 2];
-	cpumask_var_t	cpu_mask;
+	irq_handler_t	 handler;
+	unsigned int	 vector;
+	int            msix_nr;
+	u8		         requested:1;
+	u8		         have_cpumask:1;
+	char		       name[IFNAMSIZ + 2];
+	cpumask_var_t	 cpu_mask;
+	struct bnxt   *bp;
+	struct irq_affinity_notify affinity_notify;
 };
 
 #define HWRM_RING_ALLOC_TX	0x1
