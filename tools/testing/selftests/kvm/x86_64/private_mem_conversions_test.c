@@ -388,10 +388,14 @@ static void test_mem_conversions(enum vm_mem_backing_src_type src_type, uint32_t
 		gmem_flags = 0;
 	memfd = vm_create_guest_memfd(vm, memfd_size, gmem_flags);
 
-	for (i = 0; i < nr_memslots; i++)
-		vm_mem_add(vm, src_type, BASE_DATA_GPA + size * i,
-			   BASE_DATA_SLOT + i, size / vm->page_size,
-			   KVM_MEM_PRIVATE, memfd, size * i);
+	if (nr_memslots == 1)
+		vm_mem_add(vm, src_type, BASE_DATA_GPA, BASE_DATA_SLOT,
+			   memfd_size / vm->page_size, KVM_MEM_PRIVATE, memfd, 0);
+	else
+		for (i = 0; i < nr_memslots; i++)
+			vm_mem_add(vm, src_type, BASE_DATA_GPA + size * i,
+				   BASE_DATA_SLOT + i, size / vm->page_size,
+				   KVM_MEM_PRIVATE, memfd, size * i);
 
 	for (i = 0; i < nr_vcpus; i++) {
 		uint64_t gpa =  BASE_DATA_GPA + i * size;
