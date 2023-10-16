@@ -2743,6 +2743,15 @@ amd_iommu_domain_alloc_user(struct device *dev,
 {
 	int ret;
 	struct iommu_domain *dom;
+	struct protection_domain *pdom, *ppdom;
+
+	if (parent) {
+		ppdom = to_pdomain(parent);
+		printk("DEBUG0: %s: flags=%#x, parent=%#x\n", __func__,
+			flags, ppdom->id);
+	} else {
+		printk("DEBUG0: %s: flags=%#x, parent=NULL\n", __func__, flags);
+	}
 
 	if (hwpt_type != IOMMU_HWPT_TYPE_DEFAULT &&
 	    hwpt_type != IOMMU_HWPT_TYPE_AMD_V2)
@@ -2752,12 +2761,15 @@ amd_iommu_domain_alloc_user(struct device *dev,
 		return ERR_PTR(-EINVAL);
 
 	if (!parent) {
+		printk("DEBUG1: %s: alloc new domain\n", __func__);
 		dom = iommu_domain_alloc(dev->bus);
 		if (!dom) {
 			return ERR_PTR(-ENOMEM);
 		}
 
 		pdom = to_pdomain(dom);
+		printk("DEBUG2: %s: domid=%#x, root=%#llx, type=%#x\n", __func__,
+			pdom->id, iommu_virt_to_phys(pdom->iop.root), dom->type);
 
 		/*
 		 * FIXME: We need setup vIOMMU translation domain (GPA->SPA)
@@ -2789,6 +2801,8 @@ amd_iommu_domain_alloc_user(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 	}
 
+	pdom = to_pdomain(dom);
+	printk("DEBUG3: %s: parent_domid=%#x, domid=%#x\n", __func__, ppdom->id, pdom->id);
 	dom->type = IOMMU_DOMAIN_NESTED;
 	dom->ops = &amd_iommu_nested_domain_ops;
 

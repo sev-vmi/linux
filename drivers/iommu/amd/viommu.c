@@ -330,6 +330,7 @@ err_out:
 
 static void viommu_uninit_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo, u16 guestId)
 {
+printk("DEBUG: %s\n", __func__);
 	free_private_vm_region(iommu, &vminfo->devid_table,
 			       VIOMMU_DEVID_MAPPING_BASE,
 			       VIOMMU_DEVID_MAPPING_ENTRY_SIZE,
@@ -420,6 +421,7 @@ static int viommu_init_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vmi
 {
 	int ret;
 
+printk("DEBUG0: %s: gid=%#x\n", __func__, vminfo->gid);
 	ret = alloc_private_vm_region(iommu, &vminfo->devid_table,
 				      VIOMMU_DEVID_MAPPING_BASE,
 				      VIOMMU_DEVID_MAPPING_ENTRY_SIZE,
@@ -427,6 +429,7 @@ static int viommu_init_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vmi
 	if (ret)
 		goto err_out;
 
+printk("DEBUG1: %s: gid=%#x\n", __func__, vminfo->gid);
 	ret = alloc_private_vm_region(iommu, &vminfo->domid_table,
 				      VIOMMU_DOMID_MAPPING_BASE,
 				      VIOMMU_DOMID_MAPPING_ENTRY_SIZE,
@@ -434,11 +437,13 @@ static int viommu_init_one(struct amd_iommu *iommu, struct amd_iommu_vminfo *vmi
 	if (ret)
 		goto err_out;
 
+printk("DEBUG2: %s: gid=%#x\n", __func__, vminfo->gid);
 	viommu_clear_mapping(iommu, vminfo->gid);
 	viommu_clear_dirty_status_mask(iommu, vminfo->gid);
 
 	return 0;
 err_out:
+printk("DEBUG3: %s: gid=%#x\n", __func__, vminfo->gid);
 	viommu_uninit_one(iommu, vminfo, vminfo->gid);
 	return -ENOMEM;
 }
@@ -465,6 +470,7 @@ again:
 		}
 	}
 
+printk("DEBUG: %s: gid=%u\n", __func__, gid);
 	pr_debug("%s: gid=%u\n", __func__, gid);
 	vminfo->gid = gid;
 	hash_add(viommu_gid_hash, &vminfo->hnode, vminfo->gid);
@@ -472,11 +478,14 @@ again:
 	return 0;
 }
 
+
+//FIXME
 static void viommu_gid_free(struct amd_iommu *iommu,
 			    struct amd_iommu_vminfo *vminfo)
 {
 	unsigned long flags;
 
+printk("DEBUG: %s: gid=%u\n", __func__, vminfo->gid);
 	pr_debug("%s: gid=%u\n", __func__, vminfo->gid);
 	spin_lock_irqsave(&viommu_gid_hash_lock, flags);
 	hash_del(&vminfo->hnode);
@@ -519,6 +528,7 @@ int amd_viommu_iommu_init(struct amd_viommu_iommu_info *data)
 	if (ret)
 		goto err_out;
 
+printk("DEBUG: %s\n", __func__);
 	ret = viommu_init_one(iommu, vminfo);
 	if (ret)
 		goto err_out;
@@ -545,6 +555,7 @@ int amd_viommu_iommu_destroy(struct amd_viommu_iommu_info *data)
 	unsigned int iommu_id = data->iommu_id;
 	struct amd_iommu *iommu = get_amd_iommu_from_devid(iommu_id);
 
+printk("DEBUG: %s\n", __func__);
 	if (!iommu)
 		return -ENODEV;
 
@@ -788,6 +799,8 @@ static void set_device_mapping(struct amd_iommu *iommu, u16 hDevId,
 	val = tmp1 | tmp2 | 0x8000000000000001ULL;
 	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, guestId);
 	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_DID_MAP_CONTROL0_OFFSET);
+
+printk("DEBUG: %s: val=%#llx\n", __func__, val);
 
 	wbinvd_on_all_cpus();
 }

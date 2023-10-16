@@ -36,6 +36,7 @@ int vfio_iommufd_compat_attach_ioas(struct vfio_device *vdev,
 
 	lockdep_assert_held(&vdev->dev_set->lock);
 
+printk("DEBUG: %s\n", __func__);
 	/* compat noiommu does not need to do ioas attach */
 	if (vfio_device_is_noiommu(vdev))
 		return 0;
@@ -145,6 +146,7 @@ int vfio_iommufd_physical_attach_ioas(struct vfio_device *vdev, u32 *pt_id)
 	if (WARN_ON(!vdev->iommufd_device))
 		return -EINVAL;
 
+printk("DEBUG: %s: iommufd_attached=%#x\n", __func__, vdev->iommufd_attached);
 	if (vdev->iommufd_attached)
 		rc = iommufd_device_replace(vdev->iommufd_device, pt_id);
 	else

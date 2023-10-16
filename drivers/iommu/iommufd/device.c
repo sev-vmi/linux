@@ -688,6 +688,7 @@ iommufd_device_auto_get_domain(struct iommufd_device *idev,
 		goto out_unlock;
 	}
 
+printk("DEBUG: %s\n", __func__);
 	hwpt = iommufd_hw_pagetable_alloc(idev->ictx, &ioas->obj, idev,
 					  0, IOMMU_HWPT_TYPE_DEFAULT,
 					  NULL, immediate_attach);
@@ -724,6 +725,7 @@ static int iommufd_device_change_pt(struct iommufd_device *idev, u32 *pt_id,
 	struct iommufd_hw_pagetable *destroy_hwpt;
 	struct iommufd_object *pt_obj;
 
+printk("DEBUG0: %s\n", __func__);
 	pt_obj = iommufd_get_object(idev->ictx, *pt_id, IOMMUFD_OBJ_ANY);
 	if (IS_ERR(pt_obj))
 		return PTR_ERR(pt_obj);
@@ -733,6 +735,7 @@ static int iommufd_device_change_pt(struct iommufd_device *idev, u32 *pt_id,
 		struct iommufd_hw_pagetable *hwpt =
 			container_of(pt_obj, struct iommufd_hw_pagetable, obj);
 
+printk("DEBUG1: %s: IOMMUFD_OBJ_HW_PAGETABLE\n", __func__);
 		destroy_hwpt = (*do_attach)(idev, hwpt);
 		if (IS_ERR(destroy_hwpt))
 			goto out_put_pt_obj;
@@ -742,6 +745,7 @@ static int iommufd_device_change_pt(struct iommufd_device *idev, u32 *pt_id,
 		struct iommufd_ioas *ioas =
 			container_of(pt_obj, struct iommufd_ioas, obj);
 
+printk("DEBUG2: %s: IOMMUFD_OBJ_IOAS\n", __func__);
 		destroy_hwpt = iommufd_device_auto_get_domain(idev, ioas, pt_id,
 							      do_attach);
 		if (IS_ERR(destroy_hwpt))
@@ -780,6 +784,7 @@ int iommufd_device_attach(struct iommufd_device *idev, u32 *pt_id)
 {
 	int rc;
 
+printk("DEBUG: %s\n", __func__);
 	rc = iommufd_device_change_pt(idev, pt_id, &iommufd_device_do_attach);
 	if (rc)
 		return rc;
@@ -810,6 +815,7 @@ EXPORT_SYMBOL_NS_GPL(iommufd_device_attach, IOMMUFD);
  */
 int iommufd_device_replace(struct iommufd_device *idev, u32 *pt_id)
 {
+printk("DEBUG: %s\n", __func__);
 	return iommufd_device_change_pt(idev, pt_id,
 					&iommufd_device_do_replace);
 }

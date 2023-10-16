@@ -206,6 +206,7 @@ static int vfio_df_group_open(struct vfio_device_file *df)
 		goto out_put_kvm;
 
 	if (df->iommufd && device->open_count == 1) {
+printk("DEBUG: %s\n", __func__);
 		ret = vfio_iommufd_compat_attach_ioas(device, df->iommufd);
 		if (ret)
 			goto out_close_device;
@@ -264,6 +265,7 @@ static struct file *vfio_device_open_file(struct vfio_device *device)
 
 	df->group = device->group;
 
+printk("DEBUG: %s\n", __func__);
 	ret = vfio_df_group_open(df);
 	if (ret)
 		goto err_free;
@@ -327,6 +329,7 @@ static int vfio_group_ioctl_get_device_fd(struct vfio_group *group,
 		goto err_put_device;
 	}
 
+printk("DEBUG: %s\n", __func__);
 	filep = vfio_device_open_file(device);
 	if (IS_ERR(filep)) {
 		ret = PTR_ERR(filep);
@@ -390,6 +393,7 @@ static long vfio_group_fops_unl_ioctl(struct file *filep,
 
 	switch (cmd) {
 	case VFIO_GROUP_GET_DEVICE_FD:
+printk("DEBUG: %s: VFIO_GROUP_GET_DEVICE_FD\n", __func__);
 		return vfio_group_ioctl_get_device_fd(group, uarg);
 	case VFIO_GROUP_GET_STATUS:
 		return vfio_group_ioctl_get_status(group, uarg);

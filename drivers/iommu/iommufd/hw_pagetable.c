@@ -13,6 +13,7 @@ static void iommufd_user_managed_hwpt_destroy(struct iommufd_object *obj)
 	struct iommufd_hw_pagetable *hwpt =
 		container_of(obj, struct iommufd_hw_pagetable, obj);
 
+printk("DEBUG: %s\n", __func__);
 	if (hwpt->domain)
 		iommu_domain_free(hwpt->domain);
 
@@ -126,6 +127,7 @@ iommufd_user_managed_hwpt_alloc(struct iommufd_ctx *ictx,
 	hwpt->abort = iommufd_user_managed_hwpt_abort;
 	hwpt->destroy = iommufd_user_managed_hwpt_destroy;
 
+printk("DEBUG: %s: calling domain_alloc_user\n", __func__);
 	hwpt->domain = ops->domain_alloc_user(idev->dev, flags, hwpt_type,
 					      parent->domain, user_data);
 	if (IS_ERR(hwpt->domain)) {
@@ -226,6 +228,7 @@ iommufd_hw_pagetable_alloc(struct iommufd_ctx *ictx,
 	hwpt->destroy = iommufd_kernel_managed_hwpt_destroy;
 
 	if (ops->domain_alloc_user) {
+printk("DEBUG: %s: calling domain_alloc_user w/ parent=NULL\n", __func__);
 		hwpt->domain = ops->domain_alloc_user(idev->dev, flags,
 						      hwpt_type, NULL,
 						      user_data);
