@@ -1111,6 +1111,10 @@ struct amd_iommu_vminfo {
 	u64 *devid_table;
 	u64 *domid_table;
 	bool init;
+	bool trans_init;
+	u16 trans_domid;
+	u16 trans_devid;
+	struct amd_io_pgtable *trans_iop;
 };
 
 #ifdef CONFIG_IRQ_REMAP
