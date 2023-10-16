@@ -231,4 +231,6 @@ struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
 int iommu_completion_wait(struct amd_iommu *iommu);
 
 extern bool amd_iommu_snp_en;
+
+int amd_viommu_set_trans_info(struct amd_io_pgtable *iop, u16 domid);
 #endif
