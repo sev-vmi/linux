@@ -449,8 +449,9 @@ int amd_viommu_iommu_init(struct amd_viommu_iommu_info *data)
 
 	vminfo->init = true;
 	data->gid = vminfo->gid;
-	pr_debug("%s: iommu_id=%#x, gid=%#x\n", __func__,
-		pci_dev_id(iommu->dev), vminfo->gid);
+	vminfo->trans_devid = data->trans_devid;
+	pr_debug("%s: iommu_id=%#x, gid=%#x, trans_devid=%#x\n", __func__,
+		pci_dev_id(iommu->dev), vminfo->gid, vminfo->trans_devid);
 
 	return ret;
 
@@ -483,3 +484,42 @@ int amd_viommu_iommu_destroy(struct amd_viommu_iommu_info *data)
 
 }
 EXPORT_SYMBOL(amd_viommu_iommu_destroy);
+
+static int viommu_set_translate_dte(struct amd_iommu *iommu, u16 gid)
+{
+	u16 devid;
+	u64 val, tmp0, tmp1;
+	u8 __iomem *vfctrl;
+	struct amd_iommu_vminfo *vminfo;
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+
+	vminfo = amd_iommu_get_vminfo(gid);
+	if (!vminfo)
+		return -EINVAL;
+
+	/* FIXME: Need to be per vIOMMU instance */
+	if (vminfo->trans_init)
+		return 0;
+
+	/* Setup DTE for the devid */
+	devid = vminfo->trans_devid;
+	tmp0 = iommu_virt_to_phys(vminfo->trans_iop->root) & 0xFFFFFFFFFF000ULL;
+	tmp0 |= (vminfo->trans_iop->mode & 0x7ULL) << 9;
+	tmp0 |= (DTE_FLAG_IR | DTE_FLAG_IW | DTE_FLAG_TV | DTE_FLAG_V);
+	tmp1 = vminfo->trans_domid & 0xFFFFULL;
+
+	dev_table[devid].data[0] = tmp0;
+	dev_table[devid].data[1] = tmp1;
+
+	iommu_flush_dte(iommu, devid);
+	iommu_completion_wait(iommu);
+
+	val = devid & 0xFFFFULL;
+	val = val << 16;
+	vfctrl = VIOMMU_VFCTRL_MMIO_BASE(iommu, gid);
+
+	writeq(val, vfctrl + VIOMMU_VFCTRL_GUEST_MISC_CONTROL_OFFSET);
+
+	vminfo->trans_init = true;
+	return 0;
+}
