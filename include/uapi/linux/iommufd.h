@@ -390,13 +390,36 @@ struct iommu_hwpt_vtd_s1 {
 };
 
 /**
+ * struct iommu_hwpt_amd_v2 - AMD IOMMU specific user-managed
+ *                            v2 I/O page table data
+ * @gcr3: GCR3 guest physical ddress
+ * @gid: Guest ID
+ * @iommu_id: IOMMU host device ID
+ * @gdev_id: Guest device ID
+ * @gdom_id: Guest domain ID
+ * @glx: GCR3 table levels
+ * @guest_paging_mode: Guest v2 page table paging mode
+ */
+struct iommu_hwpt_amd_v2 {
+	__aligned_u64 gcr3;
+	__u32 gid;
+	__u32 iommu_id;
+	__u16 gdev_id;
+	__u16 gdom_id;
+	__u16 glx;
+	__u16 guest_paging_mode;
+};
+
+/**
  * enum iommu_hwpt_data_type - IOMMU HWPT Data Type
  * @IOMMU_HWPT_DATA_NONE: no data
  * @IOMMU_HWPT_DATA_VTD_S1: Intel VT-d stage-1 page table
+ * @IOMMU_HWPT_DATA_AMD_V2: AMD IOMMUv2 page table
  */
 enum iommu_hwpt_data_type {
 	IOMMU_HWPT_DATA_NONE,
 	IOMMU_HWPT_DATA_VTD_S1,
+	IOMMU_HWPT_DATA_AMD_V2,
 };
 
 /**
