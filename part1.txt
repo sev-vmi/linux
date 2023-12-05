@@ -1,0 +1,55 @@
+iommu/amd: Introduce hardware info reporting and nested translation support
+
+OVERVIEW
+--------
+This is the first part of multi-part series to introduce the AMD IOMMU
+nested translation support with Hardware-virtualized IOMMU (HW-vIOMMU),
+which allows user-space to take adventage of hardware accelerated
+AMD IOMMU in the guest.
+
+The part 1 introduces AMD IOMMU hardware info reporting support via
+the ioctl IOMMU_GET_HW_INFO with enum IOMMU_HW_INFO_TYPE_AMD. This allows
+hypervisor to communicate the supported capabilities to user-space.
+For example, this information can be used by QEMU to populate EFR and EFR2
+field in the guest IVRS table when building guest ACPI table.
+
+In addition, this series introduces nested translation support for the
+AMD IOMMU v2 page table (stage-1) via the IOMMUFD nesting infrastructure.
+This allows User-space to set up the v2 page table and communicate
+information via the struct iommu_hwpt_amd_v2 with enum
+IOMMU_HWPT_DATA_AMD_V2.
+
+This series is based on top of:
+  * Linux v6.7-rc5
+  * Series [PATCH v2 0/9] Improve TLB invalidation logic
+    (Currently queued in https://git.kernel.org/pub/scm/linux/kernel/git/joro/iommu.git/log/?h=next)
+  * Series [PATCH v4 00/16] iommu/amd: SVA Support (part 3) - refactor support for GCR3 table
+    (https://lore.kernel.org/all/20231212085224.6985-1-vasant.hegde@amd.com/)
+
+GITHUB
+------
+[1] https://github.com/AMDESE/linux/tree/iommu_sva_part3_v4_v6.7_rc5-amd_nesting_rfc_v2.1
+    (Complete code for the part 1 of this series)
+[2] https://github.com/AMDESE/linux/tree/wip/iommu_sva_part3_v4_v6.7_rc5-amd_viommu_20240112.1
+    (WIP for Linux AMD Hw-vIOMMU support)
+
+CHANGES
+-------
+* Patch 1 : New
+* Patch 2 : New
+* Patch 4 : Modifies the amd_iommu_build_efr to also check the advertised capabilities against
+            the current hardware (per Kevin)
+* Patch 4 : Also add reference to IOMMU spec in the comment (per Jason)
+* Patch 5 : Removes gid, iommu_id, gdev_id (per Jason), and introduce the struct flags and giov tracking.
+* Patch 6,7 : Separate logic for nested domain allocation and attachment into two patches (per Jason).
+
+HISTORY
+-------
+* [RFC PATCH 0/6] iommu/amd: Introduce hardware info reporting and nested translation support
+  (https://lore.kernel.org/linux-iommu/20231212160139.174229-1-suravee.suthikulpanit@amd.com/)
+
+* [RFC PATCH 00/21] iommu/amd: Introduce support for HW accelerated vIOMMU w/ nested page table
+  (https://lore.kernel.org/lkml/20230621235508.113949-1-suravee.suthikulpanit@amd.com/)
+
+Thank you,
+Suravee
