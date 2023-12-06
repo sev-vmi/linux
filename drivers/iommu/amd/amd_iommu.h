@@ -182,4 +182,10 @@ void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
 
 extern bool amd_iommu_snp_en;
+
+/* AMD IOMMU GID */
+int amd_iommu_vminfo_alloc(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
+void amd_iommu_vminfo_free(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
+struct amd_iommu_vminfo *amd_iommu_get_vminfo(int gid);
+
 #endif
