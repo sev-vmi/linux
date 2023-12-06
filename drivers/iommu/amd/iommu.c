@@ -93,6 +93,9 @@ static void detach_device(struct device *dev);
 static void set_dte_entry(struct amd_iommu *iommu,
 			  struct iommu_dev_data *dev_data);
 
+static void amd_iommu_clear_gcr3tbl_trp(struct amd_iommu *iommu,
+					struct iommu_dev_data *dev_data);
+
 /****************************************************************************
  *
  * Helper functions
@@ -2146,15 +2149,25 @@ static int do_attach(struct iommu_dev_data *dev_data,
 
 static void do_detach(struct iommu_dev_data *dev_data)
 {
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 	struct protection_domain *domain = dev_data->domain;
 	struct amd_iommu *iommu;
 
 	iommu = get_amd_iommu_from_dev(dev_data->dev);
 
-	/* Clear GCR3 table */
-	if (domain->pd_mode == PD_MODE_V2) {
-		__clear_gcr3(dev_data, 0);
-		free_gcr3_table(dev_data);
+	if (gcr3_info->gcr3_tbl) {
+		if (gcr3_info->trp) {
+			/*
+			 * In GCR3TRPMode, the GCR3 table contains GPA,
+			 * which is setup by guest kernel. Therefore, we just
+			 * need to clean up the DTE settings for guest translation.
+			 */
+			amd_iommu_clear_gcr3tbl_trp(iommu, dev_data);
+		} else {
+			/* Clear GCR3 table */
+			__clear_gcr3(dev_data, 0);
+			free_gcr3_table(dev_data);
+		}
 	}
 
 	/* Update data structures */
@@ -2950,6 +2963,117 @@ const struct iommu_ops amd_iommu_ops = {
 		.enforce_cache_coherency = amd_iommu_enforce_cache_coherency,
 	}
 };
+
+/*
+ * For GCR3TRPMode, user-space provides GPA for the GCR3 Root Pointer Table.
+ */
+int amd_iommu_set_gcr3tbl_trp(struct amd_iommu *iommu, struct pci_dev *pdev,
+			      u64 gcr3_tbl, u16 glx, u16 guest_paging_mode)
+{
+	struct iommu_dev_data *dev_data = dev_iommu_priv_get(&pdev->dev);
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	int devid = pci_dev_id(pdev);
+	u64 data0 = dev_table[devid].data[0];
+	u64 data1 = dev_table[devid].data[1];
+	u64 data2 = dev_table[devid].data[2];
+	u64 tmp;
+
+	pr_debug("%s: devid=%d, glx=%#x, gcr3_tbl=%#llx\n",
+		__func__, devid, glx, gcr3_tbl);
+
+	WARN_ON(gcr3_info->trp);
+
+	gcr3_info->trp = true;
+	gcr3_info->gcr3_tbl = (u64 *)gcr3_tbl;
+
+	data0 |= DTE_FLAG_GV | DTE_FLAG_GIOV;
+	tmp = glx;
+	data0 |= (tmp & DTE_GLX_MASK) << DTE_GLX_SHIFT;
+
+	/* First mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_A(~0ULL) << DTE_GCR3_SHIFT_A;
+	data0 &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	data1 &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	data1 &= ~tmp;
+
+	/* Encode GCR3 table into DTE */
+	tmp = DTE_GCR3_VAL_A(gcr3_tbl) << DTE_GCR3_SHIFT_A;
+	data0 |= tmp;
+
+	tmp = DTE_GCR3_VAL_B(gcr3_tbl) << DTE_GCR3_SHIFT_B;
+	data1 |= tmp;
+
+	tmp = DTE_GCR3_VAL_C(gcr3_tbl) << DTE_GCR3_SHIFT_C;
+	data1 |= tmp;
+
+	/* Mask out old values for GuestPagingMode */
+	data2 &= ~(0x3ULL << DTE_GPT_LEVEL_SHIFT);
+
+	/* Check 5-level support for the host before enabling on behalf of the guest */
+	tmp = (u64)guest_paging_mode;
+	if ((tmp == GUEST_PGTABLE_5_LEVEL) &&
+	    (check_feature_gpt_level() < GUEST_PGTABLE_5_LEVEL)) {
+		pr_err("Cannot support 5-level v2 page table.\n");
+		return -EINVAL;
+	}
+	data2 |= (tmp << DTE_GPT_LEVEL_SHIFT);
+
+	dev_table[devid].data[2] = data2;
+	dev_table[devid].data[1] = data1;
+	dev_table[devid].data[0] = data0;
+
+	device_flush_dte(dev_data);
+	iommu_completion_wait(iommu);
+
+	return 0;
+}
+
+void amd_iommu_clear_gcr3tbl_trp(struct amd_iommu *iommu,
+				 struct iommu_dev_data *dev_data)
+{
+	int devid = dev_data->devid;
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	u64 data0 = dev_table[devid].data[0];
+	u64 data1 = dev_table[devid].data[1];
+	u64 data2 = dev_table[devid].data[2];
+	u64 tmp;
+
+	if (!gcr3_info->trp)
+		return;
+
+	pr_debug("%s: devid=%#x, gcr3_tbl=%#llx\n", __func__, devid,
+		 (unsigned long long)gcr3_info->gcr3_tbl);
+
+	tmp = DTE_GLX_MASK;
+	data0 &= ~(tmp << DTE_GLX_SHIFT);
+	data0 &= ~(DTE_FLAG_GV | DTE_FLAG_GIOV);
+
+	/* Mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_A(~0ULL) << DTE_GCR3_SHIFT_A;
+	data0 &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	data1 &= ~tmp;
+
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	data1 &= ~tmp;
+
+	/* Mask out old values for GuestPagingMode */
+	data2 &= ~(0x3ULL << DTE_GPT_LEVEL_SHIFT);
+
+	dev_table[devid].data[2] = data2;
+	dev_table[devid].data[1] = data1;
+	dev_table[devid].data[0] = data0;
+
+	gcr3_info->trp = false;
+	gcr3_info->gcr3_tbl = NULL;
+}
 
 #ifdef CONFIG_IRQ_REMAP
 

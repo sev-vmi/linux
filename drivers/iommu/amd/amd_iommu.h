@@ -56,6 +56,8 @@ void amd_iommu_pdev_disable_cap_pri(struct pci_dev *pdev);
 int amd_iommu_set_gcr3(struct iommu_dev_data *dev_data,
 		       ioasid_t pasid, unsigned long gcr3);
 int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, ioasid_t pasid);
+int amd_iommu_set_gcr3tbl_trp(struct amd_iommu *iommu, struct pci_dev *pdev,
+			      u64 gcr3_tbl, u16 glx, u16 guest_paging_mode);
 
 /*
  * This function flushes all internal caches of

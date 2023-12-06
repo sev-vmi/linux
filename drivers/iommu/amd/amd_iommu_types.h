@@ -541,6 +541,7 @@ struct gcr3_tbl_info {
 	u64	*gcr3_tbl;	/* Guest CR3 table */
 	int	glx;		/* Number of levels for GCR3 table */
 	u32	pasid_cnt;	/* Track attached PASIDs */
+	bool	trp;		/* TRP support */
 };
 
 struct amd_io_pgtable {
