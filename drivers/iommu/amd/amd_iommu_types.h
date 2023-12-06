@@ -16,6 +16,7 @@
 #include <linux/pci.h>
 #include <linux/irqreturn.h>
 #include <linux/io-pgtable.h>
+#include <linux/hashtable.h>
 
 /*
  * Maximum number of IOMMUs supported
@@ -1055,6 +1056,11 @@ struct amd_irte_ops {
 	void (*set_allocated)(struct irq_remap_table *, int);
 	bool (*is_allocated)(struct irq_remap_table *, int);
 	void (*clear_allocated)(struct irq_remap_table *, int);
+};
+
+struct amd_iommu_vminfo {
+	u16 gid;
+	struct hlist_node hnode;
 };
 
 #ifdef CONFIG_IRQ_REMAP
