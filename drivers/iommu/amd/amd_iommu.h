@@ -192,4 +192,9 @@ amd_iommu_nested_domain_alloc(struct device *dev, unsigned int type, u32 flags,
 			      struct iommu_hwpt_amd_v2 *hwpt,
 			      struct iommu_domain *parent);
 
+/* AMD IOMMU GID */
+int amd_iommu_vminfo_alloc(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
+void amd_iommu_vminfo_free(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
+struct amd_iommu_vminfo *amd_iommu_get_vminfo(int gid);
+
 #endif
