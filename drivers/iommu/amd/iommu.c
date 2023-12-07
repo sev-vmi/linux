@@ -260,7 +260,7 @@ static struct amd_iommu *rlookup_amd_iommu(struct device *dev)
 	return __rlookup_amd_iommu(seg, PCI_SBDF_TO_DEVID(devid));
 }
 
-static struct protection_domain *to_pdomain(struct iommu_domain *dom)
+struct protection_domain *to_pdomain(struct iommu_domain *dom)
 {
 	return container_of(dom, struct protection_domain, domain);
 }
@@ -2526,21 +2526,70 @@ static struct iommu_domain *amd_iommu_domain_alloc(unsigned int type)
 	return domain;
 }
 
+static int udata_to_iommu_hwpt_amd_v2(const struct iommu_user_data *user_data,
+				       struct iommu_hwpt_amd_v2 *hwpt)
+{
+	if (!user_data)
+		return -EINVAL;
+
+	if (user_data->type != IOMMU_HWPT_DATA_AMD_V2)
+		return -EOPNOTSUPP;
+
+	return iommu_copy_struct_from_user(hwpt, user_data,
+					   IOMMU_HWPT_DATA_AMD_V2,
+					   guest_paging_mode);
+}
+
+static bool check_nested_support(u32 flags)
+{
+	if (!(flags & IOMMU_HWPT_ALLOC_NEST_PARENT))
+		return true;
+
+	if (!check_feature(FEATURE_GT) ||
+	    !check_feature(FEATURE_GIOSUP) ||
+	    !check_feature2(FEATURE_GCR3TRPMODE))
+		return false;
+
+	return true;
+}
+
 static struct iommu_domain *
 amd_iommu_domain_alloc_user(struct device *dev, u32 flags,
 			    struct iommu_domain *parent,
 			    const struct iommu_user_data *user_data)
-
 {
-	unsigned int type = IOMMU_DOMAIN_UNMANAGED;
+	struct iommu_domain *dom;
 
-	if ((flags & ~IOMMU_HWPT_ALLOC_DIRTY_TRACKING) || parent || user_data)
+	if (parent) {
+		int ret;
+		struct iommu_hwpt_amd_v2 hwpt;
+
+		if (parent->ops != amd_iommu_ops.default_domain_ops)
+			return ERR_PTR(-EINVAL);
+
+		ret = udata_to_iommu_hwpt_amd_v2(user_data, &hwpt);
+		if (ret)
+			return ERR_PTR(ret);
+
+		return amd_iommu_nested_domain_alloc(dev, &hwpt);
+	}
+
+	/* Check supported flags */
+	if (flags & (~(IOMMU_HWPT_ALLOC_NEST_PARENT |
+		       IOMMU_HWPT_ALLOC_DIRTY_TRACKING)))
 		return ERR_PTR(-EOPNOTSUPP);
 
-	return do_iommu_domain_alloc(type, dev, flags);
+	if (!check_nested_support(flags))
+		return ERR_PTR(-EOPNOTSUPP);
+
+	dom = iommu_domain_alloc(dev->bus);
+	if (!dom)
+		return ERR_PTR(-ENOMEM);
+
+	return dom;
 }
 
-static void amd_iommu_domain_free(struct iommu_domain *dom)
+void amd_iommu_domain_free(struct iommu_domain *dom)
 {
 	struct protection_domain *domain;
 	unsigned long flags;
@@ -2559,7 +2608,7 @@ static void amd_iommu_domain_free(struct iommu_domain *dom)
 	protection_domain_free(domain);
 }
 
-static int amd_iommu_attach_device(struct iommu_domain *dom,
+int amd_iommu_attach_device(struct iommu_domain *dom,
 				   struct device *dev)
 {
 	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);

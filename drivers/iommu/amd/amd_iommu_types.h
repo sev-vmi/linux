@@ -114,6 +114,8 @@
 #define FEATURE_PASMAX_MASK	(0x1FULL << FEATURE_PASMAX_SHIFT)
 
 /* Extended Feature 2 Bits */
+#define FEATURE_GCR3TRPMODE	BIT_ULL(3)
+
 #define FEATURE_SNPAVICSUP_SHIFT	5
 #define FEATURE_SNPAVICSUP_MASK		(0x07ULL << FEATURE_SNPAVICSUP_SHIFT)
 #define FEATURE_SNPAVICSUP_GAM(x) \
@@ -1058,6 +1060,7 @@ struct amd_irte_ops {
 struct amd_iommu_vminfo {
 	u16 gid;
 	struct hlist_node hnode;
+	u64 *devid_table;
 };
 
 #ifdef CONFIG_IRQ_REMAP

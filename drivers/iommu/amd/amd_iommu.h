@@ -7,6 +7,7 @@
 #ifndef AMD_IOMMU_H
 #define AMD_IOMMU_H
 
+#include <uapi/linux/iommufd.h>
 #include <linux/iommu.h>
 
 #include "amd_iommu_types.h"
@@ -75,6 +76,8 @@ void amd_iommu_dev_flush_pasid_all(struct iommu_dev_data *dev_data,
 				   ioasid_t pasid);
 
 void amd_iommu_build_efr(u64 *efr, u64 *efr2);
+int amd_iommu_attach_device(struct iommu_domain *dom, struct device *dev);
+void amd_iommu_domain_free(struct iommu_domain *dom);
 
 #ifdef CONFIG_IRQ_REMAP
 int amd_iommu_create_irq_domain(struct amd_iommu *iommu);
@@ -189,5 +192,10 @@ extern bool amd_iommu_snp_en;
 int amd_iommu_vminfo_alloc(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
 void amd_iommu_vminfo_free(struct amd_iommu *iommu, struct amd_iommu_vminfo *vminfo);
 struct amd_iommu_vminfo *amd_iommu_get_vminfo(int gid);
+
+/* NESTED */
+struct protection_domain *to_pdomain(struct iommu_domain *dom);
+struct iommu_domain *amd_iommu_nested_domain_alloc(struct device *dev,
+						   struct iommu_hwpt_amd_v2 *hwpt);
 
 #endif
