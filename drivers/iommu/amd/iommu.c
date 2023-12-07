@@ -2623,12 +2623,30 @@ static bool check_nested_support(u32 flags)
 	return true;
 }
 
+/*
+ * 
+ */
+static int _set_trans_info(struct amd_io_pgtable *iop, u16 domid, u32 gid)
+{
+	struct amd_iommu_vminfo *vminfo;
+
+	vminfo = amd_iommu_get_vminfo(gid);
+	if (!vminfo)
+		return -EINVAL;
+
+	vminfo->trans_domid = domid;
+	vminfo->trans_iop = iop;
+	return 0;
+}
+
 static struct iommu_domain *
 amd_iommu_domain_alloc_user(struct device *dev, u32 flags,
 			    struct iommu_domain *parent,
 			    const struct iommu_user_data *user_data)
 {
+	u32 gid;
 	struct iommu_domain *dom;
+	struct protection_domain *pdom;
 
 	if (parent) {
 		int ret;
@@ -2655,6 +2673,27 @@ amd_iommu_domain_alloc_user(struct device *dev, u32 flags,
 	dom = iommu_domain_alloc(dev->bus);
 	if (!dom)
 		return ERR_PTR(-ENOMEM);
+
+	pdom = to_pdomain(dom);
+	/* FIXME: Need a better way to do this */
+	gid = amd_iommu_latest_gid;
+
+	/*
+	 * FIXME: We need setup vIOMMU translation domain (GPA->SPA)
+	 * as early as possible, which we can use the VFIO domain.
+	 *
+	 * So, we capture domain allocation w/ NULL parent, which can be from
+	 *
+	 * --> driver/iommu/iommufd/device.c: iommufd_device_auto_get_domain()
+	 *   -->  iommufd_hw_pagetable_alloc()
+	 *
+	 * or
+	 * --> driver/iommu/iommufd/hw_pagetable.c:iommufd_hwpt_alloc()
+	 *   --> iommufd_hw_pagetable_alloc()
+	 *
+	 * NOTE: We need a better way to do this.
+	 */
+	_set_trans_info(&pdom->iop, pdom->id, gid);
 
 	return dom;
 }
