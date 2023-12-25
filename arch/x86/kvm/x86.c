@@ -11228,6 +11228,30 @@ static int complete_emulated_mmio(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+static void kvm_load_guest_pmu(struct kvm_vcpu *vcpu)
+{
+	unsigned long flags;
+
+	local_irq_save(flags);
+	if (!vcpu->arch.guest_pmu_in_use) {
+		kvm_pmu_restore_pmu_context(vcpu);
+		vcpu->arch.guest_pmu_in_use = true;
+	}
+	local_irq_restore(flags);
+}
+
+static void kvm_put_guest_pmu(struct kvm_vcpu *vcpu)
+{
+	unsigned long flags;
+
+	local_irq_save(flags);
+	if (vcpu->arch.guest_pmu_in_use) {
+		kvm_pmu_save_pmu_context(vcpu);
+		vcpu->arch.guest_pmu_in_use = false;
+	}
+	local_irq_restore(flags);
+}
+
 /* Swap (qemu) user FPU context for the guest FPU context. */
 static void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 {
@@ -11254,6 +11278,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	kvm_sigset_activate(vcpu);
 	kvm_run->flags = 0;
 	kvm_load_guest_fpu(vcpu);
+
+	if (is_passthrough_pmu_enabled(vcpu))
+		kvm_load_guest_pmu(vcpu);
 
 	kvm_vcpu_srcu_read_lock(vcpu);
 	if (unlikely(vcpu->arch.mp_state == KVM_MP_STATE_UNINITIALIZED)) {
@@ -11347,6 +11374,8 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	r = vcpu_run(vcpu);
 
 out:
+	if (is_passthrough_pmu_enabled(vcpu))
+		kvm_put_guest_pmu(vcpu);
 	kvm_put_guest_fpu(vcpu);
 	if (kvm_run->kvm_valid_regs)
 		store_regs(vcpu);
@@ -11524,6 +11553,9 @@ int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
 	if (kvm_mpx_supported())
 		kvm_load_guest_fpu(vcpu);
 
+	if (is_passthrough_pmu_enabled(vcpu))
+		kvm_load_guest_pmu(vcpu);
+
 	r = kvm_apic_accept_events(vcpu);
 	if (r < 0)
 		goto out;
@@ -11537,6 +11569,9 @@ int kvm_arch_vcpu_ioctl_get_mpstate(struct kvm_vcpu *vcpu,
 		mp_state->mp_state = vcpu->arch.mp_state;
 
 out:
+	if (is_passthrough_pmu_enabled(vcpu))
+		kvm_put_guest_pmu(vcpu);
+
 	if (kvm_mpx_supported())
 		kvm_put_guest_fpu(vcpu);
 	vcpu_put(vcpu);
@@ -12232,6 +12267,9 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 			kvm_load_guest_fpu(vcpu);
 	}
 
+	if (init_event && is_passthrough_pmu_enabled(vcpu))
+		kvm_load_guest_pmu(vcpu);
+
 	if (!init_event) {
 		kvm_pmu_reset(vcpu);
 		vcpu->arch.smbase = 0x30000;
@@ -12439,9 +12477,16 @@ EXPORT_SYMBOL_GPL(kvm_has_noapic_vcpu);
 void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu)
 {
 	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	unsigned long flags;
+
 
 	vcpu->arch.l1tf_flush_l1d = true;
-	if (pmu->version && unlikely(pmu->event_count)) {
+	if (is_passthrough_pmu_enabled(vcpu)) {
+		local_irq_save(flags);
+		if (vcpu->arch.guest_pmu_in_use)
+			kvm_pmu_restore_pmu_context(vcpu);
+		local_irq_restore(flags);
+	} else if (pmu->version && unlikely(pmu->event_count)) {
 		pmu->need_cleanup = true;
 		kvm_make_request(KVM_REQ_PMU, vcpu);
 	}
@@ -12450,6 +12495,10 @@ void kvm_arch_sched_in(struct kvm_vcpu *vcpu, int cpu)
 
 void kvm_arch_sched_out(struct kvm_vcpu *vcpu)
 {
+	if (is_passthrough_pmu_enabled(vcpu)) {
+		if (vcpu->arch.guest_pmu_in_use)
+			kvm_pmu_save_pmu_context(vcpu);
+	}
 }
 
 void kvm_arch_free_vm(struct kvm *kvm)
