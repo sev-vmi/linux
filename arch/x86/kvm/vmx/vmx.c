@@ -7200,7 +7200,7 @@ static void vmx_cancel_injection(struct kvm_vcpu *vcpu)
 	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
 }
 
-static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
+static void __atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 {
 	int i, nr_msrs;
 	struct perf_guest_switch_msr *msrs;
@@ -7221,6 +7221,47 @@ static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 		else
 			add_atomic_switch_msr(vmx, msrs[i].msr, msrs[i].guest,
 					msrs[i].host, false);
+}
+
+static void __atomic_switch_perf_msrs_in_passthrou_pmu(struct vcpu_vmx *vmx)
+{
+	int i, j;
+
+	if ((vm_exit_controls_get(vmx) & VM_EXIT_SAVE_IA32_PERF_GLOBAL_CTRL) == 0) {
+		i = vmx_find_loadstore_msr_slot(&vmx->msr_autostore.guest,
+						MSR_CORE_PERF_GLOBAL_CTRL);
+		if (i < 0)
+			return;
+
+		if (vm_entry_controls_get(vmx) & VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL) {
+			vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL,
+				     vmx->msr_autostore.guest.val[i].value);
+		} else {
+			j = vmx_find_loadstore_msr_slot(&vmx->msr_autoload.guest,
+							MSR_CORE_PERF_GLOBAL_CTRL);
+			if (j < 0)
+				return;
+
+			vmx->msr_autoload.guest.val[j].value =
+				vmx->msr_autostore.guest.val[i].value;
+		}
+	} else if ((vm_entry_controls_get(vmx) & VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL) == 0) {
+		j = vmx_find_loadstore_msr_slot(&vmx->msr_autoload.guest,
+						MSR_CORE_PERF_GLOBAL_CTRL);
+		if (j < 0)
+			return;
+
+		vmx->msr_autoload.guest.val[j].value =
+			vmcs_read64(GUEST_IA32_PERF_GLOBAL_CTRL);
+	}
+}
+
+static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
+{
+	if (is_passthrough_pmu_enabled(&vmx->vcpu))
+		__atomic_switch_perf_msrs_in_passthrou_pmu(vmx);
+	else
+		__atomic_switch_perf_msrs(vmx);
 }
 
 static void vmx_update_hv_timer(struct kvm_vcpu *vcpu)
