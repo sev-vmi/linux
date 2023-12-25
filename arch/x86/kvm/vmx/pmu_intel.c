@@ -525,18 +525,15 @@ static int intel_pmu_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 						 * counter value into guest.
 						 */
 						pmu->guest_msrs[guest_pmc0 + pmc->idx] = 0;
+						wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + pmc->idx,
+						       pmu->guest_msrs[guest_evsel0 + pmc->idx]);
+						wrmsrl(MSR_IA32_PMC0 + pmc->idx, 0);
 					}
 					return 0;
 				}
 
-				/*
-				 * When PMU context switch happens at VM Enter/Exit
-				 * boundary, the PMU HW is owned by the host, so
-				 * VMEXIT triggered by write to selectors should go
-				 * to the guest PMU context area instead of to the
-				 * HW MSR.
-				 */
 				pmu->guest_msrs[guest_evsel0 + pmc->idx] = data;
+				wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + pmc->idx, data);
 			} else if (data != pmc->eventsel) {
 				pmc->eventsel = data;
 				kvm_pmu_request_counter_reprogram(pmc);
