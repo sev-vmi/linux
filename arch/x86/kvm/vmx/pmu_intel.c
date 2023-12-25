@@ -989,8 +989,20 @@ static void intel_restore_pmu_context(struct kvm_vcpu *vcpu)
 void intel_set_overflow(struct kvm_vcpu *vcpu)
 {
 	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	u64 global_status;
 
-	pmu->guest_msrs[guest_global_status] |= pmu->global_status;
+	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global_status);
+
+	/* Clear the HW PMU global status if non-zero */
+	if (global_status)
+		wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global_status);
+
+	/*
+	 * PMU global status in pmu->guest_msrs[] is stale when PMU context
+	 * switch happens at vcpu runloop boundary. So assign it with HW value
+	 * logically or the pmu->global_status.
+	 */
+	wrmsrl(MSR_CORE_PERF_GLOBAL_STATUS_SET, global_status | pmu->global_status);
 }
 
 struct kvm_pmu_ops intel_pmu_ops __initdata = {
