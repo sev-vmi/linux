@@ -91,12 +91,15 @@ static void reprogram_fixed_counters_in_passthrough_pmu(struct kvm_pmu *pmu, u64
 		if (check_pmu_event_filter(pmc)) {
 			pmc->current_config = fixed_ctrl_field(data, i);
 			new_data |= (pmc->current_config << (i*4));
-		} else
+		} else {
 			pmu->guest_msrs[guest_fixed_ctr0 + i] = 0;
+			wrmsrl(MSR_CORE_PERF_FIXED_CTR0 + i, 0);
+		}
 	}
 
 	pmu->guest_msrs[guest_fixed_ctr_ctrl] = new_data;
 	pmu->fixed_ctr_ctrl = data;
+	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, new_data);
 }
 
 static void reprogram_fixed_counters(struct kvm_pmu *pmu, u64 data)
