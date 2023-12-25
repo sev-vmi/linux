@@ -986,6 +986,13 @@ static void intel_restore_pmu_context(struct kvm_vcpu *vcpu)
 		wrmsrl(MSR_PERF_METRICS, 0);
 }
 
+void intel_set_overflow(struct kvm_vcpu *vcpu)
+{
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+
+	pmu->guest_msrs[guest_global_status] |= pmu->global_status;
+}
+
 struct kvm_pmu_ops intel_pmu_ops __initdata = {
 	.hw_event_available = intel_hw_event_available,
 	.pmc_idx_to_pmc = intel_pmc_idx_to_pmc,
@@ -1004,6 +1011,7 @@ struct kvm_pmu_ops intel_pmu_ops __initdata = {
 	.save_pmu_context = intel_save_pmu_context,
 	.restore_pmu_context = intel_restore_pmu_context,
 	.incr_counter = intel_incr_counter,
+	.set_overflow = intel_set_overflow,
 	.EVENTSEL_EVENT = ARCH_PERFMON_EVENTSEL_EVENT,
 	.MAX_NR_GP_COUNTERS = KVM_INTEL_PMC_MAX_GENERIC,
 	.MIN_NR_GP_COUNTERS = 1,
