@@ -10898,6 +10898,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 		set_debugreg(0, 7);
 	}
 
+	if (is_passthrough_pmu_enabled(vcpu))
+		perf_guest_switch_to_kvm_pmi_vector(kvm_lapic_get_lvtpc_mask(vcpu));
+
 	guest_timing_enter_irqoff();
 
 	for (;;) {
