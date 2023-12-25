@@ -912,6 +912,10 @@ static void intel_restore_pmu_context(struct kvm_vcpu *vcpu)
 	/* Zero out unexposed fixed counters to avoid information leakage. */
 	for (i = pmu->nr_arch_fixed_counters; i < kvm_pmu_cap.num_counters_fixed; i++)
 		wrmsrl(MSR_CORE_PERF_FIXED_CTR0 + i, 0);
+
+	/* Clear PERF_METRICS MSR since guest topdown metrics is not supported yet. */
+	if (kvm_caps.host_perf_cap & PMU_CAP_PERF_METRICS)
+		wrmsrl(MSR_PERF_METRICS, 0);
 }
 
 struct kvm_pmu_ops intel_pmu_ops __initdata = {
