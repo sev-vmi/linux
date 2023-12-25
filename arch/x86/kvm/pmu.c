@@ -434,10 +434,28 @@ reprogram_complete:
 	pmc->prev_counter = 0;
 }
 
+void kvm_pmu_handle_event_in_passthrough_pmu(struct kvm_vcpu *vcpu)
+{
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+
+	if (pmu->global_status) {
+		static_call_cond(kvm_x86_pmu_set_overflow)(vcpu);
+		pmu->global_status = 0;
+
+		if (atomic64_read(&pmu->__reprogram_pmi)) {
+			kvm_make_request(KVM_REQ_PMI, vcpu);
+			atomic64_set(&pmu->__reprogram_pmi, 0ull);
+		}
+	}
+}
+
 void kvm_pmu_handle_event(struct kvm_vcpu *vcpu)
 {
 	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
 	int bit;
+
+	if (is_passthrough_pmu_enabled(vcpu))
+		return kvm_pmu_handle_event_in_passthrough_pmu(vcpu);
 
 	for_each_set_bit(bit, pmu->reprogram_pmi, X86_PMC_IDX_MAX) {
 		struct kvm_pmc *pmc = static_call(kvm_x86_pmu_pmc_idx_to_pmc)(pmu, bit);
@@ -700,6 +718,17 @@ void kvm_pmu_destroy(struct kvm_vcpu *vcpu)
 	kvm_pmu_reset(vcpu);
 }
 
+static void kvm_passthrough_pmu_incr_counter(struct kvm_vcpu *vcpu, struct kvm_pmc *pmc)
+{
+	if (static_call(kvm_x86_pmu_incr_counter)(pmc)) {
+		__set_bit(pmc->idx, (unsigned long *)&pmc_to_pmu(pmc)->global_status);
+		kvm_make_request(KVM_REQ_PMU, vcpu);
+
+		if (pmc->eventsel & ARCH_PERFMON_EVENTSEL_INT)
+			set_bit(pmc->idx, (unsigned long *)&pmc_to_pmu(pmc)->reprogram_pmi);
+	}
+}
+
 static void kvm_pmu_incr_counter(struct kvm_pmc *pmc)
 {
 	pmc->prev_counter = pmc->counter;
@@ -733,7 +762,26 @@ static inline bool cpl_is_matched(struct kvm_pmc *pmc)
 	return (static_call(kvm_x86_get_cpl)(pmc->vcpu) == 0) ? select_os : select_user;
 }
 
-void kvm_pmu_trigger_event(struct kvm_vcpu *vcpu, u64 perf_hw_id)
+static void __kvm_passthrough_pmu_trigger_event(struct kvm_vcpu *vcpu, u64 perf_hw_id)
+{
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	struct kvm_pmc *pmc;
+	int i;
+
+	for_each_set_bit(i, pmu->all_valid_pmc_idx, X86_PMC_IDX_MAX) {
+		pmc = static_call(kvm_x86_pmu_pmc_idx_to_pmc)(pmu, i);
+
+		if (!pmc || !pmc_speculative_in_use(pmc) ||
+		    !check_pmu_event_filter(pmc))
+			continue;
+
+		/* Ignore checks for edge detect, pin control, invert and CMASK bits */
+		if (eventsel_match_perf_hw_id(pmc, perf_hw_id) && cpl_is_matched(pmc))
+			kvm_passthrough_pmu_incr_counter(vcpu, pmc);
+	}
+}
+
+static void __kvm_pmu_trigger_event(struct kvm_vcpu *vcpu, u64 perf_hw_id)
 {
 	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
 	struct kvm_pmc *pmc;
@@ -749,6 +797,14 @@ void kvm_pmu_trigger_event(struct kvm_vcpu *vcpu, u64 perf_hw_id)
 		if (eventsel_match_perf_hw_id(pmc, perf_hw_id) && cpl_is_matched(pmc))
 			kvm_pmu_incr_counter(pmc);
 	}
+}
+
+void kvm_pmu_trigger_event(struct kvm_vcpu *vcpu, u64 perf_hw_id)
+{
+	if (is_passthrough_pmu_enabled(vcpu))
+		__kvm_passthrough_pmu_trigger_event(vcpu, perf_hw_id);
+	else
+		__kvm_pmu_trigger_event(vcpu, perf_hw_id);
 }
 EXPORT_SYMBOL_GPL(kvm_pmu_trigger_event);
 
