@@ -5901,6 +5901,9 @@ static void intel_pmu_check_hybrid_pmus(u64 fixed_mask)
 		if (pmu->intel_cap.pebs_output_pt_available)
 			pmu->pmu.capabilities |= PERF_PMU_CAP_AUX_OUTPUT;
 
+		if (x86_pmu.version >= 4)
+			pmu->pmu.capabilities |= PERF_PMU_CAP_VPMU_PASSTHROUGH;
+
 		intel_pmu_check_event_constraints(pmu->event_constraints,
 						  pmu->num_counters,
 						  pmu->num_counters_fixed,
@@ -6007,6 +6010,9 @@ __init int intel_pmu_init(void)
 		if (x86_pmu.intel_cap.anythread_deprecated)
 			pr_cont(" AnyThread deprecated, ");
 	}
+
+	if (version >= 4)
+		x86_get_pmu(smp_processor_id())->capabilities |= PERF_PMU_CAP_VPMU_PASSTHROUGH;
 
 	/*
 	 * Install the hw-cache-events table:
