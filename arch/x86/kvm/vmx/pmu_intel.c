@@ -137,17 +137,20 @@ static struct kvm_pmc *intel_pmc_idx_to_pmc(struct kvm_pmu *pmu, int pmc_idx)
 
 static bool intel_incr_counter(struct kvm_pmc *pmc)
 {
-	struct kvm_pmu *pmu = pmc_to_pmu(pmc);
-	int idx = 0;
+	u64 cntr_value = 0;
+	int msr_idx = 0;
 
+	if (pmc->idx < INTEL_PMC_IDX_FIXED)
+		msr_idx = pmc->idx + MSR_IA32_PMC0;
+	else
+		msr_idx = pmc->idx - INTEL_PMC_IDX_FIXED + MSR_CORE_PERF_FIXED_CTR0;
 
-	idx = pmc->idx < INTEL_PMC_IDX_FIXED ? pmc->idx + guest_pmc0 : \
-	      pmc->idx - INTEL_PMC_IDX_FIXED + guest_fixed_ctr0;
+	rdmsrl(msr_idx, cntr_value);
+	cntr_value += 1;
+	cntr_value &= pmc_bitmask(pmc);
+	wrmsrl(msr_idx, cntr_value);
 
-	pmu->guest_msrs[idx] += 1;
-	pmu->guest_msrs[idx] &= pmc_bitmask(pmc);
-
-	if (!pmu->guest_msrs[idx])
+	if (!cntr_value)
 		return true;
 
 	return false;
