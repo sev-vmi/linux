@@ -472,7 +472,17 @@ static int intel_pmu_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 			if (data != pmc->eventsel) {
 				pmc->eventsel = data;
-				kvm_pmu_request_counter_reprogram(pmc);
+				if (is_passthrough_pmu_enabled(vcpu)) {
+					/*
+					 * When PMU context switch happens at VM
+					 * Enter/Exit boundary, the PMU HW is owned
+					 * by the host, so VMEXIT triggered by write
+					 * to selectors should go to the guest PMU
+					 * context area instead of to the HW MSR.
+					 */
+					pmu->guest_msrs[guest_evsel0 + pmc->idx] = data;
+				} else
+					kvm_pmu_request_counter_reprogram(pmc);
 			}
 			break;
 		} else if (intel_pmu_handle_lbr_msrs_access(vcpu, msr_info, false)) {
@@ -853,8 +863,7 @@ static void intel_save_pmu_context(struct kvm_vcpu *vcpu)
 
 	for (i = 0; i < pmu->nr_arch_gp_counters; i++) {
 		rdpmcl(i, pmu->guest_msrs[guest_pmc0 + i]);
-		rdmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i,
-		       pmu->guest_msrs[guest_evsel0 + i]);
+
 		/*
 		 * Clear hardware PERFMON_EVENTSELx MSR, so that this guest GP counter
 		 * won't be enabled during host running when host enable global ctrl.
