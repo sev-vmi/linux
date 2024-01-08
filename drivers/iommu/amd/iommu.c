@@ -1917,6 +1917,62 @@ int amd_iommu_clear_gcr3(struct iommu_dev_data *dev_data, ioasid_t pasid)
 	return ret;
 }
 
+static void set_dte_gcr3_table(struct amd_iommu *iommu,
+			       struct iommu_dev_data *dev_data)
+{
+	struct dev_table_entry *dev_table = get_dev_table(iommu);
+	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	int devid = dev_data->devid;
+	u64 dte0 = dev_table[devid].data[0];
+	u64 dte1 = dev_table[devid].data[1];
+	u64 dte2 = dev_table[devid].data[2];
+	u64 tmp, gcr3 = 0;
+
+	if (!gcr3_info || !gcr3_info->gcr3_tbl)
+		return;
+
+	pr_debug("%s: devid=%#x, glx=%#x, giov=%#x, gcr3_tbl=%#llx\n",
+		 __func__, devid, gcr3_info->glx, gcr3_info->giov,
+		 (unsigned long long)gcr3_info->gcr3_tbl);
+
+	tmp = gcr3_info->glx;
+	dte0 |= (tmp & DTE_GLX_MASK) << DTE_GLX_SHIFT;
+	if (gcr3_info->giov)
+		dte0 |= DTE_FLAG_GIOV;
+	dte0 |= DTE_FLAG_GV;
+
+	/* First mask out possible old values for GCR3 table */
+	tmp = DTE_GCR3_VAL_A(~0ULL) << DTE_GCR3_SHIFT_A;
+	dte0 &= ~tmp;
+	tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
+	dte1 &= ~tmp;
+	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
+	dte1 &= ~tmp;
+
+	gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
+
+	/* Encode GCR3 table into DTE */
+	tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
+	dte0 |= tmp;
+	tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
+	dte1 |= tmp;
+	tmp = DTE_GCR3_VAL_B(gcr3) << DTE_GCR3_SHIFT_B;
+	dte1 |= tmp;
+	tmp = DTE_GCR3_VAL_C(gcr3) << DTE_GCR3_SHIFT_C;
+	dte1 |= tmp;
+
+	/* Use system default */
+	tmp = amd_iommu_gpt_level;
+
+	/* Mask out old values for GuestPagingMode */
+	dte2 &= ~(0x3ULL << DTE_GPT_LEVEL_SHIFT);
+	dte2 |= (tmp << DTE_GPT_LEVEL_SHIFT);
+
+	dev_table[devid].data[0] = dte0;
+	dev_table[devid].data[1] = dte1;
+	dev_table[devid].data[2] = dte2;
+}
+
 static void set_dte_entry(struct amd_iommu *iommu,
 			  struct iommu_dev_data *dev_data)
 {
@@ -1927,7 +1983,6 @@ static void set_dte_entry(struct amd_iommu *iommu,
 	u16 domid;
 	struct protection_domain *domain = dev_data->domain;
 	struct dev_table_entry *dev_table = get_dev_table(iommu);
-	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
 
 	if (domain_id_is_per_dev(domain))
 		domid = dev_data->domid;
@@ -1960,46 +2015,14 @@ static void set_dte_entry(struct amd_iommu *iommu,
 	if (domain->dirty_tracking)
 		pte_root |= DTE_FLAG_HAD;
 
-	if (gcr3_info && gcr3_info->gcr3_tbl) {
-		u64 gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
-		u64 glx  = gcr3_info->glx;
-		u64 tmp;
-
-		pte_root |= DTE_FLAG_GV;
-		pte_root |= (glx & DTE_GLX_MASK) << DTE_GLX_SHIFT;
-
-		/* First mask out possible old values for GCR3 table */
-		tmp = DTE_GCR3_VAL_B(~0ULL) << DTE_GCR3_SHIFT_B;
-		flags    &= ~tmp;
-
-		tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
-		flags    &= ~tmp;
-
-		/* Encode GCR3 table into DTE */
-		tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
-		pte_root |= tmp;
-
-		tmp = DTE_GCR3_VAL_B(gcr3) << DTE_GCR3_SHIFT_B;
-		flags    |= tmp;
-
-		tmp = DTE_GCR3_VAL_C(gcr3) << DTE_GCR3_SHIFT_C;
-		flags    |= tmp;
-
-		if (amd_iommu_gpt_level == PAGE_MODE_5_LEVEL) {
-			dev_table[devid].data[2] |=
-				((u64)GUEST_PGTABLE_5_LEVEL << DTE_GPT_LEVEL_SHIFT);
-		}
-
-		if (gcr3_info->giov)
-			pte_root |= DTE_FLAG_GIOV;
-	}
-
 	flags &= ~DEV_DOMID_MASK;
 	flags |= domid;
 
 	old_domid = dev_table[devid].data[1] & DEV_DOMID_MASK;
 	dev_table[devid].data[1]  = flags;
 	dev_table[devid].data[0]  = pte_root;
+
+	set_dte_gcr3_table(iommu, dev_data);
 
 	/*
 	 * A kdump kernel might be replacing a domain ID that was copied from
