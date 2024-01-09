@@ -5148,6 +5148,9 @@ static void svm_ibs_set_cpu_caps(void)
 		kvm_cpu_cap_set(X86_FEATURE_IBS_OPBRNFUSE);
 		kvm_cpu_cap_set(X86_FEATURE_IBS_FETCHCTLEXTD);
 		kvm_cpu_cap_set(X86_FEATURE_IBS_ZEN4_EXT);
+		enable_passthrough_pmu = true;
+	} else {
+		enable_passthrough_pmu = false;
 	}
 }
 
