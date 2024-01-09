@@ -7,6 +7,7 @@
 #ifndef AMD_IOMMU_H
 #define AMD_IOMMU_H
 
+#include <uapi/linux/iommufd.h>
 #include <linux/iommu.h>
 
 #include "amd_iommu_types.h"
@@ -182,4 +183,13 @@ void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
 
 extern bool amd_iommu_snp_en;
+
+/* NESTED */
+struct protection_domain *to_pdomain(struct iommu_domain *dom);
+bool amd_iommu_domain_is_nested(struct protection_domain *pdom);
+struct iommu_domain *
+amd_iommu_nested_domain_alloc(struct device *dev, unsigned int type, u32 flags,
+			      struct iommu_hwpt_amd_v2 *hwpt,
+			      struct iommu_domain *parent);
+
 #endif
