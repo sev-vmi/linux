@@ -1927,15 +1927,16 @@ static void set_dte_gcr3_table(struct amd_iommu *iommu,
 			       struct dev_table_entry *target)
 {
 	struct gcr3_tbl_info *gcr3_info = &dev_data->gcr3_info;
+	struct protection_domain *pdom = dev_data->domain;
 	int devid = dev_data->devid;
 	u64 tmp, gcr3 = 0;
 
-	if (!gcr3_info || !gcr3_info->gcr3_tbl)
+	if (!gcr3_info || (!gcr3_info->gcr3_tbl && !gcr3_info->trp_gpa))
 		return;
 
-	pr_debug("%s: devid=%#x, glx=%#x, giov=%#x, gcr3_tbl=%#llx\n",
+	pr_debug("%s: devid=%#x, glx=%#x, giov=%#x, gcr3_tbl=%#llx, trp_gpa=%#llx\n",
 		 __func__, devid, gcr3_info->glx, gcr3_info->giov,
-		 (unsigned long long)gcr3_info->gcr3_tbl);
+		 (unsigned long long)gcr3_info->gcr3_tbl, gcr3_info->trp_gpa);
 
 	tmp = gcr3_info->glx;
 	target->data[0] |= (tmp & DTE_GLX_MASK) << DTE_GLX_SHIFT;
@@ -1951,7 +1952,11 @@ static void set_dte_gcr3_table(struct amd_iommu *iommu,
 	tmp = DTE_GCR3_VAL_C(~0ULL) << DTE_GCR3_SHIFT_C;
 	target->data[1] &= ~tmp;
 
-	gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
+	/* For nested domain, use GCR3 GPA provided */
+	if (amd_iommu_domain_is_nested(pdom))
+		gcr3 = gcr3_info->trp_gpa;
+	else if (gcr3_info->gcr3_tbl)
+		gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
 
 	/* Encode GCR3 table into DTE */
 	tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;
@@ -1961,8 +1966,21 @@ static void set_dte_gcr3_table(struct amd_iommu *iommu,
 	tmp = DTE_GCR3_VAL_C(gcr3) << DTE_GCR3_SHIFT_C;
 	target->data[1] |= tmp;
 
-	/* Use system default */
-	tmp = amd_iommu_gpt_level;
+	if (amd_iommu_domain_is_nested(pdom)) {
+		/*
+		 * For nested domain, guest provide guest-paging mode.
+		 * We need to check host capability before setting the mode.
+		 */
+		tmp = pdom->guest_paging_mode;
+		if (tmp > amd_iommu_gpt_level) {
+			pr_err("Cannot support Guest paging mode=%#x (dom_id=%#x).\n",
+			       pdom->guest_paging_mode, pdom->id);
+			tmp = amd_iommu_gpt_level;
+		}
+	} else {
+		/* Use system default */
+		tmp = amd_iommu_gpt_level;
+	}
 
 	/* Mask out old values for GuestPagingMode */
 	target->data[2] &= ~(0x3ULL << DTE_GPT_LEVEL_SHIFT);
@@ -1978,6 +1996,13 @@ static void set_dte_entry(struct amd_iommu *iommu,
 	struct dev_table_entry target = {.data = {0, 0, 0, 0}};
 	struct dev_table_entry *dev_table = get_dev_table(iommu);
 	u32 old_domid = dev_table[devid].data[1] & DEV_DOMID_MASK;
+
+	/*
+	 * For nested domain, use parent domain to setup v1 table
+	 * information and domain id.
+	 */
+	if (amd_iommu_domain_is_nested(domain))
+		domain = domain->parent;
 
 	if (domain_id_is_per_dev(domain))
 		domid = dev_data->domid;
@@ -2074,7 +2099,8 @@ static int do_attach(struct iommu_dev_data *dev_data,
 		dev_data->domid = domain_id_alloc();
 
 	/* Init GCR3 table and update device table */
-	if (domain->pd_mode == PD_MODE_V2) {
+	if (!amd_iommu_domain_is_nested(domain) &&
+	    pdom_is_v2_pgtbl_mode(domain)) {
 		/*
 		 * By default, setup GCR3 table to support MAX PASIDs
 		 * support by the IOMMU HW.
@@ -2115,8 +2141,9 @@ static void do_detach(struct iommu_dev_data *dev_data)
 
 	iommu = get_amd_iommu_from_dev(dev_data->dev);
 
-	/* Clear GCR3 table */
-	if (domain->pd_mode == PD_MODE_V2) {
+	if (!amd_iommu_domain_is_nested(domain) &&
+	    pdom_is_v2_pgtbl_mode(domain)) {
+		/* Clear GCR3 table */
 		__clear_gcr3(dev_data, 0);
 		free_gcr3_table(dev_data);
 	}
