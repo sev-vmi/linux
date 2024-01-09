@@ -110,6 +110,8 @@
 #define FEATURE_PASMAX_MASK	(0x1FULL << FEATURE_PASMAX_SHIFT)
 
 /* Extended Feature 2 Bits */
+#define FEATURE_GCR3TRPMODE	BIT_ULL(3)
+
 #define FEATURE_SNPAVICSUP_SHIFT	5
 #define FEATURE_SNPAVICSUP_MASK		(0x07ULL << FEATURE_SNPAVICSUP_SHIFT)
 #define FEATURE_SNPAVICSUP_GAM(x) \
@@ -535,6 +537,7 @@ struct amd_irte_ops;
 
 struct gcr3_tbl_info {
 	u64	*gcr3_tbl;	/* Guest CR3 table */
+	u64	trp_gpa;	/* Guest CR3 TRP GPA for nested domain */
 	int	glx;		/* Number of levels for GCR3 table */
 	u32	pasid_cnt;	/* Track attached PASIDs */
 	bool	giov;		/* Track DTE[GIOV] */
@@ -569,6 +572,9 @@ struct protection_domain {
 	bool dirty_tracking;	/* dirty tracking is enabled in the domain */
 	unsigned dev_cnt;	/* devices assigned to this domain */
 	unsigned dev_iommu[MAX_IOMMUS]; /* per-IOMMU reference count */
+	struct protection_domain *parent; /* Nested parent domain */
+	u16 guest_paging_mode;	/* Guest paging mode */
+	u16 guest_domain_id;	/* Guest domain ID */
 };
 
 /*
