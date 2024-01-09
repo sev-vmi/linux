@@ -713,9 +713,13 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	if (sev_es_debug_swap_enabled)
 		save->sev_features |= SVM_SEV_FEAT_DEBUG_SWAP;
 
-	/* Enable the SEV-SNP feature */
-	if (sev_snp_guest(svm->vcpu.kvm))
+	/* Enable the SEV-SNP features */
+	if (sev_snp_guest(svm->vcpu.kvm)) {
 		save->sev_features |= SVM_SEV_FEAT_SNP_ACTIVE;
+
+		if (has_snp_feature(sev, KVM_SEV_SNP_RESTRICTED_INJET))
+			save->sev_features |= SVM_SEV_FEAT_RESTRICTED_INJECTION;
+	}
 
 	/*
 	 * Save the VMSA synced SEV features. For now, they are the same for
