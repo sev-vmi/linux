@@ -77,10 +77,15 @@ struct iommu_cmd {
 
 struct kmem_cache *amd_iommu_irq_cache;
 
+static int amd_iommu_attach_device(struct iommu_domain *dom,
+				   struct device *dev);
+
 static void detach_device(struct device *dev);
 
 static void set_dte_entry(struct amd_iommu *iommu,
 			  struct iommu_dev_data *dev_data);
+
+static void amd_iommu_domain_free(struct iommu_domain *dom);
 
 /****************************************************************************
  *
@@ -191,7 +196,7 @@ static struct amd_iommu *rlookup_amd_iommu(struct device *dev)
 	return __rlookup_amd_iommu(seg, PCI_SBDF_TO_DEVID(devid));
 }
 
-static struct protection_domain *to_pdomain(struct iommu_domain *dom)
+struct protection_domain *to_pdomain(struct iommu_domain *dom)
 {
 	return container_of(dom, struct protection_domain, domain);
 }
@@ -2367,8 +2372,9 @@ static struct protection_domain *protection_domain_alloc(unsigned int type)
 	domain->nid = NUMA_NO_NODE;
 
 	switch (type) {
-	/* No need to allocate io pgtable ops in passthrough mode */
+	/* No need to allocate io pgtable ops in passthrough and nested mode */
 	case IOMMU_DOMAIN_IDENTITY:
+	case IOMMU_DOMAIN_NESTED:
 		return domain;
 	case IOMMU_DOMAIN_DMA:
 		pgtable = amd_iommu_pgtable;
@@ -2423,7 +2429,12 @@ static bool amd_iommu_hd_support(struct amd_iommu *iommu)
 	return iommu && (iommu->features & FEATURE_HDSUP);
 }
 
-static struct iommu_domain *do_iommu_domain_alloc(unsigned int type,
+static const struct iommu_domain_ops nested_domain_ops = {
+	.attach_dev = amd_iommu_attach_device,
+	.free = amd_iommu_domain_free,
+};
+
+struct iommu_domain *do_iommu_domain_alloc(unsigned int type,
 						  struct device *dev, u32 flags)
 {
 	bool dirty_tracking = flags & IOMMU_HWPT_ALLOC_DIRTY_TRACKING;
@@ -2454,7 +2465,10 @@ static struct iommu_domain *do_iommu_domain_alloc(unsigned int type,
 	if (iommu) {
 		domain->domain.type = type;
 		domain->domain.pgsize_bitmap = iommu->iommu.ops->pgsize_bitmap;
-		domain->domain.ops = iommu->iommu.ops->default_domain_ops;
+		if (type == IOMMU_DOMAIN_NESTED)
+			domain->domain.ops = &nested_domain_ops;
+		else
+			domain->domain.ops = iommu->iommu.ops->default_domain_ops;
 
 		if (dirty_tracking)
 			domain->domain.dirty_ops = &amd_dirty_ops;
@@ -2474,18 +2488,86 @@ static struct iommu_domain *amd_iommu_domain_alloc(unsigned int type)
 	return domain;
 }
 
+static int udata_to_iommu_hwpt_amd_v2(const struct iommu_user_data *user_data,
+				       struct iommu_hwpt_amd_v2 *hwpt)
+{
+	if (!user_data)
+		return -EINVAL;
+
+	if (user_data->type != IOMMU_HWPT_DATA_AMD_V2)
+		return -EOPNOTSUPP;
+
+	return iommu_copy_struct_from_user(hwpt, user_data,
+					   IOMMU_HWPT_DATA_AMD_V2,
+					   __reserved);
+}
+
+static bool check_nested_support(u32 flags)
+{
+	if (!(flags & IOMMU_HWPT_ALLOC_NEST_PARENT))
+		return true;
+
+	if (!check_feature(FEATURE_GT) ||
+	    !check_feature(FEATURE_GIOSUP) ||
+	    !check_feature2(FEATURE_GCR3TRPMODE))
+		return false;
+
+	return true;
+}
+
+static u32 amd_iommu_hwpt_supported_flags =
+	IOMMU_HWPT_ALLOC_DIRTY_TRACKING |
+	IOMMU_HWPT_ALLOC_NEST_PARENT;
+
 static struct iommu_domain *
 amd_iommu_domain_alloc_user(struct device *dev, u32 flags,
 			    struct iommu_domain *parent,
 			    const struct iommu_user_data *user_data)
-
 {
+	struct iommu_domain *dom;
+	struct iommu_dev_data *dev_data;
 	unsigned int type = IOMMU_DOMAIN_UNMANAGED;
+	bool nested_parent = flags & IOMMU_HWPT_ALLOC_NEST_PARENT;
 
-	if ((flags & ~IOMMU_HWPT_ALLOC_DIRTY_TRACKING) || parent || user_data)
+	if (parent) {
+		int ret;
+		struct iommu_hwpt_amd_v2 hwpt;
+
+		if (parent->ops != amd_iommu_ops.default_domain_ops)
+			return ERR_PTR(-EINVAL);
+
+		ret = udata_to_iommu_hwpt_amd_v2(user_data, &hwpt);
+		if (ret)
+			return ERR_PTR(ret);
+
+		return amd_iommu_nested_domain_alloc(dev, type, flags,
+						     &hwpt, parent);
+	}
+
+	/* Check supported flags */
+	if ((flags & ~amd_iommu_hwpt_supported_flags) ||
+	    !check_nested_support(flags))
 		return ERR_PTR(-EOPNOTSUPP);
 
-	return do_iommu_domain_alloc(type, dev, flags);
+	dev_data = dev_iommu_priv_get(dev);
+
+	/*
+	 * When allocated nested parent domain, the device may already
+	 * have been attached to a domain. For example, a device is already
+	 * attached to the domain allocated by VFIO, which contains GPA->SPA mapping.
+	 * In such case, return reference to the same domain.
+	 */
+	if (dev_data->domain && nested_parent) {
+		pr_debug("%s: Found exist: protection domain id=%#x\n",
+			 __func__, dev_data->domain->id);
+		dom = &dev_data->domain->domain;
+	} else {
+		dom = do_iommu_domain_alloc(type, dev, flags);
+		if (!dom)
+			return ERR_PTR(-ENOMEM);
+	}
+
+	return dom;
 }
 
 static void amd_iommu_domain_free(struct iommu_domain *dom)
