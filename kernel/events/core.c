@@ -5779,6 +5779,8 @@ void perf_guest_enter(void)
 	if (__this_cpu_read(__perf_force_exclude_guest))
 		return;
 
+	__this_cpu_write(__perf_force_exclude_guest, true);
+
 	perf_ctx_lock(cpuctx, cpuctx->task_ctx);
 
 	perf_force_exclude_guest_enter(&cpuctx->ctx);
@@ -5786,8 +5788,6 @@ void perf_guest_enter(void)
 		perf_force_exclude_guest_enter(cpuctx->task_ctx);
 
 	perf_ctx_unlock(cpuctx, cpuctx->task_ctx);
-
-	__this_cpu_write(__perf_force_exclude_guest, true);
 }
 EXPORT_SYMBOL_GPL(perf_guest_enter);
 
@@ -5817,8 +5817,6 @@ void perf_guest_exit(void)
 	if (!__this_cpu_read(__perf_force_exclude_guest))
 		return;
 
-	__this_cpu_write(__perf_force_exclude_guest, false);
-
 	perf_ctx_lock(cpuctx, cpuctx->task_ctx);
 
 	perf_force_exclude_guest_exit(&cpuctx->ctx);
@@ -5826,6 +5824,8 @@ void perf_guest_exit(void)
 		perf_force_exclude_guest_exit(cpuctx->task_ctx);
 
 	perf_ctx_unlock(cpuctx, cpuctx->task_ctx);
+
+	__this_cpu_write(__perf_force_exclude_guest, false);
 }
 EXPORT_SYMBOL_GPL(perf_guest_exit);
 
