@@ -47,6 +47,18 @@ enum intel_pmu_architectural_events {
 	NR_INTEL_ARCH_EVENTS,
 };
 
+enum guest_pmu_msr_idx {
+	/*
+	 * Guest IA32_PERF_GLOBAL_CTRL is saved/restored automatically
+	 * by VMX, it's unnecessary to save/restore here again.
+	 */
+	guest_global_status = 0,
+	guest_pmc0,
+	guest_evsel0 = guest_pmc0 + KVM_INTEL_PMC_MAX_GENERIC,
+	guest_fixed_ctr_ctrl = guest_evsel0 + KVM_INTEL_PMC_MAX_GENERIC,
+	guest_fixed_ctr0,
+};
+
 static struct {
 	u8 eventsel;
 	u8 unit_mask;
@@ -823,10 +835,74 @@ void intel_passthrough_pmu_msrs(struct kvm_vcpu *vcpu)
 
 static void intel_save_pmu_context(struct kvm_vcpu *vcpu)
 {
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	int i;
+
+	if (pmu->version != 2) {
+		pr_warn("only PerfMon v2 is supported for passthrough PMU");
+		return;
+	}
+
+	/* global ctrl register is already saved at VM-exit. */
+	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, pmu->guest_msrs[guest_global_status]);
+	/* Clear hardware MSR_CORE_PERF_GLOBAL_STATUS MSR, if non-zero. */
+	if (pmu->guest_msrs[guest_global_status])
+		wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, pmu->guest_msrs[guest_global_status]);
+
+	for (i = 0; i < pmu->nr_arch_gp_counters; i++) {
+		rdpmcl(i, pmu->guest_msrs[guest_pmc0 + i]);
+		rdmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i,
+		       pmu->guest_msrs[guest_evsel0 + i]);
+		/*
+		 * Clear hardware PERFMON_EVENTSELx MSR, so that this guest GP counter
+		 * won't be enabled during host running when host enable global ctrl.
+		 */
+		if (pmu->guest_msrs[guest_evsel0 + i] != 0)
+			wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i, 0);
+	}
+
+	rdmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, pmu->guest_msrs[guest_fixed_ctr_ctrl]);
+	/*
+	 * Clear hardware FIXED_CTR_CTRL MSR, so that this guest fixed counter
+	 * won't be enabled during host running when host enable global ctrl.
+	 */
+	if (pmu->guest_msrs[guest_fixed_ctr_ctrl] != 0)
+		wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, 0);
+	for (i = 0; i < pmu->nr_arch_fixed_counters; i++) {
+		rdpmcl(INTEL_PMC_FIXED_RDPMC_BASE | i,
+		       pmu->guest_msrs[guest_fixed_ctr0 + i]);
+	}
 }
 
 static void intel_restore_pmu_context(struct kvm_vcpu *vcpu)
 {
+	struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+	u64 global_status;
+	int i;
+
+	if (pmu->version != 2) {
+		pr_warn("only PerfMon v2 is supported for passthrough PMU");
+		return;
+	}
+
+	wrmsrl(MSR_CORE_PERF_GLOBAL_CTRL, 0);
+	rdmsrl(MSR_CORE_PERF_GLOBAL_STATUS, global_status);
+	/* Clear host global_status MSR if non-zero. */
+	if (global_status)
+		wrmsrl(MSR_CORE_PERF_GLOBAL_OVF_CTRL, global_status);
+
+	wrmsrl(MSR_CORE_PERF_GLOBAL_STATUS_SET, pmu->guest_msrs[guest_global_status]);
+
+	for (i = 0; i < pmu->nr_arch_gp_counters; i++) {
+		wrmsrl(MSR_IA32_PMC0 + i, pmu->guest_msrs[guest_pmc0 + i]);
+		wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i,
+		       pmu->guest_msrs[guest_evsel0 + i]);
+	}
+
+	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, pmu->guest_msrs[guest_fixed_ctr_ctrl]);
+	for (i = 0; i < pmu->nr_arch_fixed_counters; i++)
+		wrmsrl(MSR_CORE_PERF_FIXED_CTR0 + i, pmu->guest_msrs[guest_fixed_ctr0 + i]);
+
 }
 
 struct kvm_pmu_ops intel_pmu_ops __initdata = {

@@ -520,6 +520,7 @@ struct kvm_pmc {
 #define KVM_PMC_MAX_FIXED	3
 #define MSR_ARCH_PERFMON_FIXED_CTR_MAX	(MSR_ARCH_PERFMON_FIXED_CTR0 + KVM_PMC_MAX_FIXED - 1)
 #define KVM_AMD_PMC_MAX_GENERIC	6
+#define KVM_MAX_SAVED_MSRS	100
 struct kvm_pmu {
 	u8 version;
 	unsigned nr_arch_gp_counters;
@@ -577,6 +578,8 @@ struct kvm_pmu {
 	u8 event_count;
 
 	bool passthrough;
+
+	u64 guest_msrs[KVM_MAX_SAVED_MSRS];
 };
 
 struct kvm_pmu_ops;
