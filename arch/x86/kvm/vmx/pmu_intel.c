@@ -413,7 +413,9 @@ static int intel_pmu_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		if (data & pmu->fixed_ctr_ctrl_mask)
 			return 1;
 
-		if (pmu->fixed_ctr_ctrl != data)
+		if (is_passthrough_pmu_enabled(vcpu))
+			pmu->guest_msrs[guest_fixed_ctr_ctrl] = msr_info.data;
+		else if (pmu->fixed_ctr_ctrl != data)
 			reprogram_fixed_counters(pmu, data);
 		break;
 	case MSR_IA32_PEBS_ENABLE:
@@ -889,7 +891,6 @@ static void intel_save_pmu_context(struct kvm_vcpu *vcpu)
 			wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i, 0);
 	}
 
-	rdmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, pmu->guest_msrs[guest_fixed_ctr_ctrl]);
 	/*
 	 * Clear hardware FIXED_CTR_CTRL MSR, so that this guest fixed counter
 	 * won't be enabled during host running when host enable global ctrl.
