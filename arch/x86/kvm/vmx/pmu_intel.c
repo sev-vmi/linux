@@ -132,6 +132,24 @@ static struct kvm_pmc *intel_pmc_idx_to_pmc(struct kvm_pmu *pmu, int pmc_idx)
 	}
 }
 
+static bool intel_incr_counter(struct kvm_pmc *pmc)
+{
+	struct kvm_pmu *pmu = pmc_to_pmu(pmc);
+	int idx = 0;
+
+
+	idx = pmc->idx < INTEL_PMC_IDX_FIXED ? pmc->idx + guest_pmc0 : \
+	      pmc->idx - INTEL_PMC_IDX_FIXED + guest_fixed_ctr0;
+
+	pmu->guest_msrs[idx] += 1;
+	pmu->guest_msrs[idx] &= pmc_bitmask(pmc);
+
+	if (!pmu->guest_msrs[idx])
+		return true;
+
+	return false;
+}
+
 static bool intel_hw_event_available(struct kvm_pmc *pmc)
 {
 	struct kvm_pmu *pmu = pmc_to_pmu(pmc);
@@ -983,6 +1001,7 @@ struct kvm_pmu_ops intel_pmu_ops __initdata = {
 	.passthrough_pmu_msrs = intel_passthrough_pmu_msrs,
 	.save_pmu_context = intel_save_pmu_context,
 	.restore_pmu_context = intel_restore_pmu_context,
+	.incr_counter = intel_incr_counter,
 	.EVENTSEL_EVENT = ARCH_PERFMON_EVENTSEL_EVENT,
 	.MAX_NR_GP_COUNTERS = KVM_INTEL_PMC_MAX_GENERIC,
 	.MIN_NR_GP_COUNTERS = 1,
