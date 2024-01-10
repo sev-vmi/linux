@@ -80,6 +80,25 @@ static int fixed_pmc_events[] = {
 	[2] = PSEUDO_ARCH_REFERENCE_CYCLES,
 };
 
+static void reprogram_fixed_counters_in_passthrough_pmu(struct kvm_pmu *pmu, u64 data)
+{
+	struct kvm_pmc *pmc;
+	u64 new_data = 0;
+	int i;
+
+	for (i = 0; i < pmu->nr_arch_fixed_counters; i++) {
+		pmc = get_fixed_pmc(pmu, MSR_CORE_PERF_FIXED_CTR0 + i);
+		if (check_pmu_event_filter(pmc)) {
+			pmc->current_config = fixed_ctrl_field(data, i);
+			new_data |= (pmc->current_config << (i*4));
+		} else
+			pmu->guest_msrs[guest_fixed_ctr0 + i] = 0;
+	}
+
+	pmu->guest_msrs[guest_fixed_ctr_ctrl] = new_data;
+	pmu->fixed_ctr_ctrl = data;
+}
+
 static void reprogram_fixed_counters(struct kvm_pmu *pmu, u64 data)
 {
 	struct kvm_pmc *pmc;
@@ -414,7 +433,7 @@ static int intel_pmu_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			return 1;
 
 		if (is_passthrough_pmu_enabled(vcpu))
-			pmu->guest_msrs[guest_fixed_ctr_ctrl] = msr_info.data;
+			reprogram_fixed_counters_in_passthrough_pmu(pmu, data);
 		else if (pmu->fixed_ctr_ctrl != data)
 			reprogram_fixed_counters(pmu, data);
 		break;
