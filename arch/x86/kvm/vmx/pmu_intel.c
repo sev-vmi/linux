@@ -899,10 +899,19 @@ static void intel_restore_pmu_context(struct kvm_vcpu *vcpu)
 		       pmu->guest_msrs[guest_evsel0 + i]);
 	}
 
+	/* Zero out unexposed GP counters/selectors to avoid information leakage. */
+	for (i = pmu->nr_arch_gp_counters; i < kvm_pmu_cap.num_counters_gp; i++) {
+		wrmsrl(MSR_IA32_PMC0 + i, 0);
+		wrmsrl(MSR_ARCH_PERFMON_EVENTSEL0 + i, 0);
+	}
+
 	wrmsrl(MSR_CORE_PERF_FIXED_CTR_CTRL, pmu->guest_msrs[guest_fixed_ctr_ctrl]);
 	for (i = 0; i < pmu->nr_arch_fixed_counters; i++)
 		wrmsrl(MSR_CORE_PERF_FIXED_CTR0 + i, pmu->guest_msrs[guest_fixed_ctr0 + i]);
 
+	/* Zero out unexposed fixed counters to avoid information leakage. */
+	for (i = pmu->nr_arch_fixed_counters; i < kvm_pmu_cap.num_counters_fixed; i++)
+		wrmsrl(MSR_CORE_PERF_FIXED_CTR0 + i, 0);
 }
 
 struct kvm_pmu_ops intel_pmu_ops __initdata = {
