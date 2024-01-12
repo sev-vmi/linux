@@ -751,6 +751,7 @@ extern int iommu_group_set_name(struct iommu_group *group, const char *name);
 extern int iommu_group_add_device(struct iommu_group *group,
 				  struct device *dev);
 extern void iommu_group_remove_device(struct device *dev);
+extern void iommu_group_mutex_assert(struct device *dev);
 extern int iommu_group_for_each_dev(struct iommu_group *group, void *data,
 				    int (*fn)(struct device *, void *));
 extern struct iommu_group *iommu_group_get(struct device *dev);
@@ -1141,6 +1142,10 @@ static inline int iommu_group_add_device(struct iommu_group *group,
 }
 
 static inline void iommu_group_remove_device(struct device *dev)
+{
+}
+
+static inline void iommu_group_mutex_assert(struct device *dev)
 {
 }
 
