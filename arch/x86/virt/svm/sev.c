@@ -301,7 +301,8 @@ static void dump_rmpentry(u64 pfn)
 	if (e->assigned) {
 		pr_info("PFN 0x%llx, RMP entry: [0x%016llx - 0x%016llx]\n",
 			pfn, e->lo, e->hi);
-		return;
+		if (!amd_iommu_snp_debug)
+			return;
 	}
 
 	/*
@@ -431,9 +432,15 @@ static int rmpupdate(u64 pfn, struct rmp_state *state)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
 	int ret, level, npages;
+	int retries = 2000000;
 
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENODEV;
+
+	if (amd_iommu_snp_debug) {
+		pr_warn("dumping PFN 0x%llx RMP entry state prior to RMPUPDATE...\n", pfn);
+		dump_rmpentry(pfn);
+	}
 
 	level = RMP_TO_PG_LEVEL(state->pagesize);
 	npages = page_level_size(level) / PAGE_SIZE;
@@ -455,7 +462,9 @@ static int rmpupdate(u64 pfn, struct rmp_state *state)
 			     : "=a" (ret)
 			     : "a" (paddr), "c" ((unsigned long)state)
 			     : "memory", "cc");
-	} while (ret == RMPUPDATE_FAIL_OVERLAP);
+		if (amd_iommu_snp_debug && ret)
+			retries--;
+	} while (ret == RMPUPDATE_FAIL_OVERLAP && retries);
 
 	if (ret) {
 		pr_err("RMPUPDATE failed for PFN %llx, pg_level: %d, ret: %d\n",

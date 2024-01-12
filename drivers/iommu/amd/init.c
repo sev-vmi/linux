@@ -172,6 +172,9 @@ u64 amd_iommu_efr2;
 bool amd_iommu_snp_en;
 EXPORT_SYMBOL(amd_iommu_snp_en);
 
+bool amd_iommu_snp_debug;
+EXPORT_SYMBOL(amd_iommu_snp_debug);
+
 LIST_HEAD(amd_iommu_pci_seg_list);	/* list of all PCI segments */
 LIST_HEAD(amd_iommu_list);		/* list of all AMD IOMMUs in the
 					   system */
@@ -869,6 +872,8 @@ static int __init alloc_event_buffer(struct amd_iommu *iommu)
 {
 	iommu->evt_buf = iommu_alloc_4k_pages(iommu, GFP_KERNEL | __GFP_ZERO,
 					      EVT_BUFFER_SIZE);
+	pr_warn("%s: IOMMU allocated evt_buf %px size %d\n",
+		__func__, iommu->evt_buf, EVT_BUFFER_SIZE);
 
 	return iommu->evt_buf ? 0 : -ENOMEM;
 }
@@ -908,7 +913,9 @@ static void __init free_event_buffer(struct amd_iommu *iommu)
 static int __init alloc_ppr_log(struct amd_iommu *iommu)
 {
 	iommu->ppr_log = iommu_alloc_4k_pages(iommu, GFP_KERNEL | __GFP_ZERO,
-					      PPR_LOG_SIZE);
+				      PPR_LOG_SIZE);
+	pr_warn("%s: IOMMU allocated ppr_log %px size %d\n",
+		__func__, iommu->ppr_log, PPR_LOG_SIZE);
 
 	return iommu->ppr_log ? 0 : -ENOMEM;
 }
@@ -1009,6 +1016,8 @@ err_out:
 static int __init alloc_cwwb_sem(struct amd_iommu *iommu)
 {
 	iommu->cmd_sem = iommu_alloc_4k_pages(iommu, GFP_KERNEL | __GFP_ZERO, 1);
+	pr_warn("%s: IOMMU allocated cmd_sem %px size %d\n",
+		__func__, iommu->cmd_sem, 1);
 
 	return iommu->cmd_sem ? 0 : -ENOMEM;
 }
@@ -3808,7 +3817,9 @@ static int iommu_page_make_shared(void *page)
 	/* Cbit maybe set in the paddr */
 	pfn = __sme_clr(paddr) >> PAGE_SHIFT;
 
-	if (!(pfn % PTRS_PER_PMD)) {
+	pr_warn("IOMMU cleaning up PFN %lx\n", pfn);
+
+	if (amd_iommu_snp_debug || !(pfn % PTRS_PER_PMD)) {
 		int ret, level;
 		bool assigned;
 
@@ -3822,6 +3833,7 @@ static int iommu_page_make_shared(void *page)
 				pfn);
 
 		if (level > PG_LEVEL_4K) {
+			pr_warn("IOMMU PFN %lx has 2M RMP entry, psmashing...\n", pfn);
 			ret = psmash(pfn);
 			if (ret) {
 				pr_warn("IOMMU PFN %lx had a huge RMP entry, but attempted psmash failed, ret: %d, level: %d\n",
@@ -3858,19 +3870,29 @@ int amd_iommu_snp_disable(void)
 	if (!amd_iommu_snp_en)
 		return 0;
 
+	amd_iommu_snp_debug = true;
+
 	for_each_iommu(iommu) {
+		pr_warn("%s: IOMMU cleaning up evt_buf %px size %d\n",
+			__func__, iommu->evt_buf, EVT_BUFFER_SIZE);
 		ret = iommu_make_shared(iommu->evt_buf, EVT_BUFFER_SIZE);
 		if (ret)
 			return ret;
 
+		pr_warn("%s: IOMMU cleaning up ppr_log %px size %d\n",
+			__func__, iommu->ppr_log, PPR_LOG_SIZE);
 		ret = iommu_make_shared(iommu->ppr_log, PPR_LOG_SIZE);
 		if (ret)
 			return ret;
 
+		pr_warn("%s: IOMMU cleaning up cmd_sem %px size %ld\n",
+			__func__, iommu->cmd_sem, PAGE_SIZE);
 		ret = iommu_make_shared((void *)iommu->cmd_sem, PAGE_SIZE);
 		if (ret)
 			return ret;
 	}
+
+	pr_warn("%s: IOMMU cleaning up completed\n", __func__);
 
 	return 0;
 }
