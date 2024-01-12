@@ -299,7 +299,7 @@ static void dump_rmpentry(u64 pfn)
 	}
 
 	if (e->assigned) {
-		pr_info("PFN 0x%llx, RMP entry: [0x%016llx - 0x%016llx]\n",
+		pr_warn("PFN 0x%llx, RMP entry: [0x%016llx - 0x%016llx]\n",
 			pfn, e->lo, e->hi);
 		if (!amd_iommu_snp_debug)
 			return;
@@ -316,7 +316,7 @@ static void dump_rmpentry(u64 pfn)
 	pfn_i = ALIGN_DOWN(pfn, PTRS_PER_PMD);
 	pfn_end = pfn_i + PTRS_PER_PMD;
 
-	pr_info("PFN 0x%llx unassigned, dumping non-zero entries in 2M PFN region: [0x%llx - 0x%llx]\n",
+	pr_warn("PFN 0x%llx unassigned, dumping non-zero entries in 2M PFN region: [0x%llx - 0x%llx]\n",
 		pfn, pfn_i, pfn_end);
 
 	while (pfn_i < pfn_end) {
@@ -329,7 +329,7 @@ static void dump_rmpentry(u64 pfn)
 		}
 
 		if (e->lo || e->hi)
-			pr_info("PFN: 0x%llx, [0x%016llx - 0x%016llx]\n", pfn_i, e->lo, e->hi);
+			pr_warn("PFN: 0x%llx, [0x%016llx - 0x%016llx]\n", pfn_i, e->lo, e->hi);
 		pfn_i++;
 	}
 }
