@@ -673,6 +673,8 @@ struct regmap *__regmap_init(struct device *dev,
 	enum regmap_endian reg_endian, val_endian;
 	int i, j;
 
+	dev_warn(dev, "%s: Initializing regmap...\n", __func__);
+
 	if (!config)
 		goto err;
 
@@ -1145,6 +1147,7 @@ skip_format_initialization:
 	} else {
 		regmap_debugfs_init(map);
 	}
+	dev_warn(dev, "%s: Completed regmap initialization (map %px)\n", __func__, map);
 
 	return map;
 
@@ -1938,6 +1941,11 @@ int _regmap_write(struct regmap *map, unsigned int reg,
 int regmap_write(struct regmap *map, unsigned int reg, unsigned int val)
 {
 	int ret;
+
+	if (!map) {
+		pr_err_once("%s: called with NULL regmap!\n", __func__);
+		return -EINVAL;
+	}
 
 	if (!IS_ALIGNED(reg, map->reg_stride))
 		return -EINVAL;
@@ -2822,6 +2830,11 @@ static int _regmap_read(struct regmap *map, unsigned int reg,
 int regmap_read(struct regmap *map, unsigned int reg, unsigned int *val)
 {
 	int ret;
+
+	if (!map) {
+		pr_err_once("%s: called with NULL regmap!\n", __func__);
+		return -EINVAL;
+	}
 
 	if (!IS_ALIGNED(reg, map->reg_stride))
 		return -EINVAL;

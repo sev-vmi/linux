@@ -701,6 +701,11 @@ void i2c_dw_disable(struct dw_i2c_dev *dev)
 	unsigned int dummy;
 	int ret;
 
+	if (!dev->map) {
+		pr_err("%s: dev->map is NULL, skipping disablement\n", __func__);
+		return;
+	}
+
 	ret = i2c_dw_acquire_lock(dev);
 	if (ret)
 		return;
