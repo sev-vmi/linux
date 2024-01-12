@@ -188,7 +188,15 @@ static int sev_asid_new(struct kvm_sev_info *sev)
 	max_asid = sev->es_active ? min_sev_asid - 1 : max_sev_asid;
 again:
 	asid = find_next_zero_bit(sev_asid_bitmap, max_asid + 1, min_asid);
+	pr_debug("%s: allocated SEV asid %d (min %d, max %d)\n",
+		 __func__, asid, min_asid, max_asid);
 	if (asid > max_asid) {
+		if (retry)
+			pr_warn("%s: SEV asid %d out of range (min %d, max %d), attempting recycle\n",
+				__func__, asid, min_asid, max_asid);
+		else
+			pr_warn("%s: SEV asid %d still out of range (min %d, max %d), reporting EBUSY\n",
+				__func__, asid, min_asid, max_asid);
 		if (retry && __sev_recycle_asids(min_asid, max_asid)) {
 			retry = false;
 			goto again;
