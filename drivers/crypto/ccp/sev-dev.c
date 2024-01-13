@@ -1661,6 +1661,8 @@ static int __sev_snp_shutdown_locked(int *error, bool in_panic)
 	struct sev_data_snp_shutdown_ex data;
 	int ret;
 
+	dev_warn(sev->dev, "SEV-SNP firmware shutdown called, snp_initialized: %d\n",
+		 sev->snp_initialized);
 	if (!sev->snp_initialized)
 		return 0;
 
@@ -1679,6 +1681,7 @@ static int __sev_snp_shutdown_locked(int *error, bool in_panic)
 	else
 		wbinvd();
 
+	dev_warn(sev->dev, "SEV-SNP SNP_SHUTDOWN_EX called\n");
 	ret = __sev_do_cmd_locked(SEV_CMD_SNP_SHUTDOWN_EX, &data, error);
 	/* SHUTDOWN may require DF_FLUSH */
 	if (*error == SEV_RET_DFFLUSH_REQUIRED) {
@@ -1691,6 +1694,7 @@ static int __sev_snp_shutdown_locked(int *error, bool in_panic)
 		ret = __sev_do_cmd_locked(SEV_CMD_SNP_SHUTDOWN_EX, &data,
 					  error);
 	}
+	dev_warn(sev->dev, "SEV-SNP SNP_SHUTDOWN_EX complete: %d\n", ret);
 	if (ret) {
 		dev_err(sev->dev, "SEV-SNP firmware shutdown failed\n");
 		return ret;
@@ -1709,14 +1713,16 @@ static int __sev_snp_shutdown_locked(int *error, bool in_panic)
 	 * needs to transition these pages to shared state. SNP Firmware
 	 * version 1.53 and above are needed for kexec boot.
 	 */
+	dev_warn(sev->dev, "SEV-SNP IOMMU shutdown called\n");
 	ret = amd_iommu_snp_disable();
+	dev_warn(sev->dev, "SEV-SNP IOMMU shutdown completed, ret: %d\n", ret);
 	if (ret) {
 		dev_err(sev->dev, "SNP IOMMU shutdown failed\n");
 		return ret;
 	}
 
 	sev->snp_initialized = false;
-	dev_dbg(sev->dev, "SEV-SNP firmware shutdown\n");
+	dev_warn(sev->dev, "SEV-SNP firmware shutdown complete\n");
 
 	return ret;
 }
