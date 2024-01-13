@@ -415,6 +415,19 @@ static int invalidate_direct_map(u64 pfn, int npages)
 	return ret;
 }
 
+/*
+ * It is expected that those operations are seldom enough so that no mutual
+ * exclusion of updaters is needed and thus the overlap error condition below
+ * should happen very seldomly and would get resolved relatively quickly by
+ * the firmware.
+ *
+ * If not, one could consider introducing a mutex or so here to sync concurrent
+ * RMP updates and thus diminish the amount of cases where firmware needs to
+ * lock 2M ranges to protect against concurrent updates.
+ *
+ * The optimal solution would be range locking to avoid locking disjoint
+ * regions unnecessarily but there's no support for that yet.
+ */
 static int rmpupdate(u64 pfn, struct rmp_state *state)
 {
 	unsigned long paddr = pfn << PAGE_SHIFT;
