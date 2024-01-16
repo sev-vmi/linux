@@ -409,7 +409,22 @@ static inline void perf_ibs_disable_event(struct perf_ibs *perf_ibs,
 	config &= ~perf_ibs->cnt_mask;
 	if (boot_cpu_data.x86 == 0x10)
 		wrmsrl(hwc->config_base, config);
-	config &= ~perf_ibs->enable_mask;
+
+	/*
+	 * event_sched_out() disables the IBS event, which clears enable bit,
+	 * then a delayed IBS NMI gets delievered and NMI handler sees it as
+	 * a valid sample and re-enables IBS. Though event is scheduled out, IBS
+	 * enable bit is set, which is incorrect. There are no visible side
+	 * effects of this race on baremetal.
+	 *
+	 * Fix above mentioned race by clearing valid bit while clearing enable
+	 * bit, so that NMI handler doesn't take the IBS sample as a valid sample
+	 * and re-enables the IBS again. The caveat of this solution is a loss of
+	 * last sample.
+	 */
+
+	config &= ~(perf_ibs->enable_mask | perf_ibs->valid_mask);
+
 	wrmsrl(hwc->config_base, config);
 }
 
