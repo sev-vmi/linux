@@ -3147,6 +3147,7 @@ void amd_iommu_build_efr(u64 *efr, u64 *efr2)
 	if (efr) {
 		*efr = 0ULL;
 		*efr |= (amd_iommu_efr & FEATURE_GT);
+		*efr |= (amd_iommu_efr & FEATURE_X2APIC);
 		*efr |= (amd_iommu_efr & FEATURE_GIOSUP);
 		*efr |= (amd_iommu_efr & FEATURE_PPR);
 		*efr |= (amd_iommu_efr & FEATURE_GATS_MASK);
@@ -4001,6 +4002,11 @@ int amd_iommu_deactivate_guest_mode(void *data)
 
 	entry->lo.val = 0;
 	entry->hi.val = 0;
+
+//SURAVEE: HACK
+	if (ir_data->is_ext) {
+		return 0;
+	}
 
 	entry->lo.fields_remap.valid       = valid;
 	entry->lo.fields_remap.dm          = apic->dest_mode_logical;
