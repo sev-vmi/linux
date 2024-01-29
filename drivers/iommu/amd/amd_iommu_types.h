@@ -338,6 +338,9 @@
 #define DTE_INTTABLEN_MASK      (0xfULL << 1)
 #define MAX_IRQS_PER_TABLE      (1 << DTE_INTTABLEN_VALUE)
 
+#define DTE_EXT_INTTABLEN_L1_VALUE	10ULL
+#define DTE_EXT_INTTABLEN_L1		(DTE_EXT_INTTABLEN_L1_VALUE << 1)
+
 #define PAGE_MODE_NONE    0x00
 #define PAGE_MODE_1_LEVEL 0x01
 #define PAGE_MODE_2_LEVEL 0x02
@@ -825,6 +828,8 @@ struct amd_iommu {
 	/* DebugFS Info */
 	struct dentry *debugfs;
 #endif
+
+	u64 *ext_ir_table;		 /* Pointer to the Ext-IR table */
 };
 
 static inline struct amd_iommu *dev_to_amd_iommu(struct device *dev)
