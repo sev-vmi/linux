@@ -224,5 +224,6 @@ struct amd_iommu_vminfo *amd_iommu_get_vminfo(int gid);
 int amd_viommu_domain_id_update(struct amd_iommu *iommu, u16 gid,
 				struct protection_domain *pdom,
 				bool is_set);
+struct ext_irte * amd_viommu_get_ext_irte(struct amd_iommu *iommu, u32 ext_id);
 
 #endif
