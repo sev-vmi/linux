@@ -1109,8 +1109,12 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 		/* CmdLen [59:56] */
 		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
 		val |= tmp;
-		/* ComBase [51:12] */
-		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+
+		if (iommu_feature_is_enabled(iommu, CONTROL_GSTBUFFERTRPMODE)) {
+			/* ComBase [51:12] */
+			val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		}
+
 		writeq(val, vfctrl + 0x20);
 		break;
 	}
@@ -1121,8 +1125,12 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 		/* EventLen [59:56] */
 		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
 		val |= tmp;
-		/* EventBase [51:12] */
-		val |= (ctrl & 0xFFFFFFFFFF000ULL);
+
+		if (iommu_feature_is_enabled(iommu, CONTROL_GSTBUFFERTRPMODE)) {
+			/* EventBase [51:12] */
+			val |= (ctrl & 0xFFFFFFFFFF000ULL);
+		}
+
 		writeq(val, vfctrl + 0x28);
 		break;
 	}
@@ -1135,11 +1143,14 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 		val |= (tmp << 4);
 		writeq(val, vfctrl + 0x28);
 
-		val = readq(vfctrl + 0x18);
-		val &= ~(0xFFFFFFFFFF000ULL);
-		/* EventLogBBase [51:12] */
-		val |= (ctrl & 0xFFFFFFFFFF000ULL);
-		writeq(val, vfctrl + 0x18);
+		if (iommu_feature_is_enabled(iommu, CONTROL_GSTBUFFERTRPMODE)) {
+			val = readq(vfctrl + 0x18);
+			val &= ~(0xFFFFFFFFFF000ULL);
+			/* EventLogBBase [51:12] */
+			val |= (ctrl & 0xFFFFFFFFFF000ULL);
+			writeq(val, vfctrl + 0x18);
+		}
+
 		break;
 	}
 	case MMIO_PPR_LOG_OFFSET:
@@ -1149,9 +1160,13 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 		/* PPRLogLen [59:56] */
 		tmp = GET_CTRL_BITS(ctrl, 56, 0xF);
 		val |= tmp;
-		/* PPRLogBase [51:12] */
-		val |= ((ctrl & 0xFFFFFFFFFF000ULL) << 4);
-		writeq(val, vfctrl + 0x30);
+
+		if (iommu_feature_is_enabled(iommu, CONTROL_GSTBUFFERTRPMODE)) {
+			/* PPRLogBase [51:12] */
+			val |= ((ctrl & 0xFFFFFFFFFF000ULL) << 4);
+			writeq(val, vfctrl + 0x30);
+		}
+
 		break;
 	}
 	case MMIO_PPRB_LOG_OFFSET:
@@ -1165,9 +1180,13 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 
 		val = readq(vfctrl + 0x38);
 		val &= ~(0xFFFFFFFFFF000ULL);
-		/* PPRLogBBase [51:12] */
-		val |= (ctrl & 0xFFFFFFFFFF000ULL);
-		writeq(val, vfctrl + 0x38);
+
+		if (iommu_feature_is_enabled(iommu, CONTROL_GSTBUFFERTRPMODE)) {
+			/* PPRLogBBase [51:12] */
+			val |= (ctrl & 0xFFFFFFFFFF000ULL);
+			writeq(val, vfctrl + 0x38);
+		}
+
 		break;
 	}
 	case MMIO_STATUS_OFFSET:
