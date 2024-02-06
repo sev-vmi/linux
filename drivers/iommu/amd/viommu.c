@@ -1250,3 +1250,84 @@ int amd_viommu_guest_mmio_write(struct amd_viommu_mmio_data *data)
 	return 0;
 }
 EXPORT_SYMBOL(amd_viommu_guest_mmio_write);
+
+static void viommu_cmdbuf_free(struct protection_domain *dom, struct io_pgtable_ops *ops,
+				   unsigned long iova, struct page **pages, unsigned long npages)
+{
+	int i;
+	unsigned long flags;
+	unsigned long tmp = iova;
+
+	spin_lock_irqsave(&dom->lock, flags);
+	for (i = 0; i < npages; i++, tmp += PAGE_SIZE) {
+		amd_iommu_v1_unmap_pages(ops, tmp, PAGE_SIZE, 1, NULL);
+		/*
+		 * Flush domain TLB(s) and wait for completion. Any Device-Table
+		 * Updates and flushing already happened in
+		 * increase_address_space().
+		 */
+		amd_iommu_domain_flush_all(dom);
+
+		unpin_user_pages(&pages[i], 1);
+	}
+	spin_unlock_irqrestore(&dom->lock, flags);
+}
+
+int amd_viommu_cmdbuf_update(struct amd_viommu_cmdbuf_data *data)
+{
+	unsigned long flags;
+	int i, numpg = data->cmdbuf_size >> PAGE_SHIFT;
+	struct amd_iommu *iommu = get_amd_iommu_from_devid(data->iommu_id);
+	unsigned int gid = data->gid;
+	struct page **pages;
+	unsigned long npages = 0;
+	unsigned long iova;
+	unsigned long hva = data->hva;
+
+	pages = kcalloc(numpg, sizeof(struct page *), GFP_KERNEL);
+	if (!pages)
+		return -ENOMEM;
+
+	spin_lock_irqsave(&iommu->viommu_pdom->lock, flags);
+
+	/*
+	 * Setup vIOMMU guest command buffer in IOMMU Private Address (IPA) space
+	 * for the specified GID.
+	 */
+	for (i = 0 ; i < numpg; i++, hva += (0x1000 * i)) {
+		int ret;
+		u64 phys;
+
+		if (get_user_pages_fast(hva, 1, FOLL_WRITE, &pages[i]) != 1) {
+			pr_err("%s: Failure locking page:%#lx.\n", __func__, hva);
+			goto err_out;
+		}
+
+		phys = __sme_set(page_to_pfn(pages[i]) << PAGE_SHIFT);
+		iova = VIOMMU_GUEST_CMDBUF_BASE + (i * PAGE_SIZE) + (gid * CMD_BUFFER_MAXSIZE);
+
+		pr_debug("%s: iova=%#lx, phys=%#llx\n", __func__, iova, phys);
+		ret = amd_iommu_v1_map_pages(&iommu->viommu_pdom->iop.iop.ops,
+					     iova, phys, PAGE_SIZE, 1,
+					     IOMMU_PROT_IR | IOMMU_PROT_IW,
+					     GFP_KERNEL, NULL);
+		if (ret) {
+			pr_err("%s: Failure to map page iova:%#lx, phys=%#llx\n",
+			       __func__, iova, phys);
+			goto err_out;
+		}
+		npages++;
+	}
+
+	amd_iommu_domain_flush_all(iommu->viommu_pdom);
+
+	spin_unlock_irqrestore(&iommu->viommu_pdom->lock, flags);
+
+	return 0;
+err_out:
+	spin_unlock_irqrestore(&iommu->viommu_pdom->lock, flags);
+	viommu_cmdbuf_free(iommu->viommu_pdom, &iommu->viommu_pdom->iop.iop.ops,
+			   iova, pages, npages);
+	return -EINVAL;
+}
+EXPORT_SYMBOL(amd_viommu_cmdbuf_update);
