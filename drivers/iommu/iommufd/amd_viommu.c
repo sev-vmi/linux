@@ -83,6 +83,13 @@ int viommu_mmio_access(struct iommufd_ucmd *ucmd)
 	return ret;
 }
 
+int viommu_cmdbuf_update(struct iommufd_ucmd *ucmd)
+{
+	struct amd_viommu_cmdbuf_data *data = ucmd->cmd;
+
+	return amd_viommu_cmdbuf_update(data);
+}
+
 struct iommufd_ioctl_op viommu_ioctl_ops[] = {
 	IOCTL_OP(VIOMMU_IOMMU_INIT, viommu_iommu_init,
 		 struct amd_viommu_iommu_info, gid),
@@ -94,6 +101,8 @@ struct iommufd_ioctl_op viommu_ioctl_ops[] = {
 		 struct amd_viommu_dev_info, queue_id),
 	IOCTL_OP(VIOMMU_MMIO_ACCESS, viommu_mmio_access,
 		 struct amd_viommu_mmio_data, is_write),
+	IOCTL_OP(VIOMMU_CMDBUF_UPDATE, viommu_cmdbuf_update,
+		 struct amd_viommu_cmdbuf_data, hva),
 };
 
 long iommufd_amd_viommu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
