@@ -2673,8 +2673,7 @@ static bool check_nested_support(u32 flags)
 		return true;
 
 	if (!check_feature(FEATURE_GT) ||
-	    !check_feature(FEATURE_GIOSUP) ||
-	    !check_feature2(FEATURE_GCR3TRPMODE))
+	    !check_feature(FEATURE_GIOSUP))
 		return false;
 
 	return true;

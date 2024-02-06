@@ -29,10 +29,6 @@ static int nested_gcr3_update(struct iommu_hwpt_amd_v2 *hwpt,
 	if (!pdev)
 		return -EINVAL;
 
-	/* Note: Currently only support GCR3TRPMode with nested translation */
-	if (!check_feature2(FEATURE_GCR3TRPMODE))
-		return -EOPNOTSUPP;
-
 	pdom->parent = ppdom;
 	pdom->guest_domain_id = hwpt->gdom_id;
 	pdom->guest_paging_mode = hwpt->flags.guest_paging_mode;
