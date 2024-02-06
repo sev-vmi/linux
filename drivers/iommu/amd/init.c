@@ -422,6 +422,13 @@ static void iommu_set_device_table(struct amd_iommu *iommu)
 }
 
 /* Generic functions to enable/disable certain features of the IOMMU. */
+bool iommu_feature_is_enabled(struct amd_iommu *iommu, u8 bit)
+{
+	u64 ctrl = readq(iommu->mmio_base +  MMIO_CONTROL_OFFSET);
+
+	return (ctrl & (1ULL << bit));
+}
+
 void iommu_feature_enable(struct amd_iommu *iommu, u8 bit)
 {
 	u64 ctrl;

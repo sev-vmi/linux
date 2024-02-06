@@ -2063,12 +2063,14 @@ static void set_dte_gcr3_table(struct amd_iommu *iommu,
 	int devid = dev_data->devid;
 	u64 tmp, gcr3 = 0;
 
-	if (!gcr3_info || (!gcr3_info->gcr3_tbl && !gcr3_info->trp_gpa))
+	if (!gcr3_info || (!gcr3_info->gcr3_tbl && !gcr3_info->trp_gpa && !gcr3_info->spa))
 		return;
 
-	pr_debug("%s: devid=%#x, glx=%#x, giov=%#x, gcr3_tbl=%#llx, trp_gpa=%#llx\n",
+	pr_debug("%s: devid=%#x, glx=%#x, giov=%#x, gcr3_tbl=%#llx, trp_gpa=%#llx, spa=%#llx\n",
 		 __func__, devid, gcr3_info->glx, gcr3_info->giov,
-		 (unsigned long long)gcr3_info->gcr3_tbl, gcr3_info->trp_gpa);
+		 (unsigned long long)gcr3_info->gcr3_tbl,
+		 (unsigned long long)gcr3_info->trp_gpa,
+		 (unsigned long long)gcr3_info->spa);
 
 	tmp = gcr3_info->glx;
 	target->data[0] |= (tmp & DTE_GLX_MASK) << DTE_GLX_SHIFT;
@@ -2085,10 +2087,14 @@ static void set_dte_gcr3_table(struct amd_iommu *iommu,
 	target->data[1] &= ~tmp;
 
 	/* For nested domain, use GCR3 GPA provided */
-	if (amd_iommu_domain_is_nested(pdom))
-		gcr3 = gcr3_info->trp_gpa;
-	else if (gcr3_info->gcr3_tbl)
+	if (amd_iommu_domain_is_nested(pdom)) {
+		if (iommu_feature_is_enabled(iommu, CONTROL_GCR3TRPMODE))
+			gcr3 = gcr3_info->trp_gpa;
+		else
+			gcr3 = gcr3_info->spa;
+	} else if (gcr3_info->gcr3_tbl) {
 		gcr3 = iommu_virt_to_phys(gcr3_info->gcr3_tbl);
+	}
 
 	/* Encode GCR3 table into DTE */
 	tmp = DTE_GCR3_VAL_A(gcr3) << DTE_GCR3_SHIFT_A;

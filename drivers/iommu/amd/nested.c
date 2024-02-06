@@ -22,6 +22,8 @@ static int nested_gcr3_update(struct iommu_hwpt_amd_v2 *hwpt,
 			      struct protection_domain *ppdom,
 			      struct device *dev)
 {
+	struct page *page;
+	unsigned long npinned;
 	struct pci_dev *pdev;
 	struct iommu_dev_data *dev_data = dev_iommu_priv_get(dev);
 
@@ -33,7 +35,16 @@ static int nested_gcr3_update(struct iommu_hwpt_amd_v2 *hwpt,
 	pdom->guest_domain_id = hwpt->gdom_id;
 	pdom->guest_paging_mode = hwpt->flags.guest_paging_mode;
 
+	/* Currently only support 1-level GCR3 table */
+	npinned = get_user_pages_fast(hwpt->gcr3_va, 1, FOLL_WRITE, &page);
+	if (!npinned) {
+		pr_err("Failure locking grc3 page (%#llx).\n", hwpt->gcr3_va);
+		return -EINVAL;
+	}
+
 	dev_data->gcr3_info.trp_gpa = hwpt->gcr3;
+	dev_data->gcr3_info.spa = __sme_set(page_to_pfn(page) << PAGE_SHIFT);
+
 	dev_data->gcr3_info.glx = hwpt->flags.glx;
 	dev_data->gcr3_info.giov = hwpt->flags.giov;
 
