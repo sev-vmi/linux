@@ -402,6 +402,7 @@ struct iommu_hwpt_vtd_s1 {
  */
 struct iommu_hwpt_amd_v2 {
 	__aligned_u64 gcr3;
+	__aligned_u64 gcr3_va;
 	struct {
 		__aligned_u64 glx  : 1,
 			      giov : 1,

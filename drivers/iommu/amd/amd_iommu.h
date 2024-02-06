@@ -23,6 +23,7 @@ void amd_iommu_restart_ga_log(struct amd_iommu *iommu);
 void amd_iommu_restart_ppr_log(struct amd_iommu *iommu);
 void amd_iommu_set_rlookup_table(struct amd_iommu *iommu, u16 devid);
 void iommu_feature_enable(struct amd_iommu *iommu, u8 bit);
+bool iommu_feature_is_enabled(struct amd_iommu *iommu, u8 bit);
 bool iommu_feature_enable_and_check(struct amd_iommu *iommu, u8 bit);
 u8 __iomem * __init iommu_map_mmio_space(u64 address, u64 end);
 int iommu_flush_dte(struct amd_iommu *iommu, u16 devid);

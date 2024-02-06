@@ -589,6 +589,7 @@ struct amd_irte_ops;
 struct gcr3_tbl_info {
 	u64	*gcr3_tbl;	/* Guest CR3 table */
 	u64	trp_gpa;	/* Guest CR3 TRP GPA for nested domain */
+	u64	spa;
 	int	glx;		/* Number of levels for GCR3 table */
 	u32	pasid_cnt;	/* Track attached PASIDs */
 	bool	giov;		/* Track DTE[GIOV] */
