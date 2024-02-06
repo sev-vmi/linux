@@ -51,12 +51,6 @@ static int viommu_enable(struct amd_iommu *iommu)
 	if (!amd_iommu_viommu)
 		return -EINVAL;
 
-	/* The GstBufferTRPMode feature is checked by set and test */
-	if (!iommu_feature_enable_and_check(iommu, CONTROL_GSTBUFFERTRPMODE))
-		return -EINVAL;
-
-	if (check_feature2(FEATURE_GCR3TRPMODE))
-		iommu_feature_enable(iommu, CONTROL_GCR3TRPMODE);
 	iommu_feature_enable(iommu, CONTROL_VCMD_EN);
 	iommu_feature_enable(iommu, CONTROL_VIOMMU_EN);
 
