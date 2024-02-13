@@ -292,6 +292,7 @@ int __init iommu_init_viommu(struct amd_iommu *iommu)
 {
 	int ret = -EINVAL;
 
+	/* The feature is disabled from the kernel boot param */
 	if (!amd_iommu_viommu)
 		return 0;
 
@@ -314,14 +315,13 @@ int __init iommu_init_viommu(struct amd_iommu *iommu)
 	if (ret)
 		goto err_out;
 
-	set_iommu_dte(iommu);
-
-	hash_init(iommu->ext_irte_hlist);
-	spin_lock_init(&iommu->ext_irte_hlist_lock);
-
 	ret = viommu_enable(iommu);
 	if (ret)
 		goto err_out;
+
+	set_iommu_dte(iommu);
+	hash_init(iommu->ext_irte_hlist);
+	spin_lock_init(&iommu->ext_irte_hlist_lock);
 
 	return ret;
 

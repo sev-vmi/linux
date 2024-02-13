@@ -2120,10 +2120,8 @@ static int __init iommu_init_pci(struct amd_iommu *iommu)
 		return -ENOMEM;
 
 	ret = iommu_init_viommu(iommu);
-	if (ret) {
+	if (ret)
 		pr_err("Failed to initialize vIOMMU.\n");
-		return ret;
-	}
 
 	if (iommu->cap & (1UL << IOMMU_CAP_NPCACHE)) {
 		pr_info("Using strict mode due to virtualization\n");
