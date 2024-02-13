@@ -852,6 +852,7 @@ retry:
 		dev_err(dev, "Event logged [PAGE_TAB_HARDWARE_ERROR device=%04x:%02x:%02x.%x pasid=0x%04x address=0x%llx flags=0x%04x vflags=%#x]\n",
 			iommu->pci_seg->id, PCI_BUS_NUM(devid), PCI_SLOT(devid), PCI_FUNC(devid),
 			pasid, address, flags, vflags);
+		dump_dte_entry(iommu, devid);
 		break;
 	}
 	case EVENT_TYPE_ILL_CMD:
