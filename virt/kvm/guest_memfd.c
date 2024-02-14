@@ -590,3 +590,31 @@ int kvm_gmem_get_uninit_pfn(struct kvm *kvm, struct kvm_memory_slot *slot,
 	return __kvm_gmem_get_pfn(kvm, slot, gfn, pfn, max_order, false);
 }
 EXPORT_SYMBOL_GPL(kvm_gmem_get_uninit_pfn);
+
+int kvm_gmem_undo_get_pfn(struct kvm *kvm, struct kvm_memory_slot *slot,
+		          gfn_t gfn, int order)
+{
+	pgoff_t index = gfn - slot->base_gfn + slot->gmem.pgoff;
+	struct kvm_gmem *gmem;
+	struct file *file;
+	int r;
+
+	file = kvm_gmem_get_file(slot);
+	if (!file)
+		return -EFAULT;
+
+	gmem = file->private_data;
+
+	if (WARN_ON_ONCE(xa_load(&gmem->bindings, index) != slot)) {
+		r = -EIO;
+		goto out_fput;
+	}
+
+	r = kvm_gmem_punch_hole(file_inode(file), index << PAGE_SHIFT, PAGE_SHIFT << order);
+
+out_fput:
+	fput(file);
+
+	return r;
+}
+EXPORT_SYMBOL_GPL(kvm_gmem_undo_get_pfn);

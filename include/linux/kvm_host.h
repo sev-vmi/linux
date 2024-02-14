@@ -2437,6 +2437,8 @@ int kvm_gmem_get_pfn(struct kvm *kvm, struct kvm_memory_slot *slot,
 		     gfn_t gfn, kvm_pfn_t *pfn, int *max_order);
 int kvm_gmem_get_uninit_pfn(struct kvm *kvm, struct kvm_memory_slot *slot,
 		            gfn_t gfn, kvm_pfn_t *pfn, int *max_order);
+int kvm_gmem_undo_get_pfn(struct kvm *kvm, struct kvm_memory_slot *slot,
+			  gfn_t gfn, int order);
 #else
 static inline int kvm_gmem_get_pfn(struct kvm *kvm,
 				   struct kvm_memory_slot *slot, gfn_t gfn,
@@ -2453,6 +2455,11 @@ static inline int kvm_gmem_get_uninit_pfn(struct kvm *kvm,
 	KVM_BUG_ON(1, kvm);
 	return -EIO;
 }
+
+static inline int kvm_gmem_undo_get_pfn(struct kvm *kvm,
+				        struct kvm_memory_slot *slot, gfn_t gfn,
+				        int order)
+{}
 #endif /* CONFIG_KVM_PRIVATE_MEM */
 
 #ifdef CONFIG_HAVE_KVM_GMEM_PREPARE
