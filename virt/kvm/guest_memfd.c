@@ -643,3 +643,43 @@ out_fput:
 	return r;
 }
 EXPORT_SYMBOL_GPL(kvm_gmem_undo_get_pfn);
+
+int kvm_gmem_populate(struct kvm *kvm, struct kvm_memory_slot *slot,
+		      struct kvm_gmem_populate_args *args)
+{
+	int ret, max_order, i;
+
+	for (i = 0; i < args->npages; i += (1 << max_order)) {
+		void __user *src = args->src + i * PAGE_SIZE;
+		gfn_t gfn = args->gfn + i;
+		kvm_pfn_t pfn;
+
+		ret = __kvm_gmem_get_pfn(kvm, slot, gfn, &pfn, &max_order, false);
+		if (ret)
+			break;
+
+		if (!IS_ALIGNED(gfn, (1 << max_order)) ||
+		    (args->npages - i) < (1 << max_order))
+			max_order = 0;
+
+		if (args->do_memcpy && args->src) {
+			ret = copy_from_user(pfn_to_kaddr(pfn), src, (1 << max_order) * PAGE_SIZE);
+			if (ret)
+				goto e_release;
+		}
+
+		if (args->post_populate) {
+			ret = args->post_populate(kvm, slot, gfn, pfn, src, max_order,
+						  args->opaque);
+			if (ret)
+				goto e_release;
+		}
+e_release:
+		put_page(pfn_to_page(pfn));
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(kvm_gmem_populate);

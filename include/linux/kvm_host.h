@@ -2473,4 +2473,44 @@ bool kvm_arch_gmem_prepare_needed(struct kvm *kvm);
 void kvm_arch_gmem_invalidate(kvm_pfn_t start, kvm_pfn_t end);
 #endif
 
+/**
+ * kvm_gmem_populate_args - kvm_gmem_populate() argument structure
+ *
+ * @gfn: starting GFN to be populated
+ * @src: userspace-provided buffer containing data to copy into GFN range
+ * @npages: number of pages to copy from userspace-buffer
+ * @do_memcpy: whether to do a direct memcpy of the data prior to issuing
+ *             the post-populate callback
+ * @post_populate: callback to issue for each gmem page that backs the GPA
+ *                 range (which will be filled with corresponding contents from
+ *                 @src if @do_memcpy was set)
+ * @opaque: opaque data to pass to @post_populate callback
+ */
+struct kvm_gmem_populate_args {
+	gfn_t gfn;
+	void __user *src;
+	int npages;
+	bool do_memcpy;
+	int (*post_populate)(struct kvm *kvm, struct kvm_memory_slot *slot,
+			     gfn_t gfn, kvm_pfn_t pfn, void __user *src, int order,
+			     void *opaque);
+	void *opaque;
+};
+
+/**
+ * kvm_gmem_populate() - Populate/prepare a GPA range with guest data
+ *
+ * @kvm: KVM instance
+ * @slot: slot containing the GPA range being prepared
+ * @args: argument structure
+ *
+ * This is primarily intended for cases where a gmem-backed GPA range needs
+ * to be initialized with userspace-provided data prior to being mapped into
+ * the guest as a private page. This should be called with the slots->lock
+ * held so that caller-enforced invariants regarding the expected memory
+ * attributes of the GPA range do not race with KVM_SET_MEMORY_ATTRIBUTES.
+ */
+int kvm_gmem_populate(struct kvm *kvm, struct kvm_memory_slot *slot,
+		      struct kvm_gmem_populate_args *args);
+
 #endif
