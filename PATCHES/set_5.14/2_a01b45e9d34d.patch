@@ -1,0 +1,78 @@
+From a01b45e9d34d278129296daf91c4771143fa9dd9 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 23 Jun 2021 14:29:55 +0300
+Subject: [PATCH] KVM: x86: rename apic_access_page_done to
+ apic_access_memslot_enabled
+
+This better reflects the purpose of this variable on AMD, since
+on AMD the AVIC's memory slot can be enabled and disabled dynamically.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210623113002.111448-4-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 2 +-
+ arch/x86/kvm/svm/avic.c         | 4 ++--
+ arch/x86/kvm/vmx/vmx.c          | 4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index c9ec5c76c438..974cbfb1eefe 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1054,7 +1054,7 @@ struct kvm_arch {
+ 	struct kvm_apic_map __rcu *apic_map;
+ 	atomic_t apic_map_dirty;
+ 
+-	bool apic_access_page_done;
++	bool apic_access_memslot_enabled;
+ 	unsigned long apicv_inhibit_reasons;
+ 
+ 	gpa_t wall_clock;
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index a9abed054cd5..1d01da64c333 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -236,7 +236,7 @@ static int avic_update_access_page(struct kvm *kvm, bool activate)
+ 	 * APICv mode change, which update APIC_ACCESS_PAGE_PRIVATE_MEMSLOT
+ 	 * memory region. So, we need to ensure that kvm->mm == current->mm.
+ 	 */
+-	if ((kvm->arch.apic_access_page_done == activate) ||
++	if ((kvm->arch.apic_access_memslot_enabled == activate) ||
+ 	    (kvm->mm != current->mm))
+ 		goto out;
+ 
+@@ -249,7 +249,7 @@ static int avic_update_access_page(struct kvm *kvm, bool activate)
+ 		goto out;
+ 	}
+ 
+-	kvm->arch.apic_access_page_done = activate;
++	kvm->arch.apic_access_memslot_enabled = activate;
+ out:
+ 	mutex_unlock(&kvm->slots_lock);
+ 	return r;
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 104bbbe2dfd0..927a552393b9 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -3621,7 +3621,7 @@ static int alloc_apic_access_page(struct kvm *kvm)
+ 	int ret = 0;
+ 
+ 	mutex_lock(&kvm->slots_lock);
+-	if (kvm->arch.apic_access_page_done)
++	if (kvm->arch.apic_access_memslot_enabled)
+ 		goto out;
+ 	hva = __x86_set_memory_region(kvm, APIC_ACCESS_PAGE_PRIVATE_MEMSLOT,
+ 				      APIC_DEFAULT_PHYS_BASE, PAGE_SIZE);
+@@ -3641,7 +3641,7 @@ static int alloc_apic_access_page(struct kvm *kvm)
+ 	 * is able to migrate it.
+ 	 */
+ 	put_page(page);
+-	kvm->arch.apic_access_page_done = true;
++	kvm->arch.apic_access_memslot_enabled = true;
+ out:
+ 	mutex_unlock(&kvm->slots_lock);
+ 	return ret;
+-- 
+2.34.1
+

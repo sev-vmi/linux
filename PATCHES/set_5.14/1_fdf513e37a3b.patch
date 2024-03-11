@@ -1,0 +1,205 @@
+From fdf513e37a3bd9f498179c878cfcd59693bf507c Mon Sep 17 00:00:00 2001
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Wed, 9 Jun 2021 17:09:08 +0200
+Subject: [PATCH] KVM: x86: Use common 'enable_apicv' variable for both APICv
+ and AVIC
+
+Unify VMX and SVM code by moving APICv/AVIC enablement tracking to common
+'enable_apicv' variable. Note: unlike APICv, AVIC is disabled by default.
+
+No functional change intended.
+
+Suggested-by: Sean Christopherson <seanjc@google.com>
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Message-Id: <20210609150911.1471882-2-vkuznets@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  1 +
+ arch/x86/kvm/svm/avic.c         | 14 +++++---------
+ arch/x86/kvm/svm/svm.c          | 23 ++++++++++++++---------
+ arch/x86/kvm/svm/svm.h          |  2 --
+ arch/x86/kvm/vmx/capabilities.h |  1 -
+ arch/x86/kvm/vmx/vmx.c          |  1 -
+ arch/x86/kvm/x86.c              |  3 +++
+ 7 files changed, 23 insertions(+), 22 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index ca3b1925cffb..7f53e5fba735 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1432,6 +1432,7 @@ struct kvm_arch_async_pf {
+ extern u32 __read_mostly kvm_nr_uret_msrs;
+ extern u64 __read_mostly host_efer;
+ extern bool __read_mostly allow_smaller_maxphyaddr;
++extern bool __read_mostly enable_apicv;
+ extern struct kvm_x86_ops kvm_x86_ops;
+ 
+ #define KVM_X86_OP(func) \
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 5e7e920113f3..a9abed054cd5 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -27,10 +27,6 @@
+ #include "irq.h"
+ #include "svm.h"
+ 
+-/* enable / disable AVIC */
+-bool avic;
+-module_param(avic, bool, S_IRUGO);
+-
+ #define SVM_AVIC_DOORBELL	0xc001011b
+ 
+ #define AVIC_HPA_MASK	~((0xFFFULL << 52) | 0xFFF)
+@@ -124,7 +120,7 @@ void avic_vm_destroy(struct kvm *kvm)
+ 	unsigned long flags;
+ 	struct kvm_svm *kvm_svm = to_kvm_svm(kvm);
+ 
+-	if (!avic)
++	if (!enable_apicv)
+ 		return;
+ 
+ 	if (kvm_svm->avic_logical_id_table_page)
+@@ -147,7 +143,7 @@ int avic_vm_init(struct kvm *kvm)
+ 	struct page *l_page;
+ 	u32 vm_id;
+ 
+-	if (!avic)
++	if (!enable_apicv)
+ 		return 0;
+ 
+ 	/* Allocating physical APIC ID table (4KB) */
+@@ -569,7 +565,7 @@ int avic_init_vcpu(struct vcpu_svm *svm)
+ 	int ret;
+ 	struct kvm_vcpu *vcpu = &svm->vcpu;
+ 
+-	if (!avic || !irqchip_in_kernel(vcpu->kvm))
++	if (!enable_apicv || !irqchip_in_kernel(vcpu->kvm))
+ 		return 0;
+ 
+ 	ret = avic_init_backing_page(vcpu);
+@@ -593,7 +589,7 @@ void avic_post_state_restore(struct kvm_vcpu *vcpu)
+ 
+ void svm_toggle_avic_for_irq_window(struct kvm_vcpu *vcpu, bool activate)
+ {
+-	if (!avic || !lapic_in_kernel(vcpu))
++	if (!enable_apicv || !lapic_in_kernel(vcpu))
+ 		return;
+ 
+ 	srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
+@@ -653,7 +649,7 @@ void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+ 	struct vmcb *vmcb = svm->vmcb;
+ 	bool activated = kvm_vcpu_apicv_active(vcpu);
+ 
+-	if (!avic)
++	if (!enable_apicv)
+ 		return;
+ 
+ 	if (activated) {
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index a4d29ee9422d..00ea8dc1bc9c 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -185,6 +185,13 @@ module_param(vls, int, 0444);
+ static int vgif = true;
+ module_param(vgif, int, 0444);
+ 
++/*
++ * enable / disable AVIC.  Because the defaults differ for APICv
++ * support between VMX and SVM we cannot use module_param_named.
++ */
++static bool avic;
++module_param(avic, bool, 0444);
++
+ bool __read_mostly dump_invalid_vmcb;
+ module_param(dump_invalid_vmcb, bool, 0644);
+ 
+@@ -1009,14 +1016,12 @@ static __init int svm_hardware_setup(void)
+ 			nrips = false;
+ 	}
+ 
+-	if (avic) {
+-		if (!npt_enabled || !boot_cpu_has(X86_FEATURE_AVIC)) {
+-			avic = false;
+-		} else {
+-			pr_info("AVIC enabled\n");
++	enable_apicv = avic = avic && npt_enabled && boot_cpu_has(X86_FEATURE_AVIC);
+ 
+-			amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
+-		}
++	if (enable_apicv) {
++		pr_info("AVIC enabled\n");
++
++		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
+ 	}
+ 
+ 	if (vls) {
+@@ -4431,13 +4436,13 @@ static int svm_vm_init(struct kvm *kvm)
+ 	if (!pause_filter_count || !pause_filter_thresh)
+ 		kvm->arch.pause_in_guest = true;
+ 
+-	if (avic) {
++	if (enable_apicv) {
+ 		int ret = avic_vm_init(kvm);
+ 		if (ret)
+ 			return ret;
+ 	}
+ 
+-	kvm_apicv_init(kvm, avic);
++	kvm_apicv_init(kvm, enable_apicv);
+ 	return 0;
+ }
+ 
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 70419e417c0d..a514b490db4a 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -479,8 +479,6 @@ extern struct kvm_x86_nested_ops svm_nested_ops;
+ 
+ #define VMCB_AVIC_APIC_BAR_MASK		0xFFFFFFFFFF000ULL
+ 
+-extern bool avic;
+-
+ static inline void avic_update_vapic_bar(struct vcpu_svm *svm, u64 data)
+ {
+ 	svm->vmcb->control.avic_vapic_bar = data & VMCB_AVIC_APIC_BAR_MASK;
+diff --git a/arch/x86/kvm/vmx/capabilities.h b/arch/x86/kvm/vmx/capabilities.h
+index aa0e7872fcc9..4705ad55abb5 100644
+--- a/arch/x86/kvm/vmx/capabilities.h
++++ b/arch/x86/kvm/vmx/capabilities.h
+@@ -12,7 +12,6 @@ extern bool __read_mostly enable_ept;
+ extern bool __read_mostly enable_unrestricted_guest;
+ extern bool __read_mostly enable_ept_ad_bits;
+ extern bool __read_mostly enable_pml;
+-extern bool __read_mostly enable_apicv;
+ extern int __read_mostly pt_mode;
+ 
+ #define PT_MODE_SYSTEM		0
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 092a045de869..981361d095ed 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -101,7 +101,6 @@ module_param(emulate_invalid_guest_state, bool, S_IRUGO);
+ static bool __read_mostly fasteoi = 1;
+ module_param(fasteoi, bool, S_IRUGO);
+ 
+-bool __read_mostly enable_apicv = 1;
+ module_param(enable_apicv, bool, S_IRUGO);
+ 
+ /*
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 3c5a33ab10c0..8324313f12b5 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -210,6 +210,9 @@ EXPORT_SYMBOL_GPL(host_efer);
+ bool __read_mostly allow_smaller_maxphyaddr = 0;
+ EXPORT_SYMBOL_GPL(allow_smaller_maxphyaddr);
+ 
++bool __read_mostly enable_apicv = true;
++EXPORT_SYMBOL_GPL(enable_apicv);
++
+ u64 __read_mostly host_xss;
+ EXPORT_SYMBOL_GPL(host_xss);
+ u64 __read_mostly supported_xss;
+-- 
+2.34.1
+
