@@ -1,0 +1,87 @@
+From a3c19d5beaad25fcaa703b251c72c3a22fc09100 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Wed, 8 Dec 2021 01:52:33 +0000
+Subject: [PATCH] KVM: SVM: Nullify vcpu_(un)blocking() hooks if AVIC is
+ disabled
+
+Nullify svm_x86_ops.vcpu_(un)blocking if AVIC/APICv is disabled as the
+hooks are necessary only to clear the vCPU's IsRunning entry in the
+Physical APIC and to update IRTE entries if the VM has a pass-through
+device attached.
+
+Opportunistically rename the helpers to clarify their AVIC relationship.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211208015236.1616697-24-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 4 ++--
+ arch/x86/kvm/svm/svm.c  | 7 +++++--
+ arch/x86/kvm/svm/svm.h  | 4 ++--
+ 3 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 522f859408cb..90364d02f22a 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -1027,7 +1027,7 @@ void avic_vcpu_put(struct kvm_vcpu *vcpu)
+ 	WRITE_ONCE(*(svm->avic_physical_id_cache), entry);
+ }
+ 
+-void svm_vcpu_blocking(struct kvm_vcpu *vcpu)
++void avic_vcpu_blocking(struct kvm_vcpu *vcpu)
+ {
+ 	if (!kvm_vcpu_apicv_active(vcpu))
+ 		return;
+@@ -1052,7 +1052,7 @@ void svm_vcpu_blocking(struct kvm_vcpu *vcpu)
+ 	preempt_enable();
+ }
+ 
+-void svm_vcpu_unblocking(struct kvm_vcpu *vcpu)
++void avic_vcpu_unblocking(struct kvm_vcpu *vcpu)
+ {
+ 	int cpu;
+ 
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 9b15d59e6344..6d31d357a83b 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -4391,8 +4391,8 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
+ 	.prepare_guest_switch = svm_prepare_guest_switch,
+ 	.vcpu_load = svm_vcpu_load,
+ 	.vcpu_put = svm_vcpu_put,
+-	.vcpu_blocking = svm_vcpu_blocking,
+-	.vcpu_unblocking = svm_vcpu_unblocking,
++	.vcpu_blocking = avic_vcpu_blocking,
++	.vcpu_unblocking = avic_vcpu_unblocking,
+ 
+ 	.update_exception_bitmap = svm_update_exception_bitmap,
+ 	.get_msr_feature = svm_get_msr_feature,
+@@ -4682,6 +4682,9 @@ static __init int svm_hardware_setup(void)
+ 		pr_info("AVIC enabled\n");
+ 
+ 		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
++	} else {
++		svm_x86_ops.vcpu_blocking = NULL;
++		svm_x86_ops.vcpu_unblocking = NULL;
+ 	}
+ 
+ 	if (vls) {
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 5178f6b245e1..47ef8f4a9358 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -592,8 +592,8 @@ int svm_deliver_avic_intr(struct kvm_vcpu *vcpu, int vec);
+ bool svm_dy_apicv_has_pending_interrupt(struct kvm_vcpu *vcpu);
+ int svm_update_pi_irte(struct kvm *kvm, unsigned int host_irq,
+ 		       uint32_t guest_irq, bool set);
+-void svm_vcpu_blocking(struct kvm_vcpu *vcpu);
+-void svm_vcpu_unblocking(struct kvm_vcpu *vcpu);
++void avic_vcpu_blocking(struct kvm_vcpu *vcpu);
++void avic_vcpu_unblocking(struct kvm_vcpu *vcpu);
+ 
+ /* sev.c */
+ 
+-- 
+2.27.0
+

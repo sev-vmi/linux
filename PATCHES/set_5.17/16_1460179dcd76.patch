@@ -1,0 +1,121 @@
+From 1460179dcd76a4ae4121e2da29b586f41715dd1d Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 8 Oct 2021 19:12:05 -0700
+Subject: [PATCH] KVM: x86: Tweak halt emulation helper names to free up
+ kvm_vcpu_halt()
+
+Rename a variety of HLT-related helpers to free up the function name
+"kvm_vcpu_halt" for future use in generic KVM code, e.g. to differentiate
+between "block" and "halt".
+
+No functional change intended.
+
+Reviewed-by: David Matlack <dmatlack@google.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211009021236.4122790-13-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  2 +-
+ arch/x86/kvm/vmx/nested.c       |  2 +-
+ arch/x86/kvm/vmx/vmx.c          |  4 ++--
+ arch/x86/kvm/x86.c              | 13 +++++++------
+ 4 files changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 552ed45f133b..be1ad66cf39a 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1696,7 +1696,7 @@ int kvm_emulate_monitor(struct kvm_vcpu *vcpu);
+ int kvm_fast_pio(struct kvm_vcpu *vcpu, int size, unsigned short port, int in);
+ int kvm_emulate_cpuid(struct kvm_vcpu *vcpu);
+ int kvm_emulate_halt(struct kvm_vcpu *vcpu);
+-int kvm_vcpu_halt(struct kvm_vcpu *vcpu);
++int kvm_emulate_halt_noskip(struct kvm_vcpu *vcpu);
+ int kvm_emulate_ap_reset_hold(struct kvm_vcpu *vcpu);
+ int kvm_emulate_wbinvd(struct kvm_vcpu *vcpu);
+ 
+diff --git a/arch/x86/kvm/vmx/nested.c b/arch/x86/kvm/vmx/nested.c
+index 9c941535f78c..e885f557fcbe 100644
+--- a/arch/x86/kvm/vmx/nested.c
++++ b/arch/x86/kvm/vmx/nested.c
+@@ -3603,7 +3603,7 @@ static int nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
+ 		    !(nested_cpu_has(vmcs12, CPU_BASED_INTR_WINDOW_EXITING) &&
+ 		      (vmcs12->guest_rflags & X86_EFLAGS_IF))) {
+ 			vmx->nested.nested_run_pending = 0;
+-			return kvm_vcpu_halt(vcpu);
++			return kvm_emulate_halt_noskip(vcpu);
+ 		}
+ 		break;
+ 	case GUEST_ACTIVITY_WAIT_SIPI:
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 01eab6d6ec22..b4defe000db8 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -4697,7 +4697,7 @@ static int handle_rmode_exception(struct kvm_vcpu *vcpu,
+ 		if (kvm_emulate_instruction(vcpu, 0)) {
+ 			if (vcpu->arch.halt_request) {
+ 				vcpu->arch.halt_request = 0;
+-				return kvm_vcpu_halt(vcpu);
++				return kvm_emulate_halt_noskip(vcpu);
+ 			}
+ 			return 1;
+ 		}
+@@ -5368,7 +5368,7 @@ static int handle_invalid_guest_state(struct kvm_vcpu *vcpu)
+ 
+ 		if (vcpu->arch.halt_request) {
+ 			vcpu->arch.halt_request = 0;
+-			return kvm_vcpu_halt(vcpu);
++			return kvm_emulate_halt_noskip(vcpu);
+ 		}
+ 
+ 		/*
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 73e0e40c94b6..43cabc747318 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8725,7 +8725,7 @@ void kvm_arch_exit(void)
+ #endif
+ }
+ 
+-static int __kvm_vcpu_halt(struct kvm_vcpu *vcpu, int state, int reason)
++static int __kvm_emulate_halt(struct kvm_vcpu *vcpu, int state, int reason)
+ {
+ 	++vcpu->stat.halt_exits;
+ 	if (lapic_in_kernel(vcpu)) {
+@@ -8737,11 +8737,11 @@ static int __kvm_vcpu_halt(struct kvm_vcpu *vcpu, int state, int reason)
+ 	}
+ }
+ 
+-int kvm_vcpu_halt(struct kvm_vcpu *vcpu)
++int kvm_emulate_halt_noskip(struct kvm_vcpu *vcpu)
+ {
+-	return __kvm_vcpu_halt(vcpu, KVM_MP_STATE_HALTED, KVM_EXIT_HLT);
++	return __kvm_emulate_halt(vcpu, KVM_MP_STATE_HALTED, KVM_EXIT_HLT);
+ }
+-EXPORT_SYMBOL_GPL(kvm_vcpu_halt);
++EXPORT_SYMBOL_GPL(kvm_emulate_halt_noskip);
+ 
+ int kvm_emulate_halt(struct kvm_vcpu *vcpu)
+ {
+@@ -8750,7 +8750,7 @@ int kvm_emulate_halt(struct kvm_vcpu *vcpu)
+ 	 * TODO: we might be squashing a GUESTDBG_SINGLESTEP-triggered
+ 	 * KVM_EXIT_DEBUG here.
+ 	 */
+-	return kvm_vcpu_halt(vcpu) && ret;
++	return kvm_emulate_halt_noskip(vcpu) && ret;
+ }
+ EXPORT_SYMBOL_GPL(kvm_emulate_halt);
+ 
+@@ -8758,7 +8758,8 @@ int kvm_emulate_ap_reset_hold(struct kvm_vcpu *vcpu)
+ {
+ 	int ret = kvm_skip_emulated_instruction(vcpu);
+ 
+-	return __kvm_vcpu_halt(vcpu, KVM_MP_STATE_AP_RESET_HOLD, KVM_EXIT_AP_RESET_HOLD) && ret;
++	return __kvm_emulate_halt(vcpu, KVM_MP_STATE_AP_RESET_HOLD,
++					KVM_EXIT_AP_RESET_HOLD) && ret;
+ }
+ EXPORT_SYMBOL_GPL(kvm_emulate_ap_reset_hold);
+ 
+-- 
+2.27.0
+
