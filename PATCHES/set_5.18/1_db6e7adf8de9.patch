@@ -1,0 +1,195 @@
+From db6e7adf8de9b3b99a9856acb73870cc3a70e3ca Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 28 Jan 2022 00:52:04 +0000
+Subject: [PATCH] KVM: SVM: Rename AVIC helpers to use "avic" prefix instead of
+ "svm"
+
+Use "avic" instead of "svm" for SVM's all of APICv hooks and make a few
+additional funciton name tweaks so that the AVIC functions conform to
+their associated kvm_x86_ops hooks.
+
+No functional change intended.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20220128005208.4008533-19-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 28 ++++++++++++++--------------
+ arch/x86/kvm/svm/svm.c  | 18 +++++++++---------
+ arch/x86/kvm/svm/svm.h  | 20 ++++++++++----------
+ 3 files changed, 33 insertions(+), 33 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index fb3e20791338..abd0e664bf22 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -578,7 +578,7 @@ int avic_init_vcpu(struct vcpu_svm *svm)
+ 	return ret;
+ }
+ 
+-void avic_post_state_restore(struct kvm_vcpu *vcpu)
++void avic_apicv_post_state_restore(struct kvm_vcpu *vcpu)
+ {
+ 	if (avic_handle_apic_id_update(vcpu) != 0)
+ 		return;
+@@ -586,20 +586,20 @@ void avic_post_state_restore(struct kvm_vcpu *vcpu)
+ 	avic_handle_ldr_update(vcpu);
+ }
+ 
+-void svm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
++void avic_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
+ {
+ 	return;
+ }
+ 
+-void svm_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
++void avic_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
+ {
+ }
+ 
+-void svm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
++void avic_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
+ {
+ }
+ 
+-static int svm_set_pi_irte_mode(struct kvm_vcpu *vcpu, bool activate)
++static int avic_set_pi_irte_mode(struct kvm_vcpu *vcpu, bool activate)
+ {
+ 	int ret = 0;
+ 	unsigned long flags;
+@@ -631,7 +631,7 @@ static int svm_set_pi_irte_mode(struct kvm_vcpu *vcpu, bool activate)
+ 	return ret;
+ }
+ 
+-void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
++void avic_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 	struct vmcb *vmcb = svm->vmcb01.ptr;
+@@ -648,7 +648,7 @@ void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+ 		 * we need to check and update the AVIC logical APIC ID table
+ 		 * accordingly before re-activating.
+ 		 */
+-		avic_post_state_restore(vcpu);
++		avic_apicv_post_state_restore(vcpu);
+ 		vmcb->control.int_ctl |= AVIC_ENABLE_MASK;
+ 	} else {
+ 		vmcb->control.int_ctl &= ~AVIC_ENABLE_MASK;
+@@ -660,15 +660,15 @@ void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+ 	else
+ 		avic_vcpu_put(vcpu);
+ 
+-	svm_set_pi_irte_mode(vcpu, activated);
++	avic_set_pi_irte_mode(vcpu, activated);
+ }
+ 
+-void svm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
++void avic_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
+ {
+ 	return;
+ }
+ 
+-bool svm_dy_apicv_has_pending_interrupt(struct kvm_vcpu *vcpu)
++bool avic_dy_apicv_has_pending_interrupt(struct kvm_vcpu *vcpu)
+ {
+ 	return false;
+ }
+@@ -770,7 +770,7 @@ get_pi_vcpu_info(struct kvm *kvm, struct kvm_kernel_irq_routing_entry *e,
+ }
+ 
+ /*
+- * svm_update_pi_irte - set IRTE for Posted-Interrupts
++ * avic_pi_update_irte - set IRTE for Posted-Interrupts
+  *
+  * @kvm: kvm
+  * @host_irq: host irq of the interrupt
+@@ -778,8 +778,8 @@ get_pi_vcpu_info(struct kvm *kvm, struct kvm_kernel_irq_routing_entry *e,
+  * @set: set or unset PI
+  * returns 0 on success, < 0 on failure
+  */
+-int svm_update_pi_irte(struct kvm *kvm, unsigned int host_irq,
+-		       uint32_t guest_irq, bool set)
++int avic_pi_update_irte(struct kvm *kvm, unsigned int host_irq,
++			uint32_t guest_irq, bool set)
+ {
+ 	struct kvm_kernel_irq_routing_entry *e;
+ 	struct kvm_irq_routing_table *irq_rt;
+@@ -879,7 +879,7 @@ int svm_update_pi_irte(struct kvm *kvm, unsigned int host_irq,
+ 	return ret;
+ }
+ 
+-bool svm_check_apicv_inhibit_reasons(ulong bit)
++bool avic_check_apicv_inhibit_reasons(ulong bit)
+ {
+ 	ulong supported = BIT(APICV_INHIBIT_REASON_DISABLE) |
+ 			  BIT(APICV_INHIBIT_REASON_ABSENT) |
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index aec288160a27..4243bb355db0 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -4595,13 +4595,13 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
+ 	.enable_nmi_window = svm_enable_nmi_window,
+ 	.enable_irq_window = svm_enable_irq_window,
+ 	.update_cr8_intercept = svm_update_cr8_intercept,
+-	.set_virtual_apic_mode = svm_set_virtual_apic_mode,
+-	.refresh_apicv_exec_ctrl = svm_refresh_apicv_exec_ctrl,
+-	.check_apicv_inhibit_reasons = svm_check_apicv_inhibit_reasons,
+-	.load_eoi_exitmap = svm_load_eoi_exitmap,
+-	.hwapic_irr_update = svm_hwapic_irr_update,
+-	.hwapic_isr_update = svm_hwapic_isr_update,
+-	.apicv_post_state_restore = avic_post_state_restore,
++	.set_virtual_apic_mode = avic_set_virtual_apic_mode,
++	.refresh_apicv_exec_ctrl = avic_refresh_apicv_exec_ctrl,
++	.check_apicv_inhibit_reasons = avic_check_apicv_inhibit_reasons,
++	.load_eoi_exitmap = avic_load_eoi_exitmap,
++	.hwapic_irr_update = avic_hwapic_irr_update,
++	.hwapic_isr_update = avic_hwapic_isr_update,
++	.apicv_post_state_restore = avic_apicv_post_state_restore,
+ 
+ 	.set_tss_addr = svm_set_tss_addr,
+ 	.set_identity_map_addr = svm_set_identity_map_addr,
+@@ -4631,8 +4631,8 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
+ 	.nested_ops = &svm_nested_ops,
+ 
+ 	.deliver_interrupt = svm_deliver_interrupt,
+-	.dy_apicv_has_pending_interrupt = svm_dy_apicv_has_pending_interrupt,
+-	.pi_update_irte = svm_update_pi_irte,
++	.dy_apicv_has_pending_interrupt = avic_dy_apicv_has_pending_interrupt,
++	.pi_update_irte = avic_pi_update_irte,
+ 	.setup_mce = svm_setup_mce,
+ 
+ 	.smi_allowed = svm_smi_allowed,
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 78d4b7129b61..c1f0cc4a9369 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -577,16 +577,16 @@ int avic_unaccelerated_access_interception(struct kvm_vcpu *vcpu);
+ int avic_init_vcpu(struct vcpu_svm *svm);
+ void avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu);
+ void avic_vcpu_put(struct kvm_vcpu *vcpu);
+-void avic_post_state_restore(struct kvm_vcpu *vcpu);
+-void svm_set_virtual_apic_mode(struct kvm_vcpu *vcpu);
+-void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu);
+-bool svm_check_apicv_inhibit_reasons(ulong bit);
+-void svm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap);
+-void svm_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr);
+-void svm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr);
+-bool svm_dy_apicv_has_pending_interrupt(struct kvm_vcpu *vcpu);
+-int svm_update_pi_irte(struct kvm *kvm, unsigned int host_irq,
+-		       uint32_t guest_irq, bool set);
++void avic_apicv_post_state_restore(struct kvm_vcpu *vcpu);
++void avic_set_virtual_apic_mode(struct kvm_vcpu *vcpu);
++void avic_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu);
++bool avic_check_apicv_inhibit_reasons(ulong bit);
++void avic_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap);
++void avic_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr);
++void avic_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr);
++bool avic_dy_apicv_has_pending_interrupt(struct kvm_vcpu *vcpu);
++int avic_pi_update_irte(struct kvm *kvm, unsigned int host_irq,
++			uint32_t guest_irq, bool set);
+ void avic_vcpu_blocking(struct kvm_vcpu *vcpu);
+ void avic_vcpu_unblocking(struct kvm_vcpu *vcpu);
+ void avic_ring_doorbell(struct kvm_vcpu *vcpu);
+-- 
+2.34.1
+
