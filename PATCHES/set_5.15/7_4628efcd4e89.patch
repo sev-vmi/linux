@@ -1,0 +1,33 @@
+From 4628efcd4e8963a41e877318cd10346dea9a6e00 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 10 Aug 2021 23:52:45 +0300
+Subject: [PATCH] KVM: SVM: add warning for mistmatch between AVIC vcpu state
+ and AVIC inhibition
+
+It is never a good idea to enter a guest on a vCPU when the
+AVIC inhibition state doesn't match the enablement of
+the AVIC on the vCPU.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210810205251.424103-11-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/svm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index b1662d6baa71..22376fdd94f8 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3779,6 +3779,8 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu)
+ 
+ 	pre_svm_run(vcpu);
+ 
++	WARN_ON_ONCE(kvm_apicv_activated(vcpu->kvm) != kvm_vcpu_apicv_active(vcpu));
++
+ 	sync_lapic_to_cr8(vcpu);
+ 
+ 	if (unlikely(svm->asid != svm->vmcb->control.asid)) {
+-- 
+2.27.0
+

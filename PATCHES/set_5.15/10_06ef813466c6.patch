@@ -1,0 +1,54 @@
+From 06ef813466c63ff1a61b5f99592e58d049c2c1ac Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 10 Aug 2021 23:52:48 +0300
+Subject: [PATCH] KVM: SVM: avoid refreshing avic if its state didn't change
+
+Since AVIC can be inhibited and uninhibited rapidly it is possible that
+we have nothing to do by the time the svm_refresh_apicv_exec_ctrl
+is called.
+
+Detect and avoid this, which will be useful when we will start calling
+avic_vcpu_load/avic_vcpu_put when the avic inhibition state changes.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210810205251.424103-14-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 89e666e5a707..bf8cb1021d11 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -9239,12 +9239,18 @@ void kvm_make_scan_ioapic_request(struct kvm *kvm)
+ 
+ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+ {
++	bool activate;
++
+ 	if (!lapic_in_kernel(vcpu))
+ 		return;
+ 
+ 	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
+ 
+-	vcpu->arch.apicv_active = kvm_apicv_activated(vcpu->kvm);
++	activate = kvm_apicv_activated(vcpu->kvm);
++	if (vcpu->arch.apicv_active == activate)
++		goto out;
++
++	vcpu->arch.apicv_active = activate;
+ 	kvm_apic_update_apicv(vcpu);
+ 	static_call(kvm_x86_refresh_apicv_exec_ctrl)(vcpu);
+ 
+@@ -9257,6 +9263,7 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+ 	if (!vcpu->arch.apicv_active)
+ 		kvm_make_request(KVM_REQ_EVENT, vcpu);
+ 
++out:
+ 	mutex_unlock(&vcpu->kvm->arch.apicv_update_lock);
+ }
+ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+-- 
+2.27.0
+

@@ -1,0 +1,59 @@
+From df63202fe52bd1583ce1418c755a81d6d41af3b9 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 13 Jul 2021 17:20:19 +0300
+Subject: [PATCH] KVM: x86: APICv: drop immediate APICv disablement on current
+ vCPU
+
+Special case of disabling the APICv on the current vCPU right away in
+kvm_request_apicv_update doesn't bring much benefit vs raising
+KVM_REQ_APICV_UPDATE on it instead, since this request will be processed
+on the next entry to the guest.
+(the comment about having another #VMEXIT is wrong).
+
+It also hides various assumptions that APIVc enable state matches
+the APICv inhibit state, as this special case only makes those states
+match on the current vCPU.
+
+Previous patches fixed few such assumptions so now it should be safe
+to drop this special case.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210713142023.106183-5-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 12 +-----------
+ 1 file changed, 1 insertion(+), 11 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index ab200f2cb1f0..54fdadacb27f 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -9264,7 +9264,6 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+  */
+ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ {
+-	struct kvm_vcpu *except;
+ 	unsigned long old, new, expected;
+ 
+ 	if (!kvm_x86_ops.check_apicv_inhibit_reasons ||
+@@ -9290,16 +9289,7 @@ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ 	if (kvm_x86_ops.pre_update_apicv_exec_ctrl)
+ 		static_call(kvm_x86_pre_update_apicv_exec_ctrl)(kvm, activate);
+ 
+-	/*
+-	 * Sending request to update APICV for all other vcpus,
+-	 * while update the calling vcpu immediately instead of
+-	 * waiting for another #VMEXIT to handle the request.
+-	 */
+-	except = kvm_get_running_vcpu();
+-	kvm_make_all_cpus_request_except(kvm, KVM_REQ_APICV_UPDATE,
+-					 except);
+-	if (except)
+-		kvm_vcpu_update_apicv(except);
++	kvm_make_all_cpus_request(kvm, KVM_REQ_APICV_UPDATE);
+ }
+ EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
+ 
+-- 
+2.27.0
+

@@ -1,0 +1,93 @@
+From 4651fc56bad01d340844c5fbf1e1f817639208ab Mon Sep 17 00:00:00 2001
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Wed, 9 Jun 2021 17:09:09 +0200
+Subject: [PATCH] KVM: x86: Drop vendor specific functions for APICv/AVIC
+ enablement
+
+Now that APICv/AVIC enablement is kept in common 'enable_apicv' variable,
+there's no need to call kvm_apicv_init() from vendor specific code.
+
+No functional change intended.
+
+Reviewed-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Message-Id: <20210609150911.1471882-3-vkuznets@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 1 -
+ arch/x86/kvm/svm/svm.c          | 1 -
+ arch/x86/kvm/vmx/vmx.c          | 1 -
+ arch/x86/kvm/x86.c              | 6 +++---
+ 4 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 7f53e5fba735..ced3e3b94b77 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1672,7 +1672,6 @@ gpa_t kvm_mmu_gva_to_gpa_system(struct kvm_vcpu *vcpu, gva_t gva,
+ 				struct x86_exception *exception);
+ 
+ bool kvm_apicv_activated(struct kvm *kvm);
+-void kvm_apicv_init(struct kvm *kvm, bool enable);
+ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu);
+ void kvm_request_apicv_update(struct kvm *kvm, bool activate,
+ 			      unsigned long bit);
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 00ea8dc1bc9c..1e2c635d308c 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -4442,7 +4442,6 @@ static int svm_vm_init(struct kvm *kvm)
+ 			return ret;
+ 	}
+ 
+-	kvm_apicv_init(kvm, enable_apicv);
+ 	return 0;
+ }
+ 
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 981361d095ed..76586ce9cf76 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -7004,7 +7004,6 @@ static int vmx_vm_init(struct kvm *kvm)
+ 			break;
+ 		}
+ 	}
+-	kvm_apicv_init(kvm, enable_apicv);
+ 	return 0;
+ }
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 8324313f12b5..ec11ce280fdc 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8471,16 +8471,15 @@ bool kvm_apicv_activated(struct kvm *kvm)
+ }
+ EXPORT_SYMBOL_GPL(kvm_apicv_activated);
+ 
+-void kvm_apicv_init(struct kvm *kvm, bool enable)
++static void kvm_apicv_init(struct kvm *kvm)
+ {
+-	if (enable)
++	if (enable_apicv)
+ 		clear_bit(APICV_INHIBIT_REASON_DISABLE,
+ 			  &kvm->arch.apicv_inhibit_reasons);
+ 	else
+ 		set_bit(APICV_INHIBIT_REASON_DISABLE,
+ 			&kvm->arch.apicv_inhibit_reasons);
+ }
+-EXPORT_SYMBOL_GPL(kvm_apicv_init);
+ 
+ static void kvm_sched_yield(struct kvm_vcpu *vcpu, unsigned long dest_id)
+ {
+@@ -10885,6 +10884,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
+ 	INIT_DELAYED_WORK(&kvm->arch.kvmclock_update_work, kvmclock_update_fn);
+ 	INIT_DELAYED_WORK(&kvm->arch.kvmclock_sync_work, kvmclock_sync_fn);
+ 
++	kvm_apicv_init(kvm);
+ 	kvm_hv_init_vm(kvm);
+ 	kvm_page_track_init(kvm);
+ 	kvm_mmu_init_vm(kvm);
+-- 
+2.27.0
+
