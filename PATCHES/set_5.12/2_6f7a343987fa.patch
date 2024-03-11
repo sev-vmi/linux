@@ -1,0 +1,32 @@
+From 6f7a343987fa24299db1a36b7af55bdbd5dd3b1b Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Thu, 4 Feb 2021 16:57:43 -0800
+Subject: [PATCH] KVM: SVM: Remove an unnecessary forward declaration
+
+Drop a defunct forward declaration of svm_complete_interrupts().
+
+No functional change intended.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20210205005750.3841462-3-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/svm.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 4141caea857a..ef2f2b0f20d3 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -205,8 +205,6 @@ bool svm_gp_erratum_intercept = true;
+ 
+ static u8 rsm_ins_bytes[] = "\x0f\xaa";
+ 
+-static void svm_complete_interrupts(struct vcpu_svm *svm);
+-
+ static unsigned long iopm_base;
+ 
+ struct kvm_ldttss_desc {
+-- 
+2.34.1
+
