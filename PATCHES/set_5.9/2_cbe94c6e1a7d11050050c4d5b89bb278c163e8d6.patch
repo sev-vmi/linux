@@ -1,0 +1,163 @@
+From cbe94c6e1a7d11050050c4d5b89bb278c163e8d6 Mon Sep 17 00:00:00 2001
+From: Jerry Snitselaar <jsnitsel@redhat.com>
+Date: Tue, 30 Jun 2020 13:06:36 -0700
+Subject: [PATCH] iommu/amd: Move Kconfig and Makefile bits down into amd
+ directory
+
+Move AMD Kconfig and Makefile bits down into the amd directory
+with the rest of the AMD specific files.
+
+Signed-off-by: Jerry Snitselaar <jsnitsel@redhat.com>
+Cc: Joerg Roedel <joro@8bytes.org>
+Cc: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Link: https://lore.kernel.org/r/20200630200636.48600-3-jsnitsel@redhat.com
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+---
+ drivers/iommu/Kconfig      | 45 +-------------------------------------
+ drivers/iommu/Makefile     |  5 +----
+ drivers/iommu/amd/Kconfig  | 44 +++++++++++++++++++++++++++++++++++++
+ drivers/iommu/amd/Makefile |  4 ++++
+ 4 files changed, 50 insertions(+), 48 deletions(-)
+ create mode 100644 drivers/iommu/amd/Kconfig
+ create mode 100644 drivers/iommu/amd/Makefile
+
+diff --git a/drivers/iommu/Kconfig b/drivers/iommu/Kconfig
+index e9e1238aac21..8ef9860b8d7f 100644
+--- a/drivers/iommu/Kconfig
++++ b/drivers/iommu/Kconfig
+@@ -128,50 +128,7 @@ config MSM_IOMMU
+ 
+ 	  If unsure, say N here.
+ 
+-# AMD IOMMU support
+-config AMD_IOMMU
+-	bool "AMD IOMMU support"
+-	select SWIOTLB
+-	select PCI_MSI
+-	select PCI_ATS
+-	select PCI_PRI
+-	select PCI_PASID
+-	select IOMMU_API
+-	select IOMMU_IOVA
+-	select IOMMU_DMA
+-	depends on X86_64 && PCI && ACPI
+-	help
+-	  With this option you can enable support for AMD IOMMU hardware in
+-	  your system. An IOMMU is a hardware component which provides
+-	  remapping of DMA memory accesses from devices. With an AMD IOMMU you
+-	  can isolate the DMA memory of different devices and protect the
+-	  system from misbehaving device drivers or hardware.
+-
+-	  You can find out if your system has an AMD IOMMU if you look into
+-	  your BIOS for an option to enable it or if you have an IVRS ACPI
+-	  table.
+-
+-config AMD_IOMMU_V2
+-	tristate "AMD IOMMU Version 2 driver"
+-	depends on AMD_IOMMU
+-	select MMU_NOTIFIER
+-	help
+-	  This option enables support for the AMD IOMMUv2 features of the IOMMU
+-	  hardware. Select this option if you want to use devices that support
+-	  the PCI PRI and PASID interface.
+-
+-config AMD_IOMMU_DEBUGFS
+-	bool "Enable AMD IOMMU internals in DebugFS"
+-	depends on AMD_IOMMU && IOMMU_DEBUGFS
+-	help
+-	  !!!WARNING!!!  !!!WARNING!!!  !!!WARNING!!!  !!!WARNING!!!
+-
+-	  DO NOT ENABLE THIS OPTION UNLESS YOU REALLY, -REALLY- KNOW WHAT YOU ARE DOING!!!
+-	  Exposes AMD IOMMU device internals in DebugFS.
+-
+-	  This option is -NOT- intended for production environments, and should
+-	  not generally be enabled.
+-
++source "drivers/iommu/amd/Kconfig"
+ source "drivers/iommu/intel/Kconfig"
+ 
+ config IRQ_REMAP
+diff --git a/drivers/iommu/Makefile b/drivers/iommu/Makefile
+index 71dd2f382e78..f356bc12b1c7 100644
+--- a/drivers/iommu/Makefile
++++ b/drivers/iommu/Makefile
+@@ -1,5 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0
+-obj-y += intel/
++obj-y += amd/ intel/
+ obj-$(CONFIG_IOMMU_API) += iommu.o
+ obj-$(CONFIG_IOMMU_API) += iommu-traces.o
+ obj-$(CONFIG_IOMMU_API) += iommu-sysfs.o
+@@ -12,9 +12,6 @@ obj-$(CONFIG_IOASID) += ioasid.o
+ obj-$(CONFIG_IOMMU_IOVA) += iova.o
+ obj-$(CONFIG_OF_IOMMU)	+= of_iommu.o
+ obj-$(CONFIG_MSM_IOMMU) += msm_iommu.o
+-obj-$(CONFIG_AMD_IOMMU) += amd/iommu.o amd/init.o amd/quirks.o
+-obj-$(CONFIG_AMD_IOMMU_DEBUGFS) += amd/debugfs.o
+-obj-$(CONFIG_AMD_IOMMU_V2) += amd/iommu_v2.o
+ obj-$(CONFIG_ARM_SMMU) += arm_smmu.o
+ arm_smmu-objs += arm-smmu.o arm-smmu-impl.o arm-smmu-qcom.o
+ obj-$(CONFIG_ARM_SMMU_V3) += arm-smmu-v3.o
+diff --git a/drivers/iommu/amd/Kconfig b/drivers/iommu/amd/Kconfig
+new file mode 100644
+index 000000000000..1f061d91e0b8
+--- /dev/null
++++ b/drivers/iommu/amd/Kconfig
+@@ -0,0 +1,44 @@
++# SPDX-License-Identifier: GPL-2.0-only
++# AMD IOMMU support
++config AMD_IOMMU
++	bool "AMD IOMMU support"
++	select SWIOTLB
++	select PCI_MSI
++	select PCI_ATS
++	select PCI_PRI
++	select PCI_PASID
++	select IOMMU_API
++	select IOMMU_IOVA
++	select IOMMU_DMA
++	depends on X86_64 && PCI && ACPI
++	help
++	  With this option you can enable support for AMD IOMMU hardware in
++	  your system. An IOMMU is a hardware component which provides
++	  remapping of DMA memory accesses from devices. With an AMD IOMMU you
++	  can isolate the DMA memory of different devices and protect the
++	  system from misbehaving device drivers or hardware.
++
++	  You can find out if your system has an AMD IOMMU if you look into
++	  your BIOS for an option to enable it or if you have an IVRS ACPI
++	  table.
++
++config AMD_IOMMU_V2
++	tristate "AMD IOMMU Version 2 driver"
++	depends on AMD_IOMMU
++	select MMU_NOTIFIER
++	help
++	  This option enables support for the AMD IOMMUv2 features of the IOMMU
++	  hardware. Select this option if you want to use devices that support
++	  the PCI PRI and PASID interface.
++
++config AMD_IOMMU_DEBUGFS
++	bool "Enable AMD IOMMU internals in DebugFS"
++	depends on AMD_IOMMU && IOMMU_DEBUGFS
++	help
++	  !!!WARNING!!!  !!!WARNING!!!  !!!WARNING!!!  !!!WARNING!!!
++
++	  DO NOT ENABLE THIS OPTION UNLESS YOU REALLY, -REALLY- KNOW WHAT YOU ARE DOING!!!
++	  Exposes AMD IOMMU device internals in DebugFS.
++
++	  This option is -NOT- intended for production environments, and should
++	  not generally be enabled.
+diff --git a/drivers/iommu/amd/Makefile b/drivers/iommu/amd/Makefile
+new file mode 100644
+index 000000000000..dc5a2fa4fd37
+--- /dev/null
++++ b/drivers/iommu/amd/Makefile
+@@ -0,0 +1,4 @@
++# SPDX-License-Identifier: GPL-2.0-only
++obj-$(CONFIG_AMD_IOMMU) += iommu.o init.o quirks.o
++obj-$(CONFIG_AMD_IOMMU_DEBUGFS) += debugfs.o
++obj-$(CONFIG_AMD_IOMMU_V2) += iommu_v2.o
+-- 
+2.27.0
+
