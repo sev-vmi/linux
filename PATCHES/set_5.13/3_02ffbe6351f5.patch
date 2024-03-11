@@ -1,0 +1,56 @@
+From 02ffbe6351f5c88337143bcbc649832ded7445c0 Mon Sep 17 00:00:00 2001
+From: ChenXiaoSong <chenxiaosong2@huawei.com>
+Date: Wed, 9 Jun 2021 20:22:17 +0800
+Subject: [PATCH] KVM: SVM: fix doc warnings
+
+Fix kernel-doc warnings:
+
+arch/x86/kvm/svm/avic.c:233: warning: Function parameter or member 'activate' not described in 'avic_update_access_page'
+arch/x86/kvm/svm/avic.c:233: warning: Function parameter or member 'kvm' not described in 'avic_update_access_page'
+arch/x86/kvm/svm/avic.c:781: warning: Function parameter or member 'e' not described in 'get_pi_vcpu_info'
+arch/x86/kvm/svm/avic.c:781: warning: Function parameter or member 'kvm' not described in 'get_pi_vcpu_info'
+arch/x86/kvm/svm/avic.c:781: warning: Function parameter or member 'svm' not described in 'get_pi_vcpu_info'
+arch/x86/kvm/svm/avic.c:781: warning: Function parameter or member 'vcpu_info' not described in 'get_pi_vcpu_info'
+arch/x86/kvm/svm/avic.c:1009: warning: This comment starts with '/**', but isn't a kernel-doc comment. Refer Documentation/doc-guide/kernel-doc.rst
+
+Signed-off-by: ChenXiaoSong <chenxiaosong2@huawei.com>
+Message-Id: <20210609122217.2967131-1-chenxiaosong2@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 0e62e6a2438c..5e7e920113f3 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -221,7 +221,7 @@ static u64 *avic_get_physical_id_entry(struct kvm_vcpu *vcpu,
+ 	return &avic_physical_id_table[index];
+ }
+ 
+-/**
++/*
+  * Note:
+  * AVIC hardware walks the nested page table to check permissions,
+  * but does not use the SPA address specified in the leaf page
+@@ -764,7 +764,7 @@ static int svm_ir_list_add(struct vcpu_svm *svm, struct amd_iommu_pi_data *pi)
+ 	return ret;
+ }
+ 
+-/**
++/*
+  * Note:
+  * The HW cannot support posting multicast/broadcast
+  * interrupts to a vCPU. So, we still use legacy interrupt
+@@ -1005,7 +1005,7 @@ void avic_vcpu_put(struct kvm_vcpu *vcpu)
+ 	WRITE_ONCE(*(svm->avic_physical_id_cache), entry);
+ }
+ 
+-/**
++/*
+  * This function is called during VCPU halt/unhalt.
+  */
+ static void avic_set_running(struct kvm_vcpu *vcpu, bool is_run)
+-- 
+2.34.1
+

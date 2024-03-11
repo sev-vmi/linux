@@ -1,0 +1,45 @@
+From 28a4aa1160d71187a44414dac40b57d1fd9fcd77 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 24 May 2021 18:22:28 +0200
+Subject: [PATCH] KVM: SVM: make the avic parameter a bool
+
+Make it consistent with kvm_intel.enable_apicv.
+
+Suggested-by: Sean Christopherson <seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 4 ++--
+ arch/x86/kvm/svm/svm.h  | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 1c1bf911e02b..0e62e6a2438c 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -28,8 +28,8 @@
+ #include "svm.h"
+ 
+ /* enable / disable AVIC */
+-int avic;
+-module_param(avic, int, S_IRUGO);
++bool avic;
++module_param(avic, bool, S_IRUGO);
+ 
+ #define SVM_AVIC_DOORBELL	0xc001011b
+ 
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index e44567ceb865..70419e417c0d 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -479,7 +479,7 @@ extern struct kvm_x86_nested_ops svm_nested_ops;
+ 
+ #define VMCB_AVIC_APIC_BAR_MASK		0xFFFFFFFFFF000ULL
+ 
+-extern int avic;
++extern bool avic;
+ 
+ static inline void avic_update_vapic_bar(struct vcpu_svm *svm, u64 data)
+ {
+-- 
+2.34.1
+
