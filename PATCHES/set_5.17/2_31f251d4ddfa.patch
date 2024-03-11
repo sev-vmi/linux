@@ -1,0 +1,64 @@
+From 31f251d4ddfa464c6dd92ee873b9b223e992a085 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Wed, 8 Dec 2021 01:52:20 +0000
+Subject: [PATCH] KVM: SVM: Signal AVIC doorbell iff vCPU is in guest mode
+
+Signal the AVIC doorbell iff the vCPU is running in the guest.  If the vCPU
+is not IN_GUEST_MODE, it's guaranteed to pick up any pending IRQs on the
+next VMRUN, which unconditionally processes the vIRR.
+
+Add comments to document the logic.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211208015236.1616697-11-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 0e5b49294086..40039477bebb 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -672,9 +672,22 @@ int svm_deliver_avic_intr(struct kvm_vcpu *vcpu, int vec)
+ 		return -1;
+ 
+ 	kvm_lapic_set_irr(vec, vcpu->arch.apic);
++
++	/*
++	 * Pairs with the smp_mb_*() after setting vcpu->guest_mode in
++	 * vcpu_enter_guest() to ensure the write to the vIRR is ordered before
++	 * the read of guest_mode, which guarantees that either VMRUN will see
++	 * and process the new vIRR entry, or that the below code will signal
++	 * the doorbell if the vCPU is already running in the guest.
++	 */
+ 	smp_mb__after_atomic();
+ 
+-	if (avic_vcpu_is_running(vcpu)) {
++	/*
++	 * Signal the doorbell to tell hardware to inject the IRQ if the vCPU
++	 * is in the guest.  If the vCPU is not in the guest, hardware will
++	 * automatically process AVIC interrupts at VMRUN.
++	 */
++	if (vcpu->mode == IN_GUEST_MODE) {
+ 		int cpu = READ_ONCE(vcpu->cpu);
+ 
+ 		/*
+@@ -688,8 +701,13 @@ int svm_deliver_avic_intr(struct kvm_vcpu *vcpu, int vec)
+ 		if (cpu != get_cpu())
+ 			wrmsrl(SVM_AVIC_DOORBELL, kvm_cpu_get_apicid(cpu));
+ 		put_cpu();
+-	} else
++	} else {
++		/*
++		 * Wake the vCPU if it was blocking.  KVM will then detect the
++		 * pending IRQ when checking if the vCPU has a wake event.
++		 */
+ 		kvm_vcpu_wake_up(vcpu);
++	}
+ 
+ 	return 0;
+ }
+-- 
+2.27.0
+

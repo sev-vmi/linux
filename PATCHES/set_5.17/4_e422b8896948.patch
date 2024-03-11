@@ -1,0 +1,42 @@
+From e422b88969489e67fd1a87a6ef4ef5c30bb53edb Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Wed, 8 Dec 2021 01:52:22 +0000
+Subject: [PATCH] KVM: SVM: Remove unnecessary APICv/AVIC update in vCPU
+ unblocking path
+
+Remove handling of KVM_REQ_APICV_UPDATE from svm_vcpu_unblocking(), it's
+no longer needed as it was made obsolete by commit df7e4827c549 ("KVM:
+SVM: call avic_vcpu_load/avic_vcpu_put when enabling/disabling AVIC").
+Prior to that commit, the manual check was necessary to ensure the AVIC
+stuff was updated by avic_set_running() when a request to enable APICv
+became pending while the vCPU was blocking, as the request handling
+itself would not do the update.  But, as evidenced by the commit, that
+logic was flawed and subject to various races.
+
+Now that svm_refresh_apicv_exec_ctrl() does avic_vcpu_load/put() in
+response to an APICv status change, drop the manual check in the
+unblocking path.
+
+Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211208015236.1616697-13-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 2d8278167c0f..7efe034c44c1 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -1040,7 +1040,5 @@ void svm_vcpu_blocking(struct kvm_vcpu *vcpu)
+ 
+ void svm_vcpu_unblocking(struct kvm_vcpu *vcpu)
+ {
+-	if (kvm_check_request(KVM_REQ_APICV_UPDATE, vcpu))
+-		kvm_vcpu_update_apicv(vcpu);
+ 	avic_set_running(vcpu, true);
+ }
+-- 
+2.27.0
+

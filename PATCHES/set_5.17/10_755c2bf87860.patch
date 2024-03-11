@@ -1,0 +1,42 @@
+From 755c2bf878607dbddb1423df9abf16b82205896f Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Mon, 7 Feb 2022 17:54:25 +0200
+Subject: [PATCH] KVM: x86: lapic: don't touch irr_pending in
+ kvm_apic_update_apicv when inhibiting it
+
+kvm_apic_update_apicv is called when AVIC is still active, thus IRR bits
+can be set by the CPU after it is called, and don't cause the irr_pending
+to be set to true.
+
+Also logic in avic_kick_target_vcpu doesn't expect a race with this
+function so to make it simple, just keep irr_pending set to true and
+let the next interrupt injection to the guest clear it.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20220207155447.840194-9-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index d7e6fde82d25..9322e6340a74 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -2306,7 +2306,12 @@ void kvm_apic_update_apicv(struct kvm_vcpu *vcpu)
+ 		apic->irr_pending = true;
+ 		apic->isr_count = 1;
+ 	} else {
+-		apic->irr_pending = (apic_search_irr(apic) != -1);
++		/*
++		 * Don't clear irr_pending, searching the IRR can race with
++		 * updates from the CPU as APICv is still active from hardware's
++		 * perspective.  The flag will be cleared as appropriate when
++		 * KVM injects the interrupt.
++		 */
+ 		apic->isr_count = count_vectors(apic->regs + APIC_ISR);
+ 	}
+ }
+-- 
+2.27.0
+

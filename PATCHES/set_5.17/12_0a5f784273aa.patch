@@ -1,0 +1,74 @@
+From 0a5f784273aad41a22963fc8b818ead3c892c97a Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 8 Feb 2022 06:45:16 -0500
+Subject: [PATCH] KVM: SVM: extract avic_ring_doorbell
+
+The check on the current CPU adds an extra level of indentation to
+svm_deliver_avic_intr and conflates documentation on what happens
+if the vCPU exits (of interest to svm_deliver_avic_intr) and migrates
+(only of interest to avic_ring_doorbell, which calls get/put_cpu()).
+Extract the wrmsr to a separate function and rewrite the
+comment in svm_deliver_avic_intr().
+
+Co-developed-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 31 ++++++++++++++++++++-----------
+ 1 file changed, 20 insertions(+), 11 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 3f9b48732aea..242cb220893a 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -269,6 +269,22 @@ static int avic_init_backing_page(struct kvm_vcpu *vcpu)
+ 	return 0;
+ }
+ 
++static void avic_ring_doorbell(struct kvm_vcpu *vcpu)
++{
++	/*
++	 * Note, the vCPU could get migrated to a different pCPU at any point,
++	 * which could result in signalling the wrong/previous pCPU.  But if
++	 * that happens the vCPU is guaranteed to do a VMRUN (after being
++	 * migrated) and thus will process pending interrupts, i.e. a doorbell
++	 * is not needed (and the spurious one is harmless).
++	 */
++	int cpu = READ_ONCE(vcpu->cpu);
++
++	if (cpu != get_cpu())
++		wrmsrl(MSR_AMD64_SVM_AVIC_DOORBELL, kvm_cpu_get_apicid(cpu));
++	put_cpu();
++}
++
+ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 				   u32 icrl, u32 icrh)
+ {
+@@ -669,19 +685,12 @@ int svm_deliver_avic_intr(struct kvm_vcpu *vcpu, int vec)
+ 	 * automatically process AVIC interrupts at VMRUN.
+ 	 */
+ 	if (vcpu->mode == IN_GUEST_MODE) {
+-		int cpu = READ_ONCE(vcpu->cpu);
+-
+ 		/*
+-		 * Note, the vCPU could get migrated to a different pCPU at any
+-		 * point, which could result in signalling the wrong/previous
+-		 * pCPU.  But if that happens the vCPU is guaranteed to do a
+-		 * VMRUN (after being migrated) and thus will process pending
+-		 * interrupts, i.e. a doorbell is not needed (and the spurious
+-		 * one is harmless).
++		 * Signal the doorbell to tell hardware to inject the IRQ.  If
++		 * the vCPU exits the guest before the doorbell chimes, hardware
++		 * will automatically process AVIC interrupts at the next VMRUN.
+ 		 */
+-		if (cpu != get_cpu())
+-			wrmsrl(MSR_AMD64_SVM_AVIC_DOORBELL, kvm_cpu_get_apicid(cpu));
+-		put_cpu();
++		avic_ring_doorbell(vcpu);
+ 	} else {
+ 		/*
+ 		 * Wake the vCPU if it was blocking.  KVM will then detect the
+-- 
+2.27.0
+

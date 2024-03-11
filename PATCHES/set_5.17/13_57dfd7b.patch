@@ -1,0 +1,153 @@
+From 57dfd7b53dec740afe402135fdd1c5708ec337f0 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 28 Jan 2022 00:51:48 +0000
+Subject: [PATCH] KVM: x86: Move delivery of non-APICv interrupt into vendor
+ code
+
+Handle non-APICv interrupt delivery in vendor code, even though it means
+VMX and SVM will temporarily have duplicate code.  SVM's AVIC has a race
+condition that requires KVM to fall back to legacy interrupt injection
+_after_ the interrupt has been logged in the vIRR, i.e. to fix the race,
+SVM will need to open code the full flow anyways[*].  Refactor the code
+so that the SVM bug without introducing other issues, e.g. SVM would
+return "success" and thus invoke trace_kvm_apicv_accept_irq() even when
+delivery through the AVIC failed, and to opportunistically prepare for
+using KVM_X86_OP to fill each vendor's kvm_x86_ops struct, which will
+rely on the vendor function matching the kvm_x86_op pointer name.
+
+No functional change intended.
+
+[*] https://lore.kernel.org/all/20211213104634.199141-4-mlevitsk@redhat.com
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20220128005208.4008533-3-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm-x86-ops.h |  2 +-
+ arch/x86/include/asm/kvm_host.h    |  3 ++-
+ arch/x86/kvm/lapic.c               | 10 ++--------
+ arch/x86/kvm/svm/svm.c             | 17 ++++++++++++++++-
+ arch/x86/kvm/vmx/vmx.c             | 17 ++++++++++++++++-
+ 5 files changed, 37 insertions(+), 12 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm-x86-ops.h b/arch/x86/include/asm/kvm-x86-ops.h
+index 631d5040b31e..d39e0de06be2 100644
+--- a/arch/x86/include/asm/kvm-x86-ops.h
++++ b/arch/x86/include/asm/kvm-x86-ops.h
+@@ -82,7 +82,7 @@ KVM_X86_OP_NULL(guest_apic_has_interrupt)
+ KVM_X86_OP(load_eoi_exitmap)
+ KVM_X86_OP(set_virtual_apic_mode)
+ KVM_X86_OP_NULL(set_apic_access_page_addr)
+-KVM_X86_OP(deliver_posted_interrupt)
++KVM_X86_OP(deliver_interrupt)
+ KVM_X86_OP_NULL(sync_pir_to_irr)
+ KVM_X86_OP(set_tss_addr)
+ KVM_X86_OP(set_identity_map_addr)
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index efee29d5ad4f..80e285533371 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1409,7 +1409,8 @@ struct kvm_x86_ops {
+ 	void (*load_eoi_exitmap)(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap);
+ 	void (*set_virtual_apic_mode)(struct kvm_vcpu *vcpu);
+ 	void (*set_apic_access_page_addr)(struct kvm_vcpu *vcpu);
+-	int (*deliver_posted_interrupt)(struct kvm_vcpu *vcpu, int vector);
++	void (*deliver_interrupt)(struct kvm_lapic *apic, int delivery_mode,
++				  int trig_mode, int vector);
+ 	int (*sync_pir_to_irr)(struct kvm_vcpu *vcpu);
+ 	int (*set_tss_addr)(struct kvm *kvm, unsigned int addr);
+ 	int (*set_identity_map_addr)(struct kvm *kvm, u64 ident_addr);
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 4662469240bc..d7e6fde82d25 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -1096,14 +1096,8 @@ static int __apic_accept_irq(struct kvm_lapic *apic, int delivery_mode,
+ 						       apic->regs + APIC_TMR);
+ 		}
+ 
+-		if (static_call(kvm_x86_deliver_posted_interrupt)(vcpu, vector)) {
+-			kvm_lapic_set_irr(vector, apic);
+-			kvm_make_request(KVM_REQ_EVENT, vcpu);
+-			kvm_vcpu_kick(vcpu);
+-		} else {
+-			trace_kvm_apicv_accept_irq(vcpu->vcpu_id, delivery_mode,
+-						   trig_mode, vector);
+-		}
++		static_call(kvm_x86_deliver_interrupt)(apic, delivery_mode,
++						       trig_mode, vector);
+ 		break;
+ 
+ 	case APIC_DM_REMRD:
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 9cef8e4598df..5772dd6f79a4 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3291,6 +3291,21 @@ static void svm_set_irq(struct kvm_vcpu *vcpu)
+ 		SVM_EVTINJ_VALID | SVM_EVTINJ_TYPE_INTR;
+ }
+ 
++static void svm_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
++				  int trig_mode, int vector)
++{
++	struct kvm_vcpu *vcpu = apic->vcpu;
++
++	if (svm_deliver_avic_intr(vcpu, vector)) {
++		kvm_lapic_set_irr(vector, apic);
++		kvm_make_request(KVM_REQ_EVENT, vcpu);
++		kvm_vcpu_kick(vcpu);
++	} else {
++		trace_kvm_apicv_accept_irq(vcpu->vcpu_id, delivery_mode,
++					   trig_mode, vector);
++	}
++}
++
+ static void svm_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+@@ -4545,7 +4560,7 @@ static struct kvm_x86_ops svm_x86_ops __initdata = {
+ 	.pmu_ops = &amd_pmu_ops,
+ 	.nested_ops = &svm_nested_ops,
+ 
+-	.deliver_posted_interrupt = svm_deliver_avic_intr,
++	.deliver_interrupt = svm_deliver_interrupt,
+ 	.dy_apicv_has_pending_interrupt = svm_dy_apicv_has_pending_interrupt,
+ 	.update_pi_irte = svm_update_pi_irte,
+ 	.setup_mce = svm_setup_mce,
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index b1165bb13a5a..3c0ba5b1bbcf 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -4041,6 +4041,21 @@ static int vmx_deliver_posted_interrupt(struct kvm_vcpu *vcpu, int vector)
+ 	return 0;
+ }
+ 
++static void vmx_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
++				  int trig_mode, int vector)
++{
++	struct kvm_vcpu *vcpu = apic->vcpu;
++
++	if (vmx_deliver_posted_interrupt(vcpu, vector)) {
++		kvm_lapic_set_irr(vector, apic);
++		kvm_make_request(KVM_REQ_EVENT, vcpu);
++		kvm_vcpu_kick(vcpu);
++	} else {
++		trace_kvm_apicv_accept_irq(vcpu->vcpu_id, delivery_mode,
++					   trig_mode, vector);
++	}
++}
++
+ /*
+  * Set up the vmcs's constant host-state fields, i.e., host-state fields that
+  * will not change in the lifetime of the guest.
+@@ -7766,7 +7781,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
+ 	.hwapic_isr_update = vmx_hwapic_isr_update,
+ 	.guest_apic_has_interrupt = vmx_guest_apic_has_interrupt,
+ 	.sync_pir_to_irr = vmx_sync_pir_to_irr,
+-	.deliver_posted_interrupt = vmx_deliver_posted_interrupt,
++	.deliver_interrupt = vmx_deliver_interrupt,
+ 	.dy_apicv_has_pending_interrupt = pi_has_pending_interrupt,
+ 
+ 	.set_tss_addr = vmx_set_tss_addr,
+-- 
+2.27.0
+

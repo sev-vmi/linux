@@ -1,0 +1,44 @@
+From 30811174f0dbe17fd58eba5c22c50292c083c75b Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 8 Feb 2022 06:57:07 -0500
+Subject: [PATCH] KVM: SVM: set IRR in svm_deliver_interrupt
+
+SVM has to set IRR for both the AVIC and the software-LAPIC case,
+so pull it up to the common function that handles both configurations.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 2 --
+ arch/x86/kvm/svm/svm.c  | 2 +-
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 242cb220893a..2b2932f04411 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -668,8 +668,6 @@ int svm_deliver_avic_intr(struct kvm_vcpu *vcpu, int vec)
+ 	if (!vcpu->arch.apicv_active)
+ 		return -1;
+ 
+-	kvm_lapic_set_irr(vec, vcpu->arch.apic);
+-
+ 	/*
+ 	 * Pairs with the smp_mb_*() after setting vcpu->guest_mode in
+ 	 * vcpu_enter_guest() to ensure the write to the vIRR is ordered before
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 52e4130110f3..cd769ff8af16 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3304,8 +3304,8 @@ static void svm_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
+ {
+ 	struct kvm_vcpu *vcpu = apic->vcpu;
+ 
++	kvm_lapic_set_irr(vector, apic);
+ 	if (svm_deliver_avic_intr(vcpu, vector)) {
+-		kvm_lapic_set_irr(vector, apic);
+ 		kvm_make_request(KVM_REQ_EVENT, vcpu);
+ 		kvm_vcpu_kick(vcpu);
+ 	} else {
+-- 
+2.27.0
+
