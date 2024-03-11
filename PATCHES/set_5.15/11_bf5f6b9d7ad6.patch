@@ -1,0 +1,76 @@
+From bf5f6b9d7ad6b88df15d691d9759f9a397488c7e Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 10 Aug 2021 23:52:49 +0300
+Subject: [PATCH] KVM: SVM: move check for kvm_vcpu_apicv_active outside of
+ avic_vcpu_{put|load}
+
+No functional change intended.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210810205251.424103-15-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 10 ++++------
+ arch/x86/kvm/svm/svm.c  |  7 +++++--
+ 2 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 1def54c26259..e7728b16a46f 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -940,9 +940,6 @@ void avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+ 	int h_physical_id = kvm_cpu_get_apicid(cpu);
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
+-	if (!kvm_vcpu_apicv_active(vcpu))
+-		return;
+-
+ 	/*
+ 	 * Since the host physical APIC id is 8 bits,
+ 	 * we can support host APIC ID upto 255.
+@@ -970,9 +967,6 @@ void avic_vcpu_put(struct kvm_vcpu *vcpu)
+ 	u64 entry;
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
+-	if (!kvm_vcpu_apicv_active(vcpu))
+-		return;
+-
+ 	entry = READ_ONCE(*(svm->avic_physical_id_cache));
+ 	if (entry & AVIC_PHYSICAL_ID_ENTRY_IS_RUNNING_MASK)
+ 		avic_update_iommu_vcpu_affinity(vcpu, -1, 0);
+@@ -989,6 +983,10 @@ static void avic_set_running(struct kvm_vcpu *vcpu, bool is_run)
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
+ 	svm->avic_is_running = is_run;
++
++	if (!kvm_vcpu_apicv_active(vcpu))
++		return;
++
+ 	if (is_run)
+ 		avic_vcpu_load(vcpu, vcpu->cpu);
+ 	else
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 4e76e78c98ec..114c7e29467b 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -1481,12 +1481,15 @@ static void svm_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+ 		sd->current_vmcb = svm->vmcb;
+ 		indirect_branch_prediction_barrier();
+ 	}
+-	avic_vcpu_load(vcpu, cpu);
++	if (kvm_vcpu_apicv_active(vcpu))
++		avic_vcpu_load(vcpu, cpu);
+ }
+ 
+ static void svm_vcpu_put(struct kvm_vcpu *vcpu)
+ {
+-	avic_vcpu_put(vcpu);
++	if (kvm_vcpu_apicv_active(vcpu))
++		avic_vcpu_put(vcpu);
++
+ 	svm_prepare_host_switch(vcpu);
+ 
+ 	++vcpu->stat.host_state_reload;
+-- 
+2.27.0
+

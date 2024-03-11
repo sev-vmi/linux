@@ -1,0 +1,104 @@
+From 61e5f69ef08379cdc74e8f15d3770976ed48480a Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Wed, 11 Aug 2021 15:29:26 +0300
+Subject: [PATCH] KVM: x86: implement KVM_GUESTDBG_BLOCKIRQ
+
+KVM_GUESTDBG_BLOCKIRQ will allow KVM to block all interrupts
+while running.
+
+This change is mostly intended for more robust single stepping
+of the guest and it has the following benefits when enabled:
+
+* Resuming from a breakpoint is much more reliable.
+  When resuming execution from a breakpoint, with interrupts enabled,
+  more often than not, KVM would inject an interrupt and make the CPU
+  jump immediately to the interrupt handler and eventually return to
+  the breakpoint, to trigger it again.
+
+  From the user point of view it looks like the CPU never executed a
+  single instruction and in some cases that can even prevent forward
+  progress, for example, when the breakpoint is placed by an automated
+  script (e.g lx-symbols), which does something in response to the
+  breakpoint and then continues the guest automatically.
+  If the script execution takes enough time for another interrupt to
+  arrive, the guest will be stuck on the same breakpoint RIP forever.
+
+* Normal single stepping is much more predictable, since it won't
+  land the debugger into an interrupt handler.
+
+* RFLAGS.TF has less chance to be leaked to the guest:
+
+  We set that flag behind the guest's back to do single stepping
+  but if single step lands us into an interrupt/exception handler
+  it will be leaked to the guest in the form of being pushed
+  to the stack.
+  This doesn't completely eliminate this problem as exceptions
+  can still happen, but at least this reduces the chances
+  of this happening.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210811122927.900604-6-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ Documentation/virt/kvm/api.rst  | 1 +
+ arch/x86/include/asm/kvm_host.h | 3 ++-
+ arch/x86/include/uapi/asm/kvm.h | 1 +
+ arch/x86/kvm/x86.c              | 4 ++++
+ 4 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/virt/kvm/api.rst b/Documentation/virt/kvm/api.rst
+index 86d7ad3a126c..4ea1bb28297b 100644
+--- a/Documentation/virt/kvm/api.rst
++++ b/Documentation/virt/kvm/api.rst
+@@ -3357,6 +3357,7 @@ flags which can include the following:
+   - KVM_GUESTDBG_INJECT_DB:     inject DB type exception [x86]
+   - KVM_GUESTDBG_INJECT_BP:     inject BP type exception [x86]
+   - KVM_GUESTDBG_EXIT_PENDING:  trigger an immediate guest exit [s390]
++  - KVM_GUESTDBG_BLOCKIRQ:      avoid injecting interrupts/NMI/SMI [x86]
+ 
+ For example KVM_GUESTDBG_USE_SW_BP indicates that software breakpoints
+ are enabled in memory so we need to ensure breakpoint exceptions are
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 4c4983a9378c..7723865077fd 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -222,7 +222,8 @@ enum x86_intercept_stage;
+ 	KVM_GUESTDBG_USE_HW_BP | \
+ 	KVM_GUESTDBG_USE_SW_BP | \
+ 	KVM_GUESTDBG_INJECT_BP | \
+-	KVM_GUESTDBG_INJECT_DB)
++	KVM_GUESTDBG_INJECT_DB | \
++	KVM_GUESTDBG_BLOCKIRQ)
+ 
+ 
+ #define PFERR_PRESENT_BIT 0
+diff --git a/arch/x86/include/uapi/asm/kvm.h b/arch/x86/include/uapi/asm/kvm.h
+index a6c327f8ad9e..2ef1f6513c68 100644
+--- a/arch/x86/include/uapi/asm/kvm.h
++++ b/arch/x86/include/uapi/asm/kvm.h
+@@ -295,6 +295,7 @@ struct kvm_debug_exit_arch {
+ #define KVM_GUESTDBG_USE_HW_BP		0x00020000
+ #define KVM_GUESTDBG_INJECT_DB		0x00040000
+ #define KVM_GUESTDBG_INJECT_BP		0x00080000
++#define KVM_GUESTDBG_BLOCKIRQ		0x00100000
+ 
+ /* for KVM_SET_GUEST_DEBUG */
+ struct kvm_guest_debug_arch {
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 4e07cae56636..1a00af1b076b 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8892,6 +8892,10 @@ static int inject_pending_event(struct kvm_vcpu *vcpu, bool *req_immediate_exit)
+ 		can_inject = false;
+ 	}
+ 
++	/* Don't inject interrupts if the user asked to avoid doing so */
++	if (vcpu->guest_debug & KVM_GUESTDBG_BLOCKIRQ)
++		return 0;
++
+ 	/*
+ 	 * Finally, inject interrupt events.  If an event cannot be injected
+ 	 * due to architectural conditions (e.g. IF=0) a window-open exit
+-- 
+2.27.0
+

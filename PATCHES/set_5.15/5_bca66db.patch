@@ -1,0 +1,49 @@
+From bca66dbcd28a41c669921ff7ca066f71e6f3e72e Mon Sep 17 00:00:00 2001
+From: Vitaly Kuznetsov <vkuznets@redhat.com>
+Date: Wed, 9 Jun 2021 17:09:10 +0200
+Subject: [PATCH] KVM: x86: Check for pending interrupts when APICv is getting
+ disabled
+
+When APICv is active, interrupt injection doesn't raise KVM_REQ_EVENT
+request (see __apic_accept_irq()) as the required work is done by hardware.
+In case KVM_REQ_APICV_UPDATE collides with such injection, the interrupt
+may never get delivered.
+
+Currently, the described situation is hardly possible: all
+kvm_request_apicv_update() calls normally happen upon VM creation when
+no interrupts are pending. We are, however, going to move unconditional
+kvm_request_apicv_update() call from kvm_hv_activate_synic() to
+synic_update_vector() and without this fix 'hyperv_connections' test from
+kvm-unit-tests gets stuck on IPI delivery attempt right after configuring
+a SynIC route which triggers APICv disablement.
+
+Signed-off-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Message-Id: <20210609150911.1471882-4-vkuznets@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index e050ae2fc19b..ceb60f64085c 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -9137,6 +9137,15 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+ 	vcpu->arch.apicv_active = kvm_apicv_activated(vcpu->kvm);
+ 	kvm_apic_update_apicv(vcpu);
+ 	static_call(kvm_x86_refresh_apicv_exec_ctrl)(vcpu);
++
++	/*
++	 * When APICv gets disabled, we may still have injected interrupts
++	 * pending. At the same time, KVM_REQ_EVENT may not be set as APICv was
++	 * still active when the interrupt got accepted. Make sure
++	 * inject_pending_event() is called to check for that.
++	 */
++	if (!vcpu->arch.apicv_active)
++		kvm_make_request(KVM_REQ_EVENT, vcpu);
+ }
+ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+ 
+-- 
+2.27.0
+

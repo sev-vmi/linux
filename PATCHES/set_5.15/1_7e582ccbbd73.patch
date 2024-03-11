@@ -1,0 +1,52 @@
+From 7e582ccbbd737181a5f9a7e3b8f7523a62550796 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 1 Apr 2021 16:54:45 +0300
+Subject: [PATCH] KVM: x86: implement KVM_CAP_SET_GUEST_DEBUG2
+
+Store the supported bits into KVM_GUESTDBG_VALID_MASK
+macro, similar to how arm does this.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210401135451.1004564-4-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 9 +++++++++
+ arch/x86/kvm/x86.c              | 2 ++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 99778ac51243..0d217c3db3f8 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -221,6 +221,15 @@ enum x86_intercept_stage;
+ #define DR7_FIXED_1	0x00000400
+ #define DR7_VOLATILE	0xffff2bff
+ 
++#define KVM_GUESTDBG_VALID_MASK \
++	(KVM_GUESTDBG_ENABLE | \
++	KVM_GUESTDBG_SINGLESTEP | \
++	KVM_GUESTDBG_USE_HW_BP | \
++	KVM_GUESTDBG_USE_SW_BP | \
++	KVM_GUESTDBG_INJECT_BP | \
++	KVM_GUESTDBG_INJECT_DB)
++
++
+ #define PFERR_PRESENT_BIT 0
+ #define PFERR_WRITE_BIT 1
+ #define PFERR_USER_BIT 2
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 79a5d5e26903..91c98e71c0e4 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3804,6 +3804,8 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
+ 	case KVM_CAP_ENFORCE_PV_FEATURE_CPUID:
+ 		r = 1;
+ 		break;
++	case KVM_CAP_SET_GUEST_DEBUG2:
++		return KVM_GUESTDBG_VALID_MASK;
+ #ifdef CONFIG_KVM_XEN
+ 	case KVM_CAP_XEN_HVM:
+ 		r = KVM_XEN_HVM_CONFIG_HYPERCALL_MSR |
+-- 
+2.27.0
+

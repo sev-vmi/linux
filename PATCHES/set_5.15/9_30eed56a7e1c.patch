@@ -1,0 +1,77 @@
+From 30eed56a7e1cbefe933a33d661827e5c72cd136f Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 10 Aug 2021 23:52:47 +0300
+Subject: [PATCH] KVM: SVM: remove svm_toggle_avic_for_irq_window
+
+Now that kvm_request_apicv_update doesn't need to drop the kvm->srcu lock,
+we can call kvm_request_apicv_update directly.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <20210810205251.424103-13-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 11 -----------
+ arch/x86/kvm/svm/svm.c  |  4 ++--
+ arch/x86/kvm/svm/svm.h  |  1 -
+ 3 files changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index d0acbeeab3d6..1def54c26259 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -582,17 +582,6 @@ void avic_post_state_restore(struct kvm_vcpu *vcpu)
+ 	avic_handle_ldr_update(vcpu);
+ }
+ 
+-void svm_toggle_avic_for_irq_window(struct kvm_vcpu *vcpu, bool activate)
+-{
+-	if (!enable_apicv || !lapic_in_kernel(vcpu))
+-		return;
+-
+-	srcu_read_unlock(&vcpu->kvm->srcu, vcpu->srcu_idx);
+-	kvm_request_apicv_update(vcpu->kvm, activate,
+-				 APICV_INHIBIT_REASON_IRQWIN);
+-	vcpu->srcu_idx = srcu_read_lock(&vcpu->kvm->srcu);
+-}
+-
+ void svm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
+ {
+ 	return;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 22376fdd94f8..4e76e78c98ec 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -2992,7 +2992,7 @@ static int interrupt_window_interception(struct kvm_vcpu *vcpu)
+ 	 * In this case AVIC was temporarily disabled for
+ 	 * requesting the IRQ window and we have to re-enable it.
+ 	 */
+-	svm_toggle_avic_for_irq_window(vcpu, true);
++	kvm_request_apicv_update(vcpu->kvm, true, APICV_INHIBIT_REASON_IRQWIN);
+ 
+ 	++vcpu->stat.irq_window_exits;
+ 	return 1;
+@@ -3544,7 +3544,7 @@ static void svm_enable_irq_window(struct kvm_vcpu *vcpu)
+ 		 * via AVIC. In such case, we need to temporarily disable AVIC,
+ 		 * and fallback to injecting IRQ via V_IRQ.
+ 		 */
+-		svm_toggle_avic_for_irq_window(vcpu, false);
++		kvm_request_apicv_update(vcpu->kvm, false, APICV_INHIBIT_REASON_IRQWIN);
+ 		svm_set_vintr(svm);
+ 	}
+ }
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index bd41f2a32838..aae851762b59 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -524,7 +524,6 @@ int avic_ga_log_notifier(u32 ga_tag);
+ void avic_vm_destroy(struct kvm *kvm);
+ int avic_vm_init(struct kvm *kvm);
+ void avic_init_vmcb(struct vcpu_svm *svm);
+-void svm_toggle_avic_for_irq_window(struct kvm_vcpu *vcpu, bool activate);
+ int avic_incomplete_ipi_interception(struct kvm_vcpu *vcpu);
+ int avic_unaccelerated_access_interception(struct kvm_vcpu *vcpu);
+ int avic_init_vcpu(struct vcpu_svm *svm);
+-- 
+2.27.0
+
