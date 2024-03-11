@@ -1,0 +1,81 @@
+From e6c804a848d604438bd9a083939569a7c9ff2bb5 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Thu, 4 Feb 2021 16:57:42 -0800
+Subject: [PATCH] KVM: SVM: Move AVIC vCPU kicking snippet to helper function
+
+Add a helper function to handle kicking non-running vCPUs when sending
+virtual IPIs.  A future patch will change SVM's interception functions
+to take @vcpu instead of @svm, at which piont declaring and modifying
+'vcpu' in a case statement is confusing, and potentially dangerous.
+
+No functional change intended.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20210205005750.3841462-2-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 35 +++++++++++++++++++----------------
+ 1 file changed, 19 insertions(+), 16 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 0ef84d57b72e..78bdcfac4e40 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -298,6 +298,23 @@ static int avic_init_backing_page(struct kvm_vcpu *vcpu)
+ 	return 0;
+ }
+ 
++static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
++				   u32 icrl, u32 icrh)
++{
++	struct kvm_vcpu *vcpu;
++	int i;
++
++	kvm_for_each_vcpu(i, vcpu, kvm) {
++		bool m = kvm_apic_match_dest(vcpu, source,
++					     icrl & APIC_SHORT_MASK,
++					     GET_APIC_DEST_FIELD(icrh),
++					     icrl & APIC_DEST_MASK);
++
++		if (m && !avic_vcpu_is_running(vcpu))
++			kvm_vcpu_wake_up(vcpu);
++	}
++}
++
+ int avic_incomplete_ipi_interception(struct vcpu_svm *svm)
+ {
+ 	u32 icrh = svm->vmcb->control.exit_info_1 >> 32;
+@@ -324,28 +341,14 @@ int avic_incomplete_ipi_interception(struct vcpu_svm *svm)
+ 		kvm_lapic_reg_write(apic, APIC_ICR2, icrh);
+ 		kvm_lapic_reg_write(apic, APIC_ICR, icrl);
+ 		break;
+-	case AVIC_IPI_FAILURE_TARGET_NOT_RUNNING: {
+-		int i;
+-		struct kvm_vcpu *vcpu;
+-		struct kvm *kvm = svm->vcpu.kvm;
+-		struct kvm_lapic *apic = svm->vcpu.arch.apic;
+-
++	case AVIC_IPI_FAILURE_TARGET_NOT_RUNNING:
+ 		/*
+ 		 * At this point, we expect that the AVIC HW has already
+ 		 * set the appropriate IRR bits on the valid target
+ 		 * vcpus. So, we just need to kick the appropriate vcpu.
+ 		 */
+-		kvm_for_each_vcpu(i, vcpu, kvm) {
+-			bool m = kvm_apic_match_dest(vcpu, apic,
+-						     icrl & APIC_SHORT_MASK,
+-						     GET_APIC_DEST_FIELD(icrh),
+-						     icrl & APIC_DEST_MASK);
+-
+-			if (m && !avic_vcpu_is_running(vcpu))
+-				kvm_vcpu_wake_up(vcpu);
+-		}
++		avic_kick_target_vcpus(svm->vcpu.kvm, apic, icrl, icrh);
+ 		break;
+-	}
+ 	case AVIC_IPI_FAILURE_INVALID_TARGET:
+ 		WARN_ONCE(1, "Invalid IPI target: index=%u, vcpu=%d, icr=%#0x:%#0x\n",
+ 			  index, svm->vcpu.vcpu_id, icrh, icrl);
+-- 
+2.34.1
+
