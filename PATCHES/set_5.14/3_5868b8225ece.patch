@@ -1,0 +1,45 @@
+From 5868b8225ecef4ba3f5b17e65984d60bc5fd6254 Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 13 Jul 2021 17:20:18 +0300
+Subject: [PATCH] KVM: SVM: use vmcb01 in svm_refresh_apicv_exec_ctrl
+
+Currently when SVM is enabled in guest CPUID, AVIC is inhibited as soon
+as the guest CPUID is set.
+
+AVIC happens to be fully disabled on all vCPUs by the time any guest
+entry starts (if after migration the entry can be nested).
+
+The reason is that currently we disable avic right away on vCPU from which
+the kvm_request_apicv_update was called and for this case, it happens to be
+called on all vCPUs (by svm_vcpu_after_set_cpuid).
+
+After we stop doing this, AVIC will end up being disabled only when
+KVM_REQ_APICV_UPDATE is processed which is after we done switching to the
+nested guest.
+
+Fix this by just using vmcb01 in svm_refresh_apicv_exec_ctrl for avic
+(which is a right thing to do anyway).
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20210713142023.106183-4-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 1d01da64c333..a8ad78a2faa1 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -646,7 +646,7 @@ static int svm_set_pi_irte_mode(struct kvm_vcpu *vcpu, bool activate)
+ void svm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+-	struct vmcb *vmcb = svm->vmcb;
++	struct vmcb *vmcb = svm->vmcb01.ptr;
+ 	bool activated = kvm_vcpu_apicv_active(vcpu);
+ 
+ 	if (!enable_apicv)
+-- 
+2.34.1
+
