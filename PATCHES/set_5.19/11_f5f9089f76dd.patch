@@ -1,0 +1,87 @@
+From f5f9089f76ddc882b915c5d78e4beeb48dcabd1b Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Mon, 6 Jun 2022 21:08:25 +0300
+Subject: [PATCH] KVM: x86: SVM: remove avic's broken code that updated APIC ID
+
+AVIC is now inhibited if the guest changes the apic id,
+and therefore this code is no longer needed.
+
+There are several ways this code was broken, including:
+
+1. a vCPU was only allowed to change its apic id to an apic id
+of an existing vCPU.
+
+2. After such change, the vCPU whose apic id entry was overwritten,
+could not correctly change its own apic id, because its own
+entry is already overwritten.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20220606180829.102503-4-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/avic.c | 35 -----------------------------------
+ 1 file changed, 35 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 8dffd67f6086..072e2c8cc66a 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -508,35 +508,6 @@ static int avic_handle_ldr_update(struct kvm_vcpu *vcpu)
+ 	return ret;
+ }
+ 
+-static int avic_handle_apic_id_update(struct kvm_vcpu *vcpu)
+-{
+-	u64 *old, *new;
+-	struct vcpu_svm *svm = to_svm(vcpu);
+-	u32 id = kvm_xapic_id(vcpu->arch.apic);
+-
+-	if (vcpu->vcpu_id == id)
+-		return 0;
+-
+-	old = avic_get_physical_id_entry(vcpu, vcpu->vcpu_id);
+-	new = avic_get_physical_id_entry(vcpu, id);
+-	if (!new || !old)
+-		return 1;
+-
+-	/* We need to move physical_id_entry to new offset */
+-	*new = *old;
+-	*old = 0ULL;
+-	to_svm(vcpu)->avic_physical_id_cache = new;
+-
+-	/*
+-	 * Also update the guest physical APIC ID in the logical
+-	 * APIC ID table entry if already setup the LDR.
+-	 */
+-	if (svm->ldr_reg)
+-		avic_handle_ldr_update(vcpu);
+-
+-	return 0;
+-}
+-
+ static void avic_handle_dfr_update(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+@@ -555,10 +526,6 @@ static int avic_unaccel_trap_write(struct kvm_vcpu *vcpu)
+ 				AVIC_UNACCEL_ACCESS_OFFSET_MASK;
+ 
+ 	switch (offset) {
+-	case APIC_ID:
+-		if (avic_handle_apic_id_update(vcpu))
+-			return 0;
+-		break;
+ 	case APIC_LDR:
+ 		if (avic_handle_ldr_update(vcpu))
+ 			return 0;
+@@ -650,8 +617,6 @@ int avic_init_vcpu(struct vcpu_svm *svm)
+ 
+ void avic_apicv_post_state_restore(struct kvm_vcpu *vcpu)
+ {
+-	if (avic_handle_apic_id_update(vcpu) != 0)
+-		return;
+ 	avic_handle_dfr_update(vcpu);
+ 	avic_handle_ldr_update(vcpu);
+ }
+-- 
+2.34.1
+
