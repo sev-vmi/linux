@@ -1,0 +1,133 @@
+From 3743c2f0251743b8ae968329708bbbeefff244cf Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Mon, 6 Jun 2022 21:08:24 +0300
+Subject: [PATCH] KVM: x86: inhibit APICv/AVIC on changes to APIC ID or APIC
+ base
+
+Neither of these settings should be changed by the guest and it is
+a burden to support it in the acceleration code, so just inhibit
+this code instead.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20220606180829.102503-3-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  8 ++++++++
+ arch/x86/kvm/lapic.c            | 27 +++++++++++++++++++++++----
+ arch/x86/kvm/svm/avic.c         |  4 +++-
+ arch/x86/kvm/vmx/vmx.c          |  4 +++-
+ 4 files changed, 37 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 1f9e47b895cf..9217bd6cf0d1 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1076,6 +1076,14 @@ enum kvm_apicv_inhibit {
+ 	 */
+ 	APICV_INHIBIT_REASON_BLOCKIRQ,
+ 
++	/*
++	 * For simplicity, the APIC acceleration is inhibited
++	 * first time either APIC ID or APIC base are changed by the guest
++	 * from their reset values.
++	 */
++	APICV_INHIBIT_REASON_APIC_ID_MODIFIED,
++	APICV_INHIBIT_REASON_APIC_BASE_MODIFIED,
++
+ 	/******************************************************/
+ 	/* INHIBITs that are relevant only to the AMD's AVIC. */
+ 	/******************************************************/
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index f1bdac3f5aa8..0e68b4c937fc 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -2039,6 +2039,19 @@ static void apic_manage_nmi_watchdog(struct kvm_lapic *apic, u32 lvt0_val)
+ 	}
+ }
+ 
++static void kvm_lapic_xapic_id_updated(struct kvm_lapic *apic)
++{
++	struct kvm *kvm = apic->vcpu->kvm;
++
++	if (KVM_BUG_ON(apic_x2apic_mode(apic), kvm))
++		return;
++
++	if (kvm_xapic_id(apic) == apic->vcpu->vcpu_id)
++		return;
++
++	kvm_set_apicv_inhibit(apic->vcpu->kvm, APICV_INHIBIT_REASON_APIC_ID_MODIFIED);
++}
++
+ static int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
+ {
+ 	int ret = 0;
+@@ -2047,10 +2060,12 @@ static int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
+ 
+ 	switch (reg) {
+ 	case APIC_ID:		/* Local APIC ID */
+-		if (!apic_x2apic_mode(apic))
++		if (!apic_x2apic_mode(apic)) {
+ 			kvm_apic_set_xapic_id(apic, val >> 24);
+-		else
++			kvm_lapic_xapic_id_updated(apic);
++		} else {
+ 			ret = 1;
++		}
+ 		break;
+ 
+ 	case APIC_TASKPRI:
+@@ -2336,8 +2351,10 @@ void kvm_lapic_set_base(struct kvm_vcpu *vcpu, u64 value)
+ 			     MSR_IA32_APICBASE_BASE;
+ 
+ 	if ((value & MSR_IA32_APICBASE_ENABLE) &&
+-	     apic->base_address != APIC_DEFAULT_PHYS_BASE)
+-		pr_warn_once("APIC base relocation is unsupported by KVM");
++	     apic->base_address != APIC_DEFAULT_PHYS_BASE) {
++		kvm_set_apicv_inhibit(apic->vcpu->kvm,
++				      APICV_INHIBIT_REASON_APIC_BASE_MODIFIED);
++	}
+ }
+ 
+ void kvm_apic_update_apicv(struct kvm_vcpu *vcpu)
+@@ -2648,6 +2665,8 @@ static int kvm_apic_state_fixup(struct kvm_vcpu *vcpu,
+ 			icr = __kvm_lapic_get_reg64(s->regs, APIC_ICR);
+ 			__kvm_lapic_set_reg(s->regs, APIC_ICR2, icr >> 32);
+ 		}
++	} else {
++		kvm_lapic_xapic_id_updated(vcpu->arch.apic);
+ 	}
+ 
+ 	return 0;
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 54fe03714f8a..8dffd67f6086 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -910,7 +910,9 @@ bool avic_check_apicv_inhibit_reasons(enum kvm_apicv_inhibit reason)
+ 			  BIT(APICV_INHIBIT_REASON_PIT_REINJ) |
+ 			  BIT(APICV_INHIBIT_REASON_X2APIC) |
+ 			  BIT(APICV_INHIBIT_REASON_BLOCKIRQ) |
+-			  BIT(APICV_INHIBIT_REASON_SEV);
++			  BIT(APICV_INHIBIT_REASON_SEV      |
++			  BIT(APICV_INHIBIT_REASON_APIC_ID_MODIFIED) |
++			  BIT(APICV_INHIBIT_REASON_APIC_BASE_MODIFIED));
+ 
+ 	return supported & BIT(reason);
+ }
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 9bd86ecccdab..553dd2317b9c 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -7709,7 +7709,9 @@ static bool vmx_check_apicv_inhibit_reasons(enum kvm_apicv_inhibit reason)
+ 	ulong supported = BIT(APICV_INHIBIT_REASON_DISABLE) |
+ 			  BIT(APICV_INHIBIT_REASON_ABSENT) |
+ 			  BIT(APICV_INHIBIT_REASON_HYPERV) |
+-			  BIT(APICV_INHIBIT_REASON_BLOCKIRQ);
++			  BIT(APICV_INHIBIT_REASON_BLOCKIRQ) |
++			  BIT(APICV_INHIBIT_REASON_APIC_ID_MODIFIED) |
++			  BIT(APICV_INHIBIT_REASON_APIC_BASE_MODIFIED);
+ 
+ 	return supported & BIT(reason);
+ }
+-- 
+2.34.1
+

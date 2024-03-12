@@ -1,0 +1,111 @@
+From 187c8833def8a191c7f01d7932eac1bd2ab84af1 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Thu, 21 Oct 2021 17:49:27 -0700
+Subject: [PATCH] KVM: x86: Use rw_semaphore for APICv lock to allow vCPU
+ parallelism
+
+Use a rw_semaphore instead of a mutex to coordinate APICv updates so that
+vCPUs responding to requests can take the lock for read and run in
+parallel.  Using a mutex forces serialization of vCPUs even though
+kvm_vcpu_update_apicv() only touches data local to that vCPU or is
+protected by a different lock, e.g. SVM's ir_list_lock.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211022004927.1448382-5-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  2 +-
+ arch/x86/kvm/hyperv.c           |  4 ++--
+ arch/x86/kvm/x86.c              | 12 +++++++-----
+ 3 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index d41699e89d1f..c8530ea136aa 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1071,7 +1071,7 @@ struct kvm_arch {
+ 	atomic_t apic_map_dirty;
+ 
+ 	/* Protects apic_access_memslot_enabled and apicv_inhibit_reasons */
+-	struct mutex apicv_update_lock;
++	struct rw_semaphore apicv_update_lock;
+ 
+ 	bool apic_access_memslot_enabled;
+ 	unsigned long apicv_inhibit_reasons;
+diff --git a/arch/x86/kvm/hyperv.c b/arch/x86/kvm/hyperv.c
+index 6f11cda2bfa4..4f15c0165c05 100644
+--- a/arch/x86/kvm/hyperv.c
++++ b/arch/x86/kvm/hyperv.c
+@@ -112,7 +112,7 @@ static void synic_update_vector(struct kvm_vcpu_hv_synic *synic,
+ 	if (!!auto_eoi_old == !!auto_eoi_new)
+ 		return;
+ 
+-	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
++	down_write(&vcpu->kvm->arch.apicv_update_lock);
+ 
+ 	if (auto_eoi_new)
+ 		hv->synic_auto_eoi_used++;
+@@ -123,7 +123,7 @@ static void synic_update_vector(struct kvm_vcpu_hv_synic *synic,
+ 				   !hv->synic_auto_eoi_used,
+ 				   APICV_INHIBIT_REASON_HYPERV);
+ 
+-	mutex_unlock(&vcpu->kvm->arch.apicv_update_lock);
++	up_write(&vcpu->kvm->arch.apicv_update_lock);
+ }
+ 
+ static int synic_set_sint(struct kvm_vcpu_hv_synic *synic, int sint,
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index a09365ecdf01..0377e61b8fc0 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8778,7 +8778,7 @@ EXPORT_SYMBOL_GPL(kvm_apicv_activated);
+ 
+ static void kvm_apicv_init(struct kvm *kvm)
+ {
+-	mutex_init(&kvm->arch.apicv_update_lock);
++	init_rwsem(&kvm->arch.apicv_update_lock);
+ 
+ 	if (enable_apicv)
+ 		clear_bit(APICV_INHIBIT_REASON_DISABLE,
+@@ -9440,7 +9440,7 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+ 	if (!lapic_in_kernel(vcpu))
+ 		return;
+ 
+-	mutex_lock(&vcpu->kvm->arch.apicv_update_lock);
++	down_read(&vcpu->kvm->arch.apicv_update_lock);
+ 
+ 	activate = kvm_apicv_activated(vcpu->kvm);
+ 	if (vcpu->arch.apicv_active == activate)
+@@ -9460,7 +9460,7 @@ void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
+ 		kvm_make_request(KVM_REQ_EVENT, vcpu);
+ 
+ out:
+-	mutex_unlock(&vcpu->kvm->arch.apicv_update_lock);
++	up_read(&vcpu->kvm->arch.apicv_update_lock);
+ }
+ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+ 
+@@ -9468,6 +9468,8 @@ void __kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ {
+ 	unsigned long old, new;
+ 
++	lockdep_assert_held_write(&kvm->arch.apicv_update_lock);
++
+ 	if (!kvm_x86_ops.check_apicv_inhibit_reasons ||
+ 	    !static_call(kvm_x86_check_apicv_inhibit_reasons)(bit))
+ 		return;
+@@ -9506,9 +9508,9 @@ EXPORT_SYMBOL_GPL(__kvm_request_apicv_update);
+ 
+ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ {
+-	mutex_lock(&kvm->arch.apicv_update_lock);
++	down_write(&kvm->arch.apicv_update_lock);
+ 	__kvm_request_apicv_update(kvm, activate, bit);
+-	mutex_unlock(&kvm->arch.apicv_update_lock);
++	up_write(&kvm->arch.apicv_update_lock);
+ }
+ EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
+ 
+-- 
+2.34.1
+

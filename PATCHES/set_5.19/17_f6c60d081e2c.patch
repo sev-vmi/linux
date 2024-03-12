@@ -1,0 +1,78 @@
+From f6c60d081e2ccb4655fa90625b630c860a99d036 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 8 Oct 2021 19:12:04 -0700
+Subject: [PATCH] KVM: Don't block+unblock when halt-polling is successful
+
+Invoke the arch hooks for block+unblock if and only if KVM actually
+attempts to block the vCPU.  The only non-nop implementation is on x86,
+specifically SVM's AVIC, and there is no need to put the AVIC prior to
+halt-polling; KVM x86's kvm_vcpu_has_events() will scour the full vIRR
+to find pending IRQs regardless of whether the AVIC is loaded/"running".
+
+The primary motivation is to allow future cleanup to split out "block"
+from "halt", but this is also likely a small performance boost on x86 SVM
+when halt-polling is successful.
+
+Adjust the post-block path to update "cur" after unblocking, i.e. include
+AVIC load time in halt_wait_ns and halt_wait_hist, so that the behavior
+is consistent.  Moving just the pre-block arch hook would result in only
+the AVIC put latency being included in the halt_wait stats.  There is no
+obvious evidence that one way or the other is correct, so just ensure KVM
+is consistent.
+
+Note, x86 has two separate paths for handling APICv with respect to vCPU
+blocking.  VMX uses hooks in x86's vcpu_block(), while SVM uses the arch
+hooks in kvm_vcpu_block().  Prior to this path, the two paths were more
+or less functionally identical.  That is very much not the case after
+this patch, as the hooks used by VMX _must_ fire before halt-polling.
+x86's entire mess will be cleaned up in future patches.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20211009021236.4122790-12-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ virt/kvm/kvm_main.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 44158a4794d8..cc68d21a8e58 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -3306,8 +3306,6 @@ void kvm_vcpu_block(struct kvm_vcpu *vcpu)
+ 	bool waited = false;
+ 	u64 block_ns;
+ 
+-	kvm_arch_vcpu_blocking(vcpu);
+-
+ 	start = cur = poll_end = ktime_get();
+ 	if (do_halt_poll) {
+ 		ktime_t stop = ktime_add_ns(ktime_get(), vcpu->halt_poll_ns);
+@@ -3324,6 +3322,7 @@ void kvm_vcpu_block(struct kvm_vcpu *vcpu)
+ 		} while (kvm_vcpu_can_poll(cur, stop));
+ 	}
+ 
++	kvm_arch_vcpu_blocking(vcpu);
+ 
+ 	prepare_to_rcuwait(wait);
+ 	for (;;) {
+@@ -3336,6 +3335,9 @@ void kvm_vcpu_block(struct kvm_vcpu *vcpu)
+ 		schedule();
+ 	}
+ 	finish_rcuwait(wait);
++
++	kvm_arch_vcpu_unblocking(vcpu);
++
+ 	cur = ktime_get();
+ 	if (waited) {
+ 		vcpu->stat.generic.halt_wait_ns +=
+@@ -3344,7 +3346,6 @@ void kvm_vcpu_block(struct kvm_vcpu *vcpu)
+ 				ktime_to_ns(cur) - ktime_to_ns(poll_end));
+ 	}
+ out:
+-	kvm_arch_vcpu_unblocking(vcpu);
+ 	block_ns = ktime_to_ns(cur) - ktime_to_ns(start);
+ 
+ 	/*
+-- 
+2.34.1
+

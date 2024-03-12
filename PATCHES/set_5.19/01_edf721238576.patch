@@ -1,0 +1,51 @@
+From edf721238576544ed8daf9943ab398bb27da8e6b Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Tue, 1 Mar 2022 16:36:49 +0200
+Subject: [PATCH] KVM: x86: SVM: allow to force AVIC to be enabled
+
+Apparently on some systems AVIC is disabled in CPUID but still usable.
+
+Allow the user to override the CPUID if the user is willing to
+take the risk.
+
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20220301143650.143749-7-mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/svm.c | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index af1706144bac..f1cb8e991749 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -189,6 +189,9 @@ module_param(tsc_scaling, int, 0444);
+ static bool avic;
+ module_param(avic, bool, 0444);
+ 
++static bool force_avic;
++module_param_unsafe(force_avic, bool, 0444);
++
+ bool __read_mostly dump_invalid_vmcb;
+ module_param(dump_invalid_vmcb, bool, 0644);
+ 
+@@ -4813,10 +4816,14 @@ static __init int svm_hardware_setup(void)
+ 			nrips = false;
+ 	}
+ 
+-	enable_apicv = avic = avic && npt_enabled && boot_cpu_has(X86_FEATURE_AVIC);
++	enable_apicv = avic = avic && npt_enabled && (boot_cpu_has(X86_FEATURE_AVIC) || force_avic);
+ 
+ 	if (enable_apicv) {
+-		pr_info("AVIC enabled\n");
++		if (!boot_cpu_has(X86_FEATURE_AVIC)) {
++			pr_warn("AVIC is not supported in CPUID but force enabled");
++			pr_warn("Your system might crash and burn");
++		} else
++			pr_info("AVIC enabled\n");
+ 
+ 		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
+ 	} else {
+-- 
+2.34.1
+
