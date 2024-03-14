@@ -1,0 +1,79 @@
+From 27cbe7d61898a1d1d39be32e5acff7d4be6e9d87 Mon Sep 17 00:00:00 2001
+From: Liran Alon <liran.alon@oracle.com>
+Date: Mon, 11 Nov 2019 11:16:40 +0200
+Subject: [PATCH] KVM: x86: Prevent set vCPU into INIT/SIPI_RECEIVED state when
+ INIT are latched
+
+Commit 4b9852f4f389 ("KVM: x86: Fix INIT signal handling in various CPU states")
+fixed KVM to also latch pending LAPIC INIT event when vCPU is in VMX
+operation.
+
+However, current API of KVM_SET_MP_STATE allows userspace to put vCPU
+into KVM_MP_STATE_SIPI_RECEIVED or KVM_MP_STATE_INIT_RECEIVED even when
+vCPU is in VMX operation.
+
+Fix this by introducing a util method to check if vCPU state latch INIT
+signals and use it in KVM_SET_MP_STATE handler.
+
+Fixes: 4b9852f4f389 ("KVM: x86: Fix INIT signal handling in various CPU states")
+Reported-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Reviewed-by: Mihai Carabas <mihai.carabas@oracle.com>
+Signed-off-by: Liran Alon <liran.alon@oracle.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 2 +-
+ arch/x86/kvm/x86.c   | 8 ++++++--
+ arch/x86/kvm/x86.h   | 5 +++++
+ 3 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 87b0fcc23ef8..cacfe14717d6 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -2714,7 +2714,7 @@ void kvm_apic_accept_events(struct kvm_vcpu *vcpu)
+ 	 * KVM_MP_STATE_INIT_RECEIVED state), just eat SIPIs
+ 	 * and leave the INIT pending.
+ 	 */
+-	if (is_smm(vcpu) || kvm_x86_ops->apic_init_signal_blocked(vcpu)) {
++	if (kvm_vcpu_latch_init(vcpu)) {
+ 		WARN_ON_ONCE(vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED);
+ 		if (test_bit(KVM_APIC_SIPI, &apic->pending_events))
+ 			clear_bit(KVM_APIC_SIPI, &apic->pending_events);
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index c5886eed3d57..34d9048c881e 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8706,8 +8706,12 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
+ 	    mp_state->mp_state != KVM_MP_STATE_RUNNABLE)
+ 		goto out;
+ 
+-	/* INITs are latched while in SMM */
+-	if ((is_smm(vcpu) || vcpu->arch.smi_pending) &&
++	/*
++	 * KVM_MP_STATE_INIT_RECEIVED means the processor is in
++	 * INIT state; latched init should be reported using
++	 * KVM_SET_VCPU_EVENTS, so reject it here.
++	 */
++	if ((kvm_vcpu_latch_init(vcpu) || vcpu->arch.smi_pending) &&
+ 	    (mp_state->mp_state == KVM_MP_STATE_SIPI_RECEIVED ||
+ 	     mp_state->mp_state == KVM_MP_STATE_INIT_RECEIVED))
+ 		goto out;
+diff --git a/arch/x86/kvm/x86.h b/arch/x86/kvm/x86.h
+index 2b0805012e3c..29391af8871d 100644
+--- a/arch/x86/kvm/x86.h
++++ b/arch/x86/kvm/x86.h
+@@ -258,6 +258,11 @@ static inline bool kvm_check_has_quirk(struct kvm *kvm, u64 quirk)
+ 	return !(kvm->arch.disabled_quirks & quirk);
+ }
+ 
++static inline bool kvm_vcpu_latch_init(struct kvm_vcpu *vcpu)
++{
++	return is_smm(vcpu) || kvm_x86_ops->apic_init_signal_blocked(vcpu);
++}
++
+ void kvm_set_pending_timer(struct kvm_vcpu *vcpu);
+ void kvm_inject_realmode_interrupt(struct kvm_vcpu *vcpu, int irq, int inc_eip);
+ 
+-- 
+2.34.1
+

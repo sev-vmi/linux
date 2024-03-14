@@ -1,0 +1,52 @@
+From ff90afa75573502f3ac05acd5a282d6e3d4cef34 Mon Sep 17 00:00:00 2001
+From: Liran Alon <liran.alon@oracle.com>
+Date: Mon, 11 Nov 2019 11:16:39 +0200
+Subject: [PATCH] KVM: x86: Evaluate latched_init in KVM_SET_VCPU_EVENTS when
+ vCPU not in SMM
+
+Commit 4b9852f4f389 ("KVM: x86: Fix INIT signal handling in various CPU states")
+fixed KVM to also latch pending LAPIC INIT event when vCPU is in VMX
+operation.
+
+However, current API of KVM_SET_VCPU_EVENTS defines this field as
+part of SMM state and only set pending LAPIC INIT event if vCPU is
+specified to be in SMM mode (events->smi.smm is set).
+
+Change KVM_SET_VCPU_EVENTS handler to set pending LAPIC INIT event
+by latched_init field regardless of if vCPU is in SMM mode or not.
+
+Fixes: 4b9852f4f389 ("KVM: x86: Fix INIT signal handling in various CPU states")
+Reviewed-by: Mihai Carabas <mihai.carabas@oracle.com>
+Signed-off-by: Liran Alon <liran.alon@oracle.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 8b3dcaa7985a..c5886eed3d57 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3830,12 +3830,13 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
+ 				vcpu->arch.hflags |= HF_SMM_INSIDE_NMI_MASK;
+ 			else
+ 				vcpu->arch.hflags &= ~HF_SMM_INSIDE_NMI_MASK;
+-			if (lapic_in_kernel(vcpu)) {
+-				if (events->smi.latched_init)
+-					set_bit(KVM_APIC_INIT, &vcpu->arch.apic->pending_events);
+-				else
+-					clear_bit(KVM_APIC_INIT, &vcpu->arch.apic->pending_events);
+-			}
++		}
++
++		if (lapic_in_kernel(vcpu)) {
++			if (events->smi.latched_init)
++				set_bit(KVM_APIC_INIT, &vcpu->arch.apic->pending_events);
++			else
++				clear_bit(KVM_APIC_INIT, &vcpu->arch.apic->pending_events);
+ 		}
+ 	}
+ 
+-- 
+2.34.1
+

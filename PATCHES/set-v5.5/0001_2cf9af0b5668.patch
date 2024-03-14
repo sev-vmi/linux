@@ -1,0 +1,81 @@
+From 2cf9af0b566823de418eb2ff357a2f8233c718e9 Mon Sep 17 00:00:00 2001
+From: "Suthikulpanit, Suravee" <Suravee.Suthikulpanit@amd.com>
+Date: Fri, 13 Sep 2019 19:00:49 +0000
+Subject: [PATCH] kvm: x86: Modify kvm_x86_ops.get_enable_apicv() to use struct
+ kvm parameter
+
+Generally, APICv for all vcpus in the VM are enable/disable in the same
+manner. So, get_enable_apicv() should represent APICv status of the VM
+instead of each VCPU.
+
+Modify kvm_x86_ops.get_enable_apicv() to take struct kvm as parameter
+instead of struct kvm_vcpu.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 2 +-
+ arch/x86/kvm/svm.c              | 4 ++--
+ arch/x86/kvm/vmx/vmx.c          | 2 +-
+ arch/x86/kvm/x86.c              | 2 +-
+ 4 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index cdde7488430d..5d8056ff7390 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1081,7 +1081,7 @@ struct kvm_x86_ops {
+ 	void (*enable_nmi_window)(struct kvm_vcpu *vcpu);
+ 	void (*enable_irq_window)(struct kvm_vcpu *vcpu);
+ 	void (*update_cr8_intercept)(struct kvm_vcpu *vcpu, int tpr, int irr);
+-	bool (*get_enable_apicv)(struct kvm_vcpu *vcpu);
++	bool (*get_enable_apicv)(struct kvm *kvm);
+ 	void (*refresh_apicv_exec_ctrl)(struct kvm_vcpu *vcpu);
+ 	void (*hwapic_irr_update)(struct kvm_vcpu *vcpu, int max_irr);
+ 	void (*hwapic_isr_update)(struct kvm_vcpu *vcpu, int isr);
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 80711b6e3a59..e479ea9bc9da 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -5112,9 +5112,9 @@ static void svm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
+ 	return;
+ }
+ 
+-static bool svm_get_enable_apicv(struct kvm_vcpu *vcpu)
++static bool svm_get_enable_apicv(struct kvm *kvm)
+ {
+-	return avic && irqchip_split(vcpu->kvm);
++	return avic && irqchip_split(kvm);
+ }
+ 
+ static void svm_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 1b022db081cf..e660e28e9ae0 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -3757,7 +3757,7 @@ void pt_update_intercept_for_msr(struct vcpu_vmx *vmx)
+ 	}
+ }
+ 
+-static bool vmx_get_enable_apicv(struct kvm_vcpu *vcpu)
++static bool vmx_get_enable_apicv(struct kvm *kvm)
+ {
+ 	return enable_apicv;
+ }
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 968f09e029e5..368a76648b70 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -9340,7 +9340,7 @@ int kvm_arch_vcpu_init(struct kvm_vcpu *vcpu)
+ 		goto fail_free_pio_data;
+ 
+ 	if (irqchip_in_kernel(vcpu->kvm)) {
+-		vcpu->arch.apicv_active = kvm_x86_ops->get_enable_apicv(vcpu);
++		vcpu->arch.apicv_active = kvm_x86_ops->get_enable_apicv(vcpu->kvm);
+ 		r = kvm_create_lapic(vcpu, lapic_timer_advance_ns);
+ 		if (r < 0)
+ 			goto fail_mmu_destroy;
+-- 
+2.34.1
+

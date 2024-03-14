@@ -1,0 +1,40 @@
+b3dc0695fa40 x86: xen: kvm: Gather the definition of emulate prefixes
+e3b9a9e147db KVM: SVM: Serialize access to the SEV ASID bitmap
+83af5e65a895 KVM: SVM: Guard against DEACTIVATE when performing WBINVD/DF_FLUSH
+0fc5deae03a2 KVM: SVM: Remove unneeded WBINVD and DF_FLUSH when starting SEV guests
+33af3a7ef9e6 KVM: SVM: Reduce WBINVD/DF_FLUSH invocations
+cb3c1e2f3e8d KVM: x86: Add helpers to test/mark reg availability and dirtiness
+34059c257010 KVM: x86: Fold decache_cr3() into cache_reg()
+2cf9af0b5668 kvm: x86: Modify kvm_x86_ops.get_enable_apicv() to use struct kvm parameter
+30ce89acdfe9 KVM: remove redundant code in kvm_arch_vm_ioctl
+7204160eb780 KVM: x86: Introduce vcpu->arch.xsaves_enabled
+78958563d802 KVM: x86: Remove unneeded kvm_vcpu variable, guest_xcr0_loaded
+312a1c87798e KVM: SVM: Use wrmsr for switching between guest and host IA32_XSS on AMD
+139a12cfe1a0 KVM: x86: Move IA32_XSS-swapping on VM-entry/VM-exit to common x86 code
+864e2ab2b46d kvm: x86: Move IA32_XSS to kvm_{get,set}_msr_common
+52297436199d kvm: svm: Update svm_xsaves_supported
+53fafdbb8b21 KVM: x86: switch KVMCLOCK base to monotonic raw clock
+7f7f0d9c0bcb KVM: x86: get rid of odd out jump label in pdptrs_changed
+3dcb2a3fa5a0 KVM: retpolines: x86: eliminate retpoline from svm.c exit handlers
+ff90afa75573 KVM: x86: Evaluate latched_init in KVM_SET_VCPU_EVENTS when vCPU not in SMM
+27cbe7d61898 KVM: x86: Prevent set vCPU into INIT/SIPI_RECEIVED state when INIT are latched
+1a686237d94b KVM: APIC: add helper func to remove duplicate code in kvm_pv_send_ipi
+49d654d85f85 KVM: SVM: Remove check if APICv enabled in SVM update_cr8_intercept() handler
+98ff80f5b788 KVM: x86/vPMU: Rename pmu_ops callbacks from msr_idx to rdpmc_ecx
+b35e5548b411 KVM: x86/vPMU: Add lazy mechanism to release perf_event per vPMC
+7ee30bc132c6 KVM: x86: deliver KVM IOAPIC scan request to target vCPUs
+9a2ae9f6b6bb KVM: x86: Zero the IOAPIC scan request dest vCPUs bitmap
+5637f60b6828 KVM: x86: Unexport kvm_vcpu_reload_apic_access_page()
+cbbaa2727aa3 KVM: x86: fix presentation of TSX feature in ARCH_CAPABILITIES
+de1fca5d6e01 KVM: x86: do not modify masked bits of shared MSRs
+edef5c36b0c7 KVM: x86: implement MSR_IA32_TSX_CTRL effect on CPUID
+c11f83e0626b KVM: vmx: implement MSR_IA32_TSX_CTRL disable RTM functionality
+46f4f0aabc61 Merge branch 'kvm-tsx-ctrl' into HEAD
+db5a95ec166f KVM: x86: remove set but not used variable 'called'
+24885d1d79e2 KVM: x86: Remove a spurious export of a static function
+05c19c2fe17c KVM: x86: Open code shared_msr_update() in its only caller
+ad5996d9a0e8 KVM: x86: Grab KVM's srcu lock when setting nested state
+ceb9e77324fa Merge branch 'x86/core' into perf/core, to resolve conflicts and to pick up completed topic tree
+3f59dbcace56 Merge branch 'perf-core-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+c1de0f25221c KVM x86: Move kvm cpuid support out of svm
+aedc0650f913 Merge tag 'for-linus' of git://git.kernel.org/pub/scm/virt/kvm/kvm

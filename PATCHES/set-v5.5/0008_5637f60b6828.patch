@@ -1,0 +1,29 @@
+From 5637f60b6828c0abfd5fe3cc6922a7106b5366c7 Mon Sep 17 00:00:00 2001
+From: Liran Alon <liran.alon@oracle.com>
+Date: Mon, 18 Nov 2019 19:27:02 +0200
+Subject: [PATCH] KVM: x86: Unexport kvm_vcpu_reload_apic_access_page()
+
+The function is only used in kvm.ko module.
+
+Reviewed-by: Mark Kanda <mark.kanda@oracle.com>
+Signed-off-by: Liran Alon <liran.alon@oracle.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 991dd01ba08b..050961a51f84 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7965,7 +7965,6 @@ void kvm_vcpu_reload_apic_access_page(struct kvm_vcpu *vcpu)
+ 	 */
+ 	put_page(page);
+ }
+-EXPORT_SYMBOL_GPL(kvm_vcpu_reload_apic_access_page);
+ 
+ void __kvm_request_immediate_exit(struct kvm_vcpu *vcpu)
+ {
+-- 
+2.34.1
+
