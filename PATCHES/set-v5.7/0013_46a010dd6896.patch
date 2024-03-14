@@ -1,0 +1,43 @@
+From 46a010dd6896045484c7749b3d30b685c649eb18 Mon Sep 17 00:00:00 2001
+From: Joerg Roedel <jroedel@suse.de>
+Date: Tue, 24 Mar 2020 10:41:51 +0100
+Subject: [PATCH] kVM SVM: Move SVM related files to own sub-directory
+
+Move svm.c and pmu_amd.c into their own arch/x86/kvm/svm/
+subdirectory.
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Message-Id: <20200324094154.32352-2-joro@8bytes.org>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/Makefile                 | 2 +-
+ arch/x86/kvm/{pmu_amd.c => svm/pmu.c} | 0
+ arch/x86/kvm/{ => svm}/svm.c          | 0
+ 3 files changed, 1 insertion(+), 1 deletion(-)
+ rename arch/x86/kvm/{pmu_amd.c => svm/pmu.c} (100%)
+ rename arch/x86/kvm/{ => svm}/svm.c (100%)
+
+diff --git a/arch/x86/kvm/Makefile b/arch/x86/kvm/Makefile
+index e553f0fdd87d..0ef050982c37 100644
+--- a/arch/x86/kvm/Makefile
++++ b/arch/x86/kvm/Makefile
+@@ -14,7 +14,7 @@ kvm-y			+= x86.o emulate.o i8259.o irq.o lapic.o \
+ 			   hyperv.o debugfs.o mmu/mmu.o mmu/page_track.o
+ 
+ kvm-intel-y		+= vmx/vmx.o vmx/vmenter.o vmx/pmu_intel.o vmx/vmcs12.o vmx/evmcs.o vmx/nested.o
+-kvm-amd-y		+= svm.o pmu_amd.o
++kvm-amd-y		+= svm/svm.o svm/pmu.o
+ 
+ obj-$(CONFIG_KVM)	+= kvm.o
+ obj-$(CONFIG_KVM_INTEL)	+= kvm-intel.o
+diff --git a/arch/x86/kvm/pmu_amd.c b/arch/x86/kvm/svm/pmu.c
+similarity index 100%
+rename from arch/x86/kvm/pmu_amd.c
+rename to arch/x86/kvm/svm/pmu.c
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm/svm.c
+similarity index 100%
+rename from arch/x86/kvm/svm.c
+rename to arch/x86/kvm/svm/svm.c
+-- 
+2.34.1
+

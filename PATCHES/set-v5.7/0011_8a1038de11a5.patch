@@ -1,0 +1,36 @@
+From 8a1038de11a5536c76054061837b11648bec5b46 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 26 Mar 2020 10:20:00 +0800
+Subject: [PATCH] KVM: X86: Delay read msr data iff writes ICR MSR
+
+Delay read msr data until we identify guest accesses ICR MSR to avoid
+to penalize all other MSR writes.
+
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1585189202-1708-2-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index a4e62d767dd6..62d614586402 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1595,11 +1595,12 @@ static int handle_fastpath_set_x2apic_icr_irqoff(struct kvm_vcpu *vcpu, u64 data
+ enum exit_fastpath_completion handle_fastpath_set_msr_irqoff(struct kvm_vcpu *vcpu)
+ {
+ 	u32 msr = kvm_rcx_read(vcpu);
+-	u64 data = kvm_read_edx_eax(vcpu);
++	u64 data;
+ 	int ret = 0;
+ 
+ 	switch (msr) {
+ 	case APIC_BASE_MSR + (APIC_ICR >> 4):
++		data = kvm_read_edx_eax(vcpu);
+ 		ret = handle_fastpath_set_x2apic_icr_irqoff(vcpu, data);
+ 		break;
+ 	default:
+-- 
+2.34.1
+

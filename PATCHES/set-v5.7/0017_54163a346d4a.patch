@@ -1,0 +1,113 @@
+From 54163a346d4a0a1b93f2ff6dc1f488419a605fa9 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Wed, 6 May 2020 08:17:53 -0500
+Subject: [PATCH] KVM: Introduce kvm_make_all_cpus_request_except()
+
+This allows making request to all other vcpus except the one
+specified in the parameter.
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <1588771076-73790-2-git-send-email-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/hyperv.c    |  2 +-
+ arch/x86/kvm/x86.c       |  2 +-
+ include/linux/kvm_host.h |  3 +++
+ virt/kvm/kvm_main.c      | 14 +++++++++++---
+ 4 files changed, 16 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/kvm/hyperv.c b/arch/x86/kvm/hyperv.c
+index bcefa9d4e57e..54d4b98b49e1 100644
+--- a/arch/x86/kvm/hyperv.c
++++ b/arch/x86/kvm/hyperv.c
+@@ -1427,7 +1427,7 @@ static u64 kvm_hv_flush_tlb(struct kvm_vcpu *current_vcpu, u64 ingpa,
+ 	 */
+ 	kvm_make_vcpus_request_mask(kvm,
+ 				    KVM_REQ_TLB_FLUSH | KVM_REQUEST_NO_WAKEUP,
+-				    vcpu_mask, &hv_vcpu->tlb_flush);
++				    NULL, vcpu_mask, &hv_vcpu->tlb_flush);
+ 
+ ret_success:
+ 	/* We always do full TLB flush, set rep_done = rep_cnt. */
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index f780af601c5f..ba8edf3b89f6 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8030,7 +8030,7 @@ void kvm_make_scan_ioapic_request_mask(struct kvm *kvm,
+ 	zalloc_cpumask_var(&cpus, GFP_ATOMIC);
+ 
+ 	kvm_make_vcpus_request_mask(kvm, KVM_REQ_SCAN_IOAPIC,
+-				    vcpu_bitmap, cpus);
++				    NULL, vcpu_bitmap, cpus);
+ 
+ 	free_cpumask_var(cpus);
+ }
+diff --git a/include/linux/kvm_host.h b/include/linux/kvm_host.h
+index 01276e3d01b9..131cc1527d68 100644
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -813,8 +813,11 @@ void kvm_flush_remote_tlbs(struct kvm *kvm);
+ void kvm_reload_remote_mmus(struct kvm *kvm);
+ 
+ bool kvm_make_vcpus_request_mask(struct kvm *kvm, unsigned int req,
++				 struct kvm_vcpu *except,
+ 				 unsigned long *vcpu_bitmap, cpumask_var_t tmp);
+ bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req);
++bool kvm_make_all_cpus_request_except(struct kvm *kvm, unsigned int req,
++				      struct kvm_vcpu *except);
+ bool kvm_make_cpus_request_mask(struct kvm *kvm, unsigned int req,
+ 				unsigned long *vcpu_bitmap);
+ 
+diff --git a/virt/kvm/kvm_main.c b/virt/kvm/kvm_main.c
+index 74bdb7bf3295..731c1e517716 100644
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -259,6 +259,7 @@ static inline bool kvm_kick_many_cpus(const struct cpumask *cpus, bool wait)
+ }
+ 
+ bool kvm_make_vcpus_request_mask(struct kvm *kvm, unsigned int req,
++				 struct kvm_vcpu *except,
+ 				 unsigned long *vcpu_bitmap, cpumask_var_t tmp)
+ {
+ 	int i, cpu, me;
+@@ -268,7 +269,8 @@ bool kvm_make_vcpus_request_mask(struct kvm *kvm, unsigned int req,
+ 	me = get_cpu();
+ 
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
+-		if (vcpu_bitmap && !test_bit(i, vcpu_bitmap))
++		if ((vcpu_bitmap && !test_bit(i, vcpu_bitmap)) ||
++		    vcpu == except)
+ 			continue;
+ 
+ 		kvm_make_request(req, vcpu);
+@@ -288,19 +290,25 @@ bool kvm_make_vcpus_request_mask(struct kvm *kvm, unsigned int req,
+ 	return called;
+ }
+ 
+-bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req)
++bool kvm_make_all_cpus_request_except(struct kvm *kvm, unsigned int req,
++				      struct kvm_vcpu *except)
+ {
+ 	cpumask_var_t cpus;
+ 	bool called;
+ 
+ 	zalloc_cpumask_var(&cpus, GFP_ATOMIC);
+ 
+-	called = kvm_make_vcpus_request_mask(kvm, req, NULL, cpus);
++	called = kvm_make_vcpus_request_mask(kvm, req, except, NULL, cpus);
+ 
+ 	free_cpumask_var(cpus);
+ 	return called;
+ }
+ 
++bool kvm_make_all_cpus_request(struct kvm *kvm, unsigned int req)
++{
++	return kvm_make_all_cpus_request_except(kvm, req, NULL);
++}
++
+ #ifndef CONFIG_HAVE_KVM_ARCH_TLB_FLUSH_ALL
+ void kvm_flush_remote_tlbs(struct kvm *kvm)
+ {
+-- 
+2.34.1
+

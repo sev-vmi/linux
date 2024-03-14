@@ -1,0 +1,77 @@
+From cc7f5577adfc766de8613b71e9ae52c053fcca01 Mon Sep 17 00:00:00 2001
+From: Oliver Upton <oupton@google.com>
+Date: Fri, 28 Feb 2020 00:59:04 -0800
+Subject: [PATCH] KVM: SVM: Inhibit APIC virtualization for X2APIC guest
+
+The AVIC does not support guest use of the x2APIC interface. Currently,
+KVM simply chooses to squash the x2APIC feature in the guest's CPUID
+If the AVIC is enabled. Doing so prevents KVM from running a guest
+with greater than 255 vCPUs, as such a guest necessitates the use
+of the x2APIC interface.
+
+Instead, inhibit AVIC enablement on a per-VM basis whenever the x2APIC
+feature is set in the guest's CPUID.
+
+Signed-off-by: Oliver Upton <oupton@google.com>
+Reviewed-by: Jim Mattson <jmattson@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  1 +
+ arch/x86/kvm/svm.c              | 15 +++++++++------
+ 2 files changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 5edf6425c747..f58861e2ece5 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -886,6 +886,7 @@ enum kvm_irqchip_mode {
+ #define APICV_INHIBIT_REASON_NESTED     2
+ #define APICV_INHIBIT_REASON_IRQWIN     3
+ #define APICV_INHIBIT_REASON_PIT_REINJ  4
++#define APICV_INHIBIT_REASON_X2APIC	5
+ 
+ struct kvm_arch {
+ 	unsigned long n_used_mmu_pages;
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index fd3fc9fbefff..0d417276653b 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -6014,7 +6014,13 @@ static void svm_cpuid_update(struct kvm_vcpu *vcpu)
+ 	if (!kvm_vcpu_apicv_active(vcpu))
+ 		return;
+ 
+-	guest_cpuid_clear(vcpu, X86_FEATURE_X2APIC);
++	/*
++	 * AVIC does not work with an x2APIC mode guest. If the X2APIC feature
++	 * is exposed to the guest, disable AVIC.
++	 */
++	if (guest_cpuid_has(vcpu, X86_FEATURE_X2APIC))
++		kvm_request_apicv_update(vcpu->kvm, false,
++					 APICV_INHIBIT_REASON_X2APIC);
+ 
+ 	/*
+ 	 * Currently, AVIC does not work with nested virtualization.
+@@ -6030,10 +6036,6 @@ static void svm_cpuid_update(struct kvm_vcpu *vcpu)
+ static void svm_set_supported_cpuid(u32 func, struct kvm_cpuid_entry2 *entry)
+ {
+ 	switch (func) {
+-	case 0x1:
+-		if (avic)
+-			entry->ecx &= ~F(X2APIC);
+-		break;
+ 	case 0x80000001:
+ 		if (nested)
+ 			entry->ecx |= (1 << 2); /* Set SVM bit */
+@@ -7357,7 +7359,8 @@ static bool svm_check_apicv_inhibit_reasons(ulong bit)
+ 			  BIT(APICV_INHIBIT_REASON_HYPERV) |
+ 			  BIT(APICV_INHIBIT_REASON_NESTED) |
+ 			  BIT(APICV_INHIBIT_REASON_IRQWIN) |
+-			  BIT(APICV_INHIBIT_REASON_PIT_REINJ);
++			  BIT(APICV_INHIBIT_REASON_PIT_REINJ) |
++			  BIT(APICV_INHIBIT_REASON_X2APIC);
+ 
+ 	return supported & BIT(bit);
+ }
+-- 
+2.34.1
+

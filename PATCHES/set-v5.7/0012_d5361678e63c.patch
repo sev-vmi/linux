@@ -1,0 +1,80 @@
+From d5361678e63c8a5e72d75cee6d15b840c44306f2 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 26 Mar 2020 10:20:02 +0800
+Subject: [PATCH] KVM: X86: Micro-optimize IPI fastpath delay
+
+This patch optimizes the virtual IPI fastpath emulation sequence:
+
+write ICR2                          send virtual IPI
+read ICR2                           write ICR2
+send virtual IPI         ==>        write ICR
+write ICR
+
+We can observe ~0.67% performance improvement for IPI microbenchmark
+(https://lore.kernel.org/kvm/20171219085010.4081-1-ynorov@caviumnetworks.com/)
+on Skylake server.
+
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1585189202-1708-4-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 4 ++--
+ arch/x86/kvm/lapic.h | 1 +
+ arch/x86/kvm/x86.c   | 6 +++++-
+ 3 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 41bd49ebe355..b754e49adbc5 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -1241,7 +1241,7 @@ void kvm_apic_set_eoi_accelerated(struct kvm_vcpu *vcpu, int vector)
+ }
+ EXPORT_SYMBOL_GPL(kvm_apic_set_eoi_accelerated);
+ 
+-static void apic_send_ipi(struct kvm_lapic *apic, u32 icr_low, u32 icr_high)
++void kvm_apic_send_ipi(struct kvm_lapic *apic, u32 icr_low, u32 icr_high)
+ {
+ 	struct kvm_lapic_irq irq;
+ 
+@@ -1955,7 +1955,7 @@ int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
+ 	case APIC_ICR:
+ 		/* No delay here, so we always clear the pending bit */
+ 		val &= ~(1 << 12);
+-		apic_send_ipi(apic, val, kvm_lapic_get_reg(apic, APIC_ICR2));
++		kvm_apic_send_ipi(apic, val, kvm_lapic_get_reg(apic, APIC_ICR2));
+ 		kvm_lapic_set_reg(apic, APIC_ICR, val);
+ 		break;
+ 
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index 7581bc2dcd47..40ed6ed22751 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -96,6 +96,7 @@ void kvm_apic_update_apicv(struct kvm_vcpu *vcpu);
+ 
+ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
+ 		struct kvm_lapic_irq *irq, int *r, struct dest_map *dest_map);
++void kvm_apic_send_ipi(struct kvm_lapic *apic, u32 icr_low, u32 icr_high);
+ 
+ u64 kvm_get_apic_base(struct kvm_vcpu *vcpu);
+ int kvm_set_apic_base(struct kvm_vcpu *vcpu, struct msr_data *msr_info);
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 62d614586402..6fa014ccd253 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1585,8 +1585,12 @@ static int handle_fastpath_set_x2apic_icr_irqoff(struct kvm_vcpu *vcpu, u64 data
+ 		((data & APIC_DEST_MASK) == APIC_DEST_PHYSICAL) &&
+ 		((data & APIC_MODE_MASK) == APIC_DM_FIXED)) {
+ 
++		data &= ~(1 << 12);
++		kvm_apic_send_ipi(vcpu->arch.apic, (u32)data, (u32)(data >> 32));
+ 		kvm_lapic_set_reg(vcpu->arch.apic, APIC_ICR2, (u32)(data >> 32));
+-		return kvm_lapic_reg_write(vcpu->arch.apic, APIC_ICR, (u32)data);
++		kvm_lapic_set_reg(vcpu->arch.apic, APIC_ICR, (u32)data);
++		trace_kvm_apic_write(APIC_ICR, (u32)data);
++		return 0;
+ 	}
+ 
+ 	return 1;
+-- 
+2.34.1
+

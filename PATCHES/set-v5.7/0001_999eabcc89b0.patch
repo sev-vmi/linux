@@ -1,0 +1,32 @@
+From 999eabcc89b0e99a699d2946086a97537c3eff14 Mon Sep 17 00:00:00 2001
+From: Miaohe Lin <linmiaohe@huawei.com>
+Date: Thu, 13 Feb 2020 10:37:44 +0800
+Subject: [PATCH] KVM: apic: remove unused function apic_lvt_vector()
+
+The function apic_lvt_vector() is unused now, remove it.
+
+Signed-off-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index e3099c642fec..18a42dcab3c6 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -294,11 +294,6 @@ static inline int apic_lvt_enabled(struct kvm_lapic *apic, int lvt_type)
+ 	return !(kvm_lapic_get_reg(apic, lvt_type) & APIC_LVT_MASKED);
+ }
+ 
+-static inline int apic_lvt_vector(struct kvm_lapic *apic, int lvt_type)
+-{
+-	return kvm_lapic_get_reg(apic, lvt_type) & APIC_VECTOR_MASK;
+-}
+-
+ static inline int apic_lvtt_oneshot(struct kvm_lapic *apic)
+ {
+ 	return apic->lapic_timer.timer_mode == APIC_LVT_TIMER_ONESHOT;
+-- 
+2.34.1
+

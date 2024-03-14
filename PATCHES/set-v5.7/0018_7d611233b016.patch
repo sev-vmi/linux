@@ -1,0 +1,74 @@
+From 7d611233b01613c866259d6e6f44c67f7f7eb2a3 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Wed, 6 May 2020 21:35:39 -0500
+Subject: [PATCH] KVM: SVM: Disable AVIC before setting V_IRQ
+
+The commit 64b5bd270426 ("KVM: nSVM: ignore L1 interrupt window
+while running L2 with V_INTR_MASKING=1") introduced a WARN_ON,
+which checks if AVIC is enabled when trying to set V_IRQ
+in the VMCB for enabling irq window.
+
+The following warning is triggered because the requesting vcpu
+(to deactivate AVIC) does not get to process APICv update request
+for itself until the next #vmexit.
+
+WARNING: CPU: 0 PID: 118232 at arch/x86/kvm/svm/svm.c:1372 enable_irq_window+0x6a/0xa0 [kvm_amd]
+ RIP: 0010:enable_irq_window+0x6a/0xa0 [kvm_amd]
+ Call Trace:
+  kvm_arch_vcpu_ioctl_run+0x6e3/0x1b50 [kvm]
+  ? kvm_vm_ioctl_irq_line+0x27/0x40 [kvm]
+  ? _copy_to_user+0x26/0x30
+  ? kvm_vm_ioctl+0xb3e/0xd90 [kvm]
+  ? set_next_entity+0x78/0xc0
+  kvm_vcpu_ioctl+0x236/0x610 [kvm]
+  ksys_ioctl+0x8a/0xc0
+  __x64_sys_ioctl+0x1a/0x20
+  do_syscall_64+0x58/0x210
+  entry_SYSCALL_64_after_hwframe+0x44/0xa9
+
+Fixes by sending APICV update request to all other vcpus, and
+immediately update APIC for itself.
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Link: https://lkml.org/lkml/2020/5/2/167
+Fixes: 64b5bd270426 ("KVM: nSVM: ignore L1 interrupt window while running L2 with V_INTR_MASKING=1")
+Message-Id: <1588818939-54264-1-git-send-email-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index ba8edf3b89f6..98176b80c481 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8060,6 +8060,7 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+  */
+ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ {
++	struct kvm_vcpu *except;
+ 	unsigned long old, new, expected;
+ 
+ 	if (!kvm_x86_ops.check_apicv_inhibit_reasons ||
+@@ -8084,7 +8085,17 @@ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ 	trace_kvm_apicv_update_request(activate, bit);
+ 	if (kvm_x86_ops.pre_update_apicv_exec_ctrl)
+ 		kvm_x86_ops.pre_update_apicv_exec_ctrl(kvm, activate);
+-	kvm_make_all_cpus_request(kvm, KVM_REQ_APICV_UPDATE);
++
++	/*
++	 * Sending request to update APICV for all other vcpus,
++	 * while update the calling vcpu immediately instead of
++	 * waiting for another #VMEXIT to handle the request.
++	 */
++	except = kvm_get_running_vcpu();
++	kvm_make_all_cpus_request_except(kvm, KVM_REQ_APICV_UPDATE,
++					 except);
++	if (except)
++		kvm_vcpu_update_apicv(except);
+ }
+ EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
+ 
+-- 
+2.34.1
+

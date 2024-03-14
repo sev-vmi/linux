@@ -1,0 +1,72 @@
+From ab56f8e62dafe4c9bec9fc236937c9884bd9966d Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 12 Mar 2020 05:39:28 -0500
+Subject: [PATCH] kvm: svm: Introduce GA Log tracepoint for AVIC
+
+GA Log tracepoint is useful when debugging AVIC performance
+issue as it can be used with perf to count the number of times
+IOMMU AVIC injects interrupts through the slow-path instead of
+directly inject interrupts to the target vcpu.
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm.c   |  1 +
+ arch/x86/kvm/trace.h | 18 ++++++++++++++++++
+ arch/x86/kvm/x86.c   |  1 +
+ 3 files changed, 20 insertions(+)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index c923ad1d7321..7c9ddd680f22 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -1232,6 +1232,7 @@ static int avic_ga_log_notifier(u32 ga_tag)
+ 	u32 vcpu_id = AVIC_GATAG_TO_VCPUID(ga_tag);
+ 
+ 	pr_debug("SVM: %s: vm_id=%#x, vcpu_id=%#x\n", __func__, vm_id, vcpu_id);
++	trace_kvm_avic_ga_log(vm_id, vcpu_id);
+ 
+ 	spin_lock_irqsave(&svm_vm_data_hash_lock, flags);
+ 	hash_for_each_possible(svm_vm_data_hash, kvm_svm, hnode, vm_id) {
+diff --git a/arch/x86/kvm/trace.h b/arch/x86/kvm/trace.h
+index f5b8814d9f83..6c4d9b4caf07 100644
+--- a/arch/x86/kvm/trace.h
++++ b/arch/x86/kvm/trace.h
+@@ -1367,6 +1367,24 @@ TRACE_EVENT(kvm_avic_unaccelerated_access,
+ 		  __entry->vec)
+ );
+ 
++TRACE_EVENT(kvm_avic_ga_log,
++	    TP_PROTO(u32 vmid, u32 vcpuid),
++	    TP_ARGS(vmid, vcpuid),
++
++	TP_STRUCT__entry(
++		__field(u32, vmid)
++		__field(u32, vcpuid)
++	),
++
++	TP_fast_assign(
++		__entry->vmid = vmid;
++		__entry->vcpuid = vcpuid;
++	),
++
++	TP_printk("vmid=%u, vcpuid=%u",
++		  __entry->vmid, __entry->vcpuid)
++);
++
+ TRACE_EVENT(kvm_hv_timer_state,
+ 		TP_PROTO(unsigned int vcpu_id, unsigned int hv_timer_in_use),
+ 		TP_ARGS(vcpu_id, hv_timer_in_use),
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index c67324138e17..a7cb85231330 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -10562,4 +10562,5 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_pml_full);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_pi_irte_update);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_unaccelerated_access);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_incomplete_ipi);
++EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_ga_log);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_apicv_update_request);
+-- 
+2.34.1
+

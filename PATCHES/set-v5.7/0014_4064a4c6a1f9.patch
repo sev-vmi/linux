@@ -1,0 +1,64 @@
+From 4064a4c6a1f90d169f36259647be3a8ddb91fa96 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 2 Apr 2020 16:20:26 +0800
+Subject: [PATCH] KVM: X86: Filter out the broadcast dest for IPI fastpath
+
+Except destination shorthand, a destination value 0xffffffff is used to
+broadcast interrupts, let's also filter out this for single target IPI
+fastpath.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1585815626-28370-1-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 3 ---
+ arch/x86/kvm/lapic.h | 3 +++
+ arch/x86/kvm/x86.c   | 3 ++-
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index ca80daf8f878..9af25c97612a 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -59,9 +59,6 @@
+ #define MAX_APIC_VECTOR			256
+ #define APIC_VECTORS_PER_REG		32
+ 
+-#define APIC_BROADCAST			0xFF
+-#define X2APIC_BROADCAST		0xFFFFFFFFul
+-
+ static bool lapic_timer_advance_dynamic __read_mostly;
+ #define LAPIC_TIMER_ADVANCE_ADJUST_MIN	100	/* clock cycles */
+ #define LAPIC_TIMER_ADVANCE_ADJUST_MAX	10000	/* clock cycles */
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index 40ed6ed22751..a0ffb4331418 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -17,6 +17,9 @@
+ #define APIC_BUS_CYCLE_NS       1
+ #define APIC_BUS_FREQUENCY      (1000000000ULL / APIC_BUS_CYCLE_NS)
+ 
++#define APIC_BROADCAST			0xFF
++#define X2APIC_BROADCAST		0xFFFFFFFFul
++
+ enum lapic_mode {
+ 	LAPIC_MODE_DISABLED = 0,
+ 	LAPIC_MODE_INVALID = X2APIC_ENABLE,
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index b8124b562dea..027dfd278a97 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1586,7 +1586,8 @@ static int handle_fastpath_set_x2apic_icr_irqoff(struct kvm_vcpu *vcpu, u64 data
+ 
+ 	if (((data & APIC_SHORT_MASK) == APIC_DEST_NOSHORT) &&
+ 		((data & APIC_DEST_MASK) == APIC_DEST_PHYSICAL) &&
+-		((data & APIC_MODE_MASK) == APIC_DM_FIXED)) {
++		((data & APIC_MODE_MASK) == APIC_DM_FIXED) &&
++		((u32)(data >> 32) != X2APIC_BROADCAST)) {
+ 
+ 		data &= ~(1 << 12);
+ 		kvm_apic_send_ipi(vcpu->arch.apic, (u32)data, (u32)(data >> 32));
+-- 
+2.34.1
+

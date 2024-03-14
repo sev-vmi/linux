@@ -1,0 +1,61 @@
+From 8e205a6b2a06764a4c2bfc9e1a6a8a8e7920faf8 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Sat, 14 Mar 2020 12:29:23 +0100
+Subject: [PATCH] KVM: X86: correct meaningless kvm_apicv_activated() check
+
+After test_and_set_bit() for kvm->arch.apicv_inhibit_reasons, we will
+always get false when calling kvm_apicv_activated() because it's sure
+apicv_inhibit_reasons do not equal to 0.
+
+What the code wants to do, is check whether APICv was *already* active
+and if so skip the costly request; we can do this using cmpxchg.
+
+Reported-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 25 ++++++++++++++++---------
+ 1 file changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index a7cb85231330..e54c6ad628a8 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8049,19 +8049,26 @@ EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
+  */
+ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ {
++	unsigned long old, new, expected;
++
+ 	if (!kvm_x86_ops->check_apicv_inhibit_reasons ||
+ 	    !kvm_x86_ops->check_apicv_inhibit_reasons(bit))
+ 		return;
+ 
+-	if (activate) {
+-		if (!test_and_clear_bit(bit, &kvm->arch.apicv_inhibit_reasons) ||
+-		    !kvm_apicv_activated(kvm))
+-			return;
+-	} else {
+-		if (test_and_set_bit(bit, &kvm->arch.apicv_inhibit_reasons) ||
+-		    kvm_apicv_activated(kvm))
+-			return;
+-	}
++	old = READ_ONCE(kvm->arch.apicv_inhibit_reasons);
++	do {
++		expected = new = old;
++		if (activate)
++			__clear_bit(bit, &new);
++		else
++			__set_bit(bit, &new);
++		if (new == old)
++			break;
++		old = cmpxchg(&kvm->arch.apicv_inhibit_reasons, expected, new);
++	} while (old != expected);
++
++	if (!!old == !!new)
++		return;
+ 
+ 	trace_kvm_apicv_update_request(activate, bit);
+ 	if (kvm_x86_ops->pre_update_apicv_exec_ctrl)
+-- 
+2.34.1
+

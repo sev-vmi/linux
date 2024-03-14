@@ -1,0 +1,56 @@
+From 78f2145c4d937a4770f365d6f5dc6eb825658d10 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 4 Mar 2020 17:05:44 -0500
+Subject: [PATCH] KVM: nSVM: avoid loss of pending IRQ/NMI before entering L2
+
+This patch reproduces for nSVM the change that was made for nVMX in
+commit b5861e5cf2fc ("KVM: nVMX: Fix loss of pending IRQ/NMI before
+entering L2").  While I do not have a test that breaks without it, I
+cannot see why it would not be necessary since all events are unblocked
+by VMRUN's setting of GIF back to 1.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 80f15a2483f4..c923ad1d7321 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -3576,6 +3576,10 @@ static bool nested_vmcb_checks(struct vmcb *vmcb)
+ static void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
+ 				 struct vmcb *nested_vmcb, struct kvm_host_map *map)
+ {
++	bool evaluate_pending_interrupts =
++		is_intercept(svm, INTERCEPT_VINTR) ||
++		is_intercept(svm, INTERCEPT_IRET);
++
+ 	if (kvm_get_rflags(&svm->vcpu) & X86_EFLAGS_IF)
+ 		svm->vcpu.arch.hflags |= HF_HIF_MASK;
+ 	else
+@@ -3662,7 +3666,21 @@ static void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
+ 
+ 	svm->nested.vmcb = vmcb_gpa;
+ 
++	/*
++	 * If L1 had a pending IRQ/NMI before executing VMRUN,
++	 * which wasn't delivered because it was disallowed (e.g.
++	 * interrupts disabled), L0 needs to evaluate if this pending
++	 * event should cause an exit from L2 to L1 or be delivered
++	 * directly to L2.
++	 *
++	 * Usually this would be handled by the processor noticing an
++	 * IRQ/NMI window request.  However, VMRUN can unblock interrupts
++	 * by implicitly setting GIF, so force L0 to perform pending event
++	 * evaluation by requesting a KVM_REQ_EVENT.
++	 */
+ 	enable_gif(svm);
++	if (unlikely(evaluate_pending_interrupts))
++		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
+ 
+ 	mark_all_dirty(svm->vmcb);
+ }
+-- 
+2.34.1
+
