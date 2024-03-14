@@ -1,0 +1,77 @@
+From 7e3e67a98701cbcb4378b4f69b28a43351ca27c2 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 22 Jan 2020 16:54:37 +0100
+Subject: [PATCH] KVM: x86: remove get_enable_apicv from kvm_x86_ops
+
+It is unused now.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 1 -
+ arch/x86/kvm/svm.c              | 6 ------
+ arch/x86/kvm/vmx/vmx.c          | 6 ------
+ 3 files changed, 13 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 4d57e4b74aae..9945c7bebdf8 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1121,7 +1121,6 @@ struct kvm_x86_ops {
+ 	void (*enable_nmi_window)(struct kvm_vcpu *vcpu);
+ 	void (*enable_irq_window)(struct kvm_vcpu *vcpu);
+ 	void (*update_cr8_intercept)(struct kvm_vcpu *vcpu, int tpr, int irr);
+-	bool (*get_enable_apicv)(struct kvm *kvm);
+ 	void (*refresh_apicv_exec_ctrl)(struct kvm_vcpu *vcpu);
+ 	void (*hwapic_irr_update)(struct kvm_vcpu *vcpu, int max_irr);
+ 	void (*hwapic_isr_update)(struct kvm_vcpu *vcpu, int isr);
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index ed39f72faeaf..b0c343fef14d 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -5147,11 +5147,6 @@ static void svm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
+ 	return;
+ }
+ 
+-static bool svm_get_enable_apicv(struct kvm *kvm)
+-{
+-	return avic && irqchip_split(kvm);
+-}
+-
+ static void svm_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
+ {
+ }
+@@ -7343,7 +7338,6 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
+ 	.enable_irq_window = enable_irq_window,
+ 	.update_cr8_intercept = update_cr8_intercept,
+ 	.set_virtual_apic_mode = svm_set_virtual_apic_mode,
+-	.get_enable_apicv = svm_get_enable_apicv,
+ 	.refresh_apicv_exec_ctrl = svm_refresh_apicv_exec_ctrl,
+ 	.load_eoi_exitmap = svm_load_eoi_exitmap,
+ 	.hwapic_irr_update = svm_hwapic_irr_update,
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 69bd10a563c0..3e18df4cfb34 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -3719,11 +3719,6 @@ void pt_update_intercept_for_msr(struct vcpu_vmx *vmx)
+ 	}
+ }
+ 
+-static bool vmx_get_enable_apicv(struct kvm *kvm)
+-{
+-	return enable_apicv;
+-}
+-
+ static bool vmx_guest_apic_has_interrupt(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+@@ -7787,7 +7782,6 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
+ 	.update_cr8_intercept = update_cr8_intercept,
+ 	.set_virtual_apic_mode = vmx_set_virtual_apic_mode,
+ 	.set_apic_access_page_addr = vmx_set_apic_access_page_addr,
+-	.get_enable_apicv = vmx_get_enable_apicv,
+ 	.refresh_apicv_exec_ctrl = vmx_refresh_apicv_exec_ctrl,
+ 	.load_eoi_exitmap = vmx_load_eoi_exitmap,
+ 	.apicv_post_state_restore = vmx_apicv_post_state_restore,
+-- 
+2.34.1
+

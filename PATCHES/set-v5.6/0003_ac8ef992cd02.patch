@@ -1,0 +1,71 @@
+From ac8ef992cd02cdb8290ca788746d283fe3092500 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 4 Dec 2019 20:07:19 +0100
+Subject: [PATCH] KVM: X86: Drop KVM_APIC_SHORT_MASK and KVM_APIC_DEST_MASK
+
+We have both APIC_SHORT_MASK and KVM_APIC_SHORT_MASK defined for the
+shorthand mask.  Similarly, we have both APIC_DEST_MASK and
+KVM_APIC_DEST_MASK defined for the destination mode mask.
+
+Drop the KVM_APIC_* macros and replace the only user of them to use
+the APIC_DEST_* macros instead.  At the meantime, move APIC_SHORT_MASK
+and APIC_DEST_MASK from lapic.c to lapic.h.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 3 ---
+ arch/x86/kvm/lapic.h | 5 +++--
+ arch/x86/kvm/svm.c   | 4 ++--
+ 3 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 1eabe58bb6d5..805c18178bbf 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -56,9 +56,6 @@
+ #define APIC_VERSION			(0x14UL | ((KVM_APIC_LVT_NUM - 1) << 16))
+ #define LAPIC_MMIO_LENGTH		(1 << 12)
+ /* followed define is not in apicdef.h */
+-#define APIC_SHORT_MASK			0xc0000
+-#define APIC_DEST_NOSHORT		0x0
+-#define APIC_DEST_MASK			0x800
+ #define MAX_APIC_VECTOR			256
+ #define APIC_VECTORS_PER_REG		32
+ 
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index 0b9bbadd1f3c..5a9f29ed9a4b 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -10,8 +10,9 @@
+ #define KVM_APIC_SIPI		1
+ #define KVM_APIC_LVT_NUM	6
+ 
+-#define KVM_APIC_SHORT_MASK	0xc0000
+-#define KVM_APIC_DEST_MASK	0x800
++#define APIC_SHORT_MASK			0xc0000
++#define APIC_DEST_NOSHORT		0x0
++#define APIC_DEST_MASK			0x800
+ 
+ #define APIC_BUS_CYCLE_NS       1
+ #define APIC_BUS_FREQUENCY      (1000000000ULL / APIC_BUS_CYCLE_NS)
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 122d4ce3b1ab..8f1b715dfde8 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -4519,9 +4519,9 @@ static int avic_incomplete_ipi_interception(struct vcpu_svm *svm)
+ 		 */
+ 		kvm_for_each_vcpu(i, vcpu, kvm) {
+ 			bool m = kvm_apic_match_dest(vcpu, apic,
+-						     icrl & KVM_APIC_SHORT_MASK,
++						     icrl & APIC_SHORT_MASK,
+ 						     GET_APIC_DEST_FIELD(icrh),
+-						     icrl & KVM_APIC_DEST_MASK);
++						     icrl & APIC_DEST_MASK);
+ 
+ 			if (m && !avic_vcpu_is_running(vcpu))
+ 				kvm_vcpu_wake_up(vcpu);
+-- 
+2.34.1
+

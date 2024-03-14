@@ -1,0 +1,268 @@
+From 1e9e2622a149e88bd636c9f8fb346a6e6aefeae0 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 21 Nov 2019 11:17:11 +0800
+Subject: [PATCH] KVM: VMX: FIXED+PHYSICAL mode single target IPI fastpath
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+ICR and TSCDEADLINE MSRs write cause the main MSRs write vmexits in our
+product observation, multicast IPIs are not as common as unicast IPI like
+RESCHEDULE_VECTOR and CALL_FUNCTION_SINGLE_VECTOR etc.
+
+This patch introduce a mechanism to handle certain performance-critical
+WRMSRs in a very early stage of KVM VMExit handler.
+
+This mechanism is specifically used for accelerating writes to x2APIC ICR
+that attempt to send a virtual IPI with physical destination-mode, fixed
+delivery-mode and single target. Which was found as one of the main causes
+of VMExits for Linux workloads.
+
+The reason this mechanism significantly reduce the latency of such virtual
+IPIs is by sending the physical IPI to the target vCPU in a very early stage
+of KVM VMExit handler, before host interrupts are enabled and before expensive
+operations such as reacquiring KVM’s SRCU lock.
+Latency is reduced even more when KVM is able to use APICv posted-interrupt
+mechanism (which allows to deliver the virtual IPI directly to target vCPU
+without the need to kick it to host).
+
+Testing on Xeon Skylake server:
+
+The virtual IPI latency from sender send to receiver receive reduces
+more than 200+ cpu cycles.
+
+Reviewed-by: Liran Alon <liran.alon@oracle.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>
+Cc: Radim Krčmář <rkrcmar@redhat.com>
+Cc: Sean Christopherson <sean.j.christopherson@intel.com>
+Cc: Vitaly Kuznetsov <vkuznets@redhat.com>
+Cc: Liran Alon <liran.alon@oracle.com>
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Kishon Vijay Abraham I <kvijayab@amd.com>
+---
+ arch/x86/include/asm/kvm_host.h | 11 ++++++--
+ arch/x86/kvm/svm.c              | 15 ++++++++---
+ arch/x86/kvm/vmx/vmx.c          | 14 +++++++---
+ arch/x86/kvm/x86.c              | 48 +++++++++++++++++++++++++++++++--
+ arch/x86/kvm/x86.h              |  1 +
+ 5 files changed, 78 insertions(+), 11 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 159a28512e4c..e2b793477243 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -175,6 +175,11 @@ enum {
+ 	VCPU_SREG_LDTR,
+ };
+ 
++enum exit_fastpath_completion {
++	EXIT_FASTPATH_NONE,
++	EXIT_FASTPATH_SKIP_EMUL_INS,
++};
++
+ #include <asm/kvm_emulate.h>
+ 
+ #define KVM_NR_MEM_OBJS 40
+@@ -1095,7 +1100,8 @@ struct kvm_x86_ops {
+ 	void (*tlb_flush_gva)(struct kvm_vcpu *vcpu, gva_t addr);
+ 
+ 	void (*run)(struct kvm_vcpu *vcpu);
+-	int (*handle_exit)(struct kvm_vcpu *vcpu);
++	int (*handle_exit)(struct kvm_vcpu *vcpu,
++		enum exit_fastpath_completion exit_fastpath);
+ 	int (*skip_emulated_instruction)(struct kvm_vcpu *vcpu);
+ 	void (*set_interrupt_shadow)(struct kvm_vcpu *vcpu, int mask);
+ 	u32 (*get_interrupt_shadow)(struct kvm_vcpu *vcpu);
+@@ -1145,7 +1151,8 @@ struct kvm_x86_ops {
+ 	int (*check_intercept)(struct kvm_vcpu *vcpu,
+ 			       struct x86_instruction_info *info,
+ 			       enum x86_intercept_stage stage);
+-	void (*handle_exit_irqoff)(struct kvm_vcpu *vcpu);
++	void (*handle_exit_irqoff)(struct kvm_vcpu *vcpu,
++		enum exit_fastpath_completion *exit_fastpath);
+ 	bool (*mpx_supported)(void);
+ 	bool (*xsaves_supported)(void);
+ 	bool (*umip_emulated)(void);
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 8f1b715dfde8..9583ae7ae218 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -4935,7 +4935,8 @@ static void svm_get_exit_info(struct kvm_vcpu *vcpu, u64 *info1, u64 *info2)
+ 	*info2 = control->exit_info_2;
+ }
+ 
+-static int handle_exit(struct kvm_vcpu *vcpu)
++static int handle_exit(struct kvm_vcpu *vcpu,
++	enum exit_fastpath_completion exit_fastpath)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 	struct kvm_run *kvm_run = vcpu->run;
+@@ -4993,7 +4994,10 @@ static int handle_exit(struct kvm_vcpu *vcpu)
+ 		       __func__, svm->vmcb->control.exit_int_info,
+ 		       exit_code);
+ 
+-	if (exit_code >= ARRAY_SIZE(svm_exit_handlers)
++	if (exit_fastpath == EXIT_FASTPATH_SKIP_EMUL_INS) {
++		kvm_skip_emulated_instruction(vcpu);
++		return 1;
++	} else if (exit_code >= ARRAY_SIZE(svm_exit_handlers)
+ 	    || !svm_exit_handlers[exit_code]) {
+ 		vcpu_unimpl(vcpu, "svm: unexpected exit reason 0x%x\n", exit_code);
+ 		dump_vmcb(vcpu);
+@@ -6186,9 +6190,12 @@ static int svm_check_intercept(struct kvm_vcpu *vcpu,
+ 	return ret;
+ }
+ 
+-static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu)
++static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu,
++	enum exit_fastpath_completion *exit_fastpath)
+ {
+-
++	if (!is_guest_mode(vcpu) &&
++		to_svm(vcpu)->vmcb->control.exit_code == EXIT_REASON_MSR_WRITE)
++		*exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
+ }
+ 
+ static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index b5a0c2e05825..48a3af8fac0f 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -5814,7 +5814,8 @@ void dump_vmcs(void)
+  * The guest has exited.  See if we can fix it or if we need userspace
+  * assistance.
+  */
+-static int vmx_handle_exit(struct kvm_vcpu *vcpu)
++static int vmx_handle_exit(struct kvm_vcpu *vcpu,
++	enum exit_fastpath_completion exit_fastpath)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 	u32 exit_reason = vmx->exit_reason;
+@@ -5900,7 +5901,10 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
+ 		}
+ 	}
+ 
+-	if (exit_reason < kvm_vmx_max_exit_handlers
++	if (exit_fastpath == EXIT_FASTPATH_SKIP_EMUL_INS) {
++		kvm_skip_emulated_instruction(vcpu);
++		return 1;
++	} else if (exit_reason < kvm_vmx_max_exit_handlers
+ 	    && kvm_vmx_exit_handlers[exit_reason]) {
+ #ifdef CONFIG_RETPOLINE
+ 		if (exit_reason == EXIT_REASON_MSR_WRITE)
+@@ -6248,7 +6252,8 @@ static void handle_external_interrupt_irqoff(struct kvm_vcpu *vcpu)
+ }
+ STACK_FRAME_NON_STANDARD(handle_external_interrupt_irqoff);
+ 
+-static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu)
++static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu,
++	enum exit_fastpath_completion *exit_fastpath)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 
+@@ -6256,6 +6261,9 @@ static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu)
+ 		handle_external_interrupt_irqoff(vcpu);
+ 	else if (vmx->exit_reason == EXIT_REASON_EXCEPTION_NMI)
+ 		handle_exception_nmi_irqoff(vmx);
++	else if (!is_guest_mode(vcpu) &&
++		vmx->exit_reason == EXIT_REASON_MSR_WRITE)
++		*exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
+ }
+ 
+ static bool vmx_has_emulated_msr(int index)
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 93bbbce67a03..33e165c0351d 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1525,6 +1525,49 @@ int kvm_emulate_wrmsr(struct kvm_vcpu *vcpu)
+ }
+ EXPORT_SYMBOL_GPL(kvm_emulate_wrmsr);
+ 
++/*
++ * The fast path for frequent and performance sensitive wrmsr emulation,
++ * i.e. the sending of IPI, sending IPI early in the VM-Exit flow reduces
++ * the latency of virtual IPI by avoiding the expensive bits of transitioning
++ * from guest to host, e.g. reacquiring KVM's SRCU lock. In contrast to the
++ * other cases which must be called after interrupts are enabled on the host.
++ */
++static int handle_fastpath_set_x2apic_icr_irqoff(struct kvm_vcpu *vcpu, u64 data)
++{
++	if (lapic_in_kernel(vcpu) && apic_x2apic_mode(vcpu->arch.apic) &&
++		((data & APIC_DEST_MASK) == APIC_DEST_PHYSICAL) &&
++		((data & APIC_MODE_MASK) == APIC_DM_FIXED)) {
++
++		kvm_lapic_set_reg(vcpu->arch.apic, APIC_ICR2, (u32)(data >> 32));
++		return kvm_lapic_reg_write(vcpu->arch.apic, APIC_ICR, (u32)data);
++	}
++
++	return 1;
++}
++
++enum exit_fastpath_completion handle_fastpath_set_msr_irqoff(struct kvm_vcpu *vcpu)
++{
++	u32 msr = kvm_rcx_read(vcpu);
++	u64 data = kvm_read_edx_eax(vcpu);
++	int ret = 0;
++
++	switch (msr) {
++	case APIC_BASE_MSR + (APIC_ICR >> 4):
++		ret = handle_fastpath_set_x2apic_icr_irqoff(vcpu, data);
++		break;
++	default:
++		return EXIT_FASTPATH_NONE;
++	}
++
++	if (!ret) {
++		trace_kvm_msr_write(msr, data);
++		return EXIT_FASTPATH_SKIP_EMUL_INS;
++	}
++
++	return EXIT_FASTPATH_NONE;
++}
++EXPORT_SYMBOL_GPL(handle_fastpath_set_msr_irqoff);
++
+ /*
+  * Adapt set_msr() to msr_io()'s calling convention
+  */
+@@ -7995,6 +8038,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	bool req_int_win =
+ 		dm_request_for_irq_injection(vcpu) &&
+ 		kvm_cpu_accept_dm_intr(vcpu);
++	enum exit_fastpath_completion exit_fastpath = EXIT_FASTPATH_NONE;
+ 
+ 	bool req_immediate_exit = false;
+ 
+@@ -8241,7 +8285,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	vcpu->mode = OUTSIDE_GUEST_MODE;
+ 	smp_wmb();
+ 
+-	kvm_x86_ops->handle_exit_irqoff(vcpu);
++	kvm_x86_ops->handle_exit_irqoff(vcpu, &exit_fastpath);
+ 
+ 	/*
+ 	 * Consume any pending interrupts, including the possible source of
+@@ -8285,7 +8329,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 		kvm_lapic_sync_from_vapic(vcpu);
+ 
+ 	vcpu->arch.gpa_available = false;
+-	r = kvm_x86_ops->handle_exit(vcpu);
++	r = kvm_x86_ops->handle_exit(vcpu, exit_fastpath);
+ 	return r;
+ 
+ cancel_injection:
+diff --git a/arch/x86/kvm/x86.h b/arch/x86/kvm/x86.h
+index cab5e71f0f0f..9805cf2c6b35 100644
+--- a/arch/x86/kvm/x86.h
++++ b/arch/x86/kvm/x86.h
+@@ -291,6 +291,7 @@ bool kvm_mtrr_check_gfn_range_consistency(struct kvm_vcpu *vcpu, gfn_t gfn,
+ bool kvm_vector_hashing_enabled(void);
+ int x86_emulate_instruction(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
+ 			    int emulation_type, void *insn, int insn_len);
++enum exit_fastpath_completion handle_fastpath_set_msr_irqoff(struct kvm_vcpu *vcpu);
+ 
+ #define KVM_SUPPORTED_XCR0     (XFEATURE_MASK_FP | XFEATURE_MASK_SSE \
+ 				| XFEATURE_MASK_YMM | XFEATURE_MASK_BNDREGS \
+-- 
+2.34.1
+

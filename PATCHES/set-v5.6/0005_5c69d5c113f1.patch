@@ -1,0 +1,104 @@
+From 5c69d5c113f15a7a9956185b815d14d50f3efad4 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 4 Dec 2019 20:07:20 +0100
+Subject: [PATCH] KVM: X86: Fix callers of kvm_apic_match_dest() to use correct
+ macros
+
+Callers of kvm_apic_match_dest() should always pass in APIC_DEST_*
+macros for either dest_mode and short_hand parameters.  Fix up all the
+callers of kvm_apic_match_dest() that are not following the rule.
+
+Since at it, rename the parameter from short_hand to shorthand in
+kvm_apic_match_dest(), as suggested by Vitaly.
+
+Reported-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Reported-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/ioapic.c   | 11 +++++++----
+ arch/x86/kvm/irq_comm.c |  3 ++-
+ arch/x86/kvm/lapic.c    |  4 ++--
+ arch/x86/kvm/lapic.h    |  2 +-
+ 4 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/kvm/ioapic.c b/arch/x86/kvm/ioapic.c
+index e623a4f8d27e..f53daeaaeb37 100644
+--- a/arch/x86/kvm/ioapic.c
++++ b/arch/x86/kvm/ioapic.c
+@@ -108,8 +108,9 @@ static void __rtc_irq_eoi_tracking_restore_one(struct kvm_vcpu *vcpu)
+ 	union kvm_ioapic_redirect_entry *e;
+ 
+ 	e = &ioapic->redirtbl[RTC_GSI];
+-	if (!kvm_apic_match_dest(vcpu, NULL, 0,	e->fields.dest_id,
+-				e->fields.dest_mode))
++	if (!kvm_apic_match_dest(vcpu, NULL, APIC_DEST_NOSHORT,
++				 e->fields.dest_id,
++				 kvm_lapic_irq_dest_mode(!!e->fields.dest_mode)))
+ 		return;
+ 
+ 	new_val = kvm_apic_pending_eoi(vcpu, e->fields.vector);
+@@ -250,8 +251,10 @@ void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu, ulong *ioapic_handled_vectors)
+ 		if (e->fields.trig_mode == IOAPIC_LEVEL_TRIG ||
+ 		    kvm_irq_has_notifier(ioapic->kvm, KVM_IRQCHIP_IOAPIC, index) ||
+ 		    index == RTC_GSI) {
+-			if (kvm_apic_match_dest(vcpu, NULL, 0,
+-			             e->fields.dest_id, e->fields.dest_mode) ||
++			u16 dm = kvm_lapic_irq_dest_mode(!!e->fields.dest_mode);
++
++			if (kvm_apic_match_dest(vcpu, NULL, APIC_DEST_NOSHORT,
++						e->fields.dest_id, dm) ||
+ 			    kvm_apic_pending_eoi(vcpu, e->fields.vector))
+ 				__set_bit(e->fields.vector,
+ 					  ioapic_handled_vectors);
+diff --git a/arch/x86/kvm/irq_comm.c b/arch/x86/kvm/irq_comm.c
+index 22108ed66a76..7d083f71fc8e 100644
+--- a/arch/x86/kvm/irq_comm.c
++++ b/arch/x86/kvm/irq_comm.c
+@@ -417,7 +417,8 @@ void kvm_scan_ioapic_routes(struct kvm_vcpu *vcpu,
+ 
+ 			kvm_set_msi_irq(vcpu->kvm, entry, &irq);
+ 
+-			if (irq.level && kvm_apic_match_dest(vcpu, NULL, 0,
++			if (irq.level &&
++			    kvm_apic_match_dest(vcpu, NULL, APIC_DEST_NOSHORT,
+ 						irq.dest_id, irq.dest_mode))
+ 				__set_bit(irq.vector, ioapic_handled_vectors);
+ 		}
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 805c18178bbf..679692b55f6d 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -789,13 +789,13 @@ static u32 kvm_apic_mda(struct kvm_vcpu *vcpu, unsigned int dest_id,
+ }
+ 
+ bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
+-			   int short_hand, unsigned int dest, int dest_mode)
++			   int shorthand, unsigned int dest, int dest_mode)
+ {
+ 	struct kvm_lapic *target = vcpu->arch.apic;
+ 	u32 mda = kvm_apic_mda(vcpu, dest, source, target);
+ 
+ 	ASSERT(target);
+-	switch (short_hand) {
++	switch (shorthand) {
+ 	case APIC_DEST_NOSHORT:
+ 		if (dest_mode == APIC_DEST_PHYSICAL)
+ 			return kvm_apic_match_physical_addr(target, mda);
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index 5a9f29ed9a4b..ec730ce7a344 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -83,7 +83,7 @@ int kvm_lapic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val);
+ int kvm_lapic_reg_read(struct kvm_lapic *apic, u32 offset, int len,
+ 		       void *data);
+ bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
+-			   int short_hand, unsigned int dest, int dest_mode);
++			   int shorthand, unsigned int dest, int dest_mode);
+ int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2);
+ bool __kvm_apic_update_irr(u32 *pir, void *regs, int *max_irr);
+ bool kvm_apic_update_irr(struct kvm_vcpu *vcpu, u32 *pir, int *max_irr);
+-- 
+2.34.1
+

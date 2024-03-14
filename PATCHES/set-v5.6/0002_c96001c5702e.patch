@@ -1,0 +1,117 @@
+From c96001c5702e66b64e0ffe533aa19d6567ce15bc Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 4 Dec 2019 20:07:18 +0100
+Subject: [PATCH] KVM: X86: Use APIC_DEST_* macros properly in
+ kvm_lapic_irq.dest_mode
+
+We were using either APIC_DEST_PHYSICAL|APIC_DEST_LOGICAL or 0|1 to
+fill in kvm_lapic_irq.dest_mode.  It's fine only because in most cases
+when we check against dest_mode it's against APIC_DEST_PHYSICAL (which
+equals to 0).  However, that's not consistent.  We'll have problem
+when we want to start checking against APIC_DEST_LOGICAL, which does
+not equals to 1.
+
+This patch firstly introduces kvm_lapic_irq_dest_mode() helper to take
+any boolean of destination mode and return the APIC_DEST_* macro.
+Then, it replaces the 0|1 settings of irq.dest_mode with the helper.
+
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 5 +++++
+ arch/x86/kvm/ioapic.c           | 9 ++++++---
+ arch/x86/kvm/irq_comm.c         | 7 ++++---
+ arch/x86/kvm/x86.c              | 2 +-
+ 4 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index b79cd6aa4075..2893eae5df9f 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1022,6 +1022,11 @@ struct kvm_lapic_irq {
+ 	bool msi_redir_hint;
+ };
+ 
++static inline u16 kvm_lapic_irq_dest_mode(bool dest_mode_logical)
++{
++	return dest_mode_logical ? APIC_DEST_LOGICAL : APIC_DEST_PHYSICAL;
++}
++
+ struct kvm_x86_ops {
+ 	int (*cpu_has_kvm_support)(void);          /* __init */
+ 	int (*disabled_by_bios)(void);             /* __init */
+diff --git a/arch/x86/kvm/ioapic.c b/arch/x86/kvm/ioapic.c
+index 9fd2dd89a1c5..e623a4f8d27e 100644
+--- a/arch/x86/kvm/ioapic.c
++++ b/arch/x86/kvm/ioapic.c
+@@ -331,7 +331,8 @@ static void ioapic_write_indirect(struct kvm_ioapic *ioapic, u32 val)
+ 			irq.vector = e->fields.vector;
+ 			irq.delivery_mode = e->fields.delivery_mode << 8;
+ 			irq.dest_id = e->fields.dest_id;
+-			irq.dest_mode = e->fields.dest_mode;
++			irq.dest_mode =
++			    kvm_lapic_irq_dest_mode(!!e->fields.dest_mode);
+ 			bitmap_zero(&vcpu_bitmap, 16);
+ 			kvm_bitmap_or_dest_vcpus(ioapic->kvm, &irq,
+ 						 &vcpu_bitmap);
+@@ -343,7 +344,9 @@ static void ioapic_write_indirect(struct kvm_ioapic *ioapic, u32 val)
+ 				 * keep ioapic_handled_vectors synchronized.
+ 				 */
+ 				irq.dest_id = old_dest_id;
+-				irq.dest_mode = old_dest_mode;
++				irq.dest_mode =
++				    kvm_lapic_irq_dest_mode(
++					!!e->fields.dest_mode);
+ 				kvm_bitmap_or_dest_vcpus(ioapic->kvm, &irq,
+ 							 &vcpu_bitmap);
+ 			}
+@@ -369,7 +372,7 @@ static int ioapic_service(struct kvm_ioapic *ioapic, int irq, bool line_status)
+ 
+ 	irqe.dest_id = entry->fields.dest_id;
+ 	irqe.vector = entry->fields.vector;
+-	irqe.dest_mode = entry->fields.dest_mode;
++	irqe.dest_mode = kvm_lapic_irq_dest_mode(!!entry->fields.dest_mode);
+ 	irqe.trig_mode = entry->fields.trig_mode;
+ 	irqe.delivery_mode = entry->fields.delivery_mode << 8;
+ 	irqe.level = 1;
+diff --git a/arch/x86/kvm/irq_comm.c b/arch/x86/kvm/irq_comm.c
+index 8ecd48d31800..22108ed66a76 100644
+--- a/arch/x86/kvm/irq_comm.c
++++ b/arch/x86/kvm/irq_comm.c
+@@ -52,8 +52,8 @@ int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
+ 	unsigned long dest_vcpu_bitmap[BITS_TO_LONGS(KVM_MAX_VCPUS)];
+ 	unsigned int dest_vcpus = 0;
+ 
+-	if (irq->dest_mode == 0 && irq->dest_id == 0xff &&
+-			kvm_lowest_prio_delivery(irq)) {
++	if (irq->dest_mode == APIC_DEST_PHYSICAL &&
++	    irq->dest_id == 0xff && kvm_lowest_prio_delivery(irq)) {
+ 		printk(KERN_INFO "kvm: apic: phys broadcast and lowest prio\n");
+ 		irq->delivery_mode = APIC_DM_FIXED;
+ 	}
+@@ -114,7 +114,8 @@ void kvm_set_msi_irq(struct kvm *kvm, struct kvm_kernel_irq_routing_entry *e,
+ 		irq->dest_id |= MSI_ADDR_EXT_DEST_ID(e->msi.address_hi);
+ 	irq->vector = (e->msi.data &
+ 			MSI_DATA_VECTOR_MASK) >> MSI_DATA_VECTOR_SHIFT;
+-	irq->dest_mode = (1 << MSI_ADDR_DEST_MODE_SHIFT) & e->msi.address_lo;
++	irq->dest_mode = kvm_lapic_irq_dest_mode(
++	    !!((1 << MSI_ADDR_DEST_MODE_SHIFT) & e->msi.address_lo));
+ 	irq->trig_mode = (1 << MSI_DATA_TRIGGER_SHIFT) & e->msi.data;
+ 	irq->delivery_mode = e->msi.data & 0x700;
+ 	irq->msi_redir_hint = ((e->msi.address_lo
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index cf917139de6b..f4e477e6c954 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7358,7 +7358,7 @@ static void kvm_pv_kick_cpu_op(struct kvm *kvm, unsigned long flags, int apicid)
+ 	struct kvm_lapic_irq lapic_irq;
+ 
+ 	lapic_irq.shorthand = 0;
+-	lapic_irq.dest_mode = 0;
++	lapic_irq.dest_mode = APIC_DEST_PHYSICAL;
+ 	lapic_irq.level = 0;
+ 	lapic_irq.dest_id = apicid;
+ 	lapic_irq.msi_redir_hint = false;
+-- 
+2.34.1
+

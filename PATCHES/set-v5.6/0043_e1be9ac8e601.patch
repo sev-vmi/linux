@@ -1,0 +1,43 @@
+From e1be9ac8e6014a9b0a216aebae7250f9863e9fc3 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 26 Mar 2020 10:20:01 +0800
+Subject: [PATCH] KVM: X86: Narrow down the IPI fastpath to single target IPI
+
+The original single target IPI fastpath patch forgot to filter the
+ICR destination shorthand field. Multicast IPI is not suitable for
+this feature since wakeup the multiple sleeping vCPUs will extend
+the interrupt disabled time, it especially worse in the over-subscribe
+and VM has a little bit more vCPUs scenario. Let's narrow it down to
+single target IPI.
+
+Two VMs, each is 76 vCPUs, one running 'ebizzy -M', the other
+running cyclictest on all vCPUs, w/ this patch, the avg score
+of cyclictest can improve more than 5%. (pv tlb, pv ipi, pv
+sched yield are disabled during testing to avoid the disturb).
+
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1585189202-1708-3-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index d65ff2008cf1..cf95c36cb4f4 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1554,7 +1554,10 @@ EXPORT_SYMBOL_GPL(kvm_emulate_wrmsr);
+  */
+ static int handle_fastpath_set_x2apic_icr_irqoff(struct kvm_vcpu *vcpu, u64 data)
+ {
+-	if (lapic_in_kernel(vcpu) && apic_x2apic_mode(vcpu->arch.apic) &&
++	if (!lapic_in_kernel(vcpu) || !apic_x2apic_mode(vcpu->arch.apic))
++		return 1;
++
++	if (((data & APIC_SHORT_MASK) == APIC_DEST_NOSHORT) &&
+ 		((data & APIC_DEST_MASK) == APIC_DEST_PHYSICAL) &&
+ 		((data & APIC_MODE_MASK) == APIC_DM_FIXED)) {
+ 
+-- 
+2.34.1
+

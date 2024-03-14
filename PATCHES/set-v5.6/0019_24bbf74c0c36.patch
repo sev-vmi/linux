@@ -1,0 +1,65 @@
+From 24bbf74c0c36bfbaa276c9921b55b844018b241e Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 14 Nov 2019 14:15:07 -0600
+Subject: [PATCH] kvm: x86: Add APICv (de)activate request trace points
+
+Add trace points when sending request to (de)activate APICv.
+
+Suggested-by: Alexander Graf <graf@amazon.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/trace.h | 19 +++++++++++++++++++
+ arch/x86/kvm/x86.c   |  2 ++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/arch/x86/kvm/trace.h b/arch/x86/kvm/trace.h
+index 7c741a0c5f80..f194dd058470 100644
+--- a/arch/x86/kvm/trace.h
++++ b/arch/x86/kvm/trace.h
+@@ -1291,6 +1291,25 @@ TRACE_EVENT(kvm_hv_stimer_cleanup,
+ 		  __entry->vcpu_id, __entry->timer_index)
+ );
+ 
++TRACE_EVENT(kvm_apicv_update_request,
++	    TP_PROTO(bool activate, unsigned long bit),
++	    TP_ARGS(activate, bit),
++
++	TP_STRUCT__entry(
++		__field(bool, activate)
++		__field(unsigned long, bit)
++	),
++
++	TP_fast_assign(
++		__entry->activate = activate;
++		__entry->bit = bit;
++	),
++
++	TP_printk("%s bit=%lu",
++		  __entry->activate ? "activate" : "deactivate",
++		  __entry->bit)
++);
++
+ /*
+  * Tracepoint for AMD AVIC
+  */
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 616491c134ae..3ceb0bc7d3f2 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8044,6 +8044,7 @@ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ 			return;
+ 	}
+ 
++	trace_kvm_apicv_update_request(activate, bit);
+ 	kvm_make_all_cpus_request(kvm, KVM_REQ_APICV_UPDATE);
+ }
+ EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
+@@ -10503,3 +10504,4 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_pml_full);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_pi_irte_update);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_unaccelerated_access);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_incomplete_ipi);
++EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_apicv_update_request);
+-- 
+2.34.1
+

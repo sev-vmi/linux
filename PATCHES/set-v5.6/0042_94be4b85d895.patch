@@ -1,0 +1,45 @@
+From 94be4b85d89520329f766c7d69a4d74bcc87f5b5 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Tue, 24 Mar 2020 14:32:10 +0800
+Subject: [PATCH] KVM: LAPIC: Also cancel preemption timer when disarm LAPIC
+ timer
+
+The timer is disarmed when switching between TSC deadline and other modes,
+we should set everything to disarmed state, however, LAPIC timer can be
+emulated by preemption timer, it still works if vmx->hv_deadline_timer is
+not -1. This patch also cancels preemption timer when disarm LAPIC timer.
+
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1585031530-19823-1-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 929511e01960..7356a56e6282 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -1445,6 +1445,8 @@ static void limit_periodic_timer_frequency(struct kvm_lapic *apic)
+ 	}
+ }
+ 
++static void cancel_hv_timer(struct kvm_lapic *apic);
++
+ static void apic_update_lvtt(struct kvm_lapic *apic)
+ {
+ 	u32 timer_mode = kvm_lapic_get_reg(apic, APIC_LVTT) &
+@@ -1454,6 +1456,10 @@ static void apic_update_lvtt(struct kvm_lapic *apic)
+ 		if (apic_lvtt_tscdeadline(apic) != (timer_mode ==
+ 				APIC_LVT_TIMER_TSCDEADLINE)) {
+ 			hrtimer_cancel(&apic->lapic_timer.timer);
++			preempt_disable();
++			if (apic->lapic_timer.hv_timer_in_use)
++				cancel_hv_timer(apic);
++			preempt_enable();
+ 			kvm_lapic_set_reg(apic, APIC_TMICT, 0);
+ 			apic->lapic_timer.period = 0;
+ 			apic->lapic_timer.tscdeadline = 0;
+-- 
+2.34.1
+

@@ -1,0 +1,77 @@
+From b26a695a1d78cc415fe26d74d0463f5d887980de Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 14 Nov 2019 14:15:04 -0600
+Subject: [PATCH] kvm: lapic: Introduce APICv update helper function
+
+Re-factor code into a helper function for setting lapic parameters when
+activate/deactivate APICv, and export the function for subsequent usage.
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 22 +++++++++++++++++-----
+ arch/x86/kvm/lapic.h |  1 +
+ 2 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index cce1e6b204c8..eafc631d305c 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -2187,6 +2187,21 @@ void kvm_lapic_set_base(struct kvm_vcpu *vcpu, u64 value)
+ 		pr_warn_once("APIC base relocation is unsupported by KVM");
+ }
+ 
++void kvm_apic_update_apicv(struct kvm_vcpu *vcpu)
++{
++	struct kvm_lapic *apic = vcpu->arch.apic;
++
++	if (vcpu->arch.apicv_active) {
++		/* irr_pending is always true when apicv is activated. */
++		apic->irr_pending = true;
++		apic->isr_count = 1;
++	} else {
++		apic->irr_pending = (apic_search_irr(apic) != -1);
++		apic->isr_count = count_vectors(apic->regs + APIC_ISR);
++	}
++}
++EXPORT_SYMBOL_GPL(kvm_apic_update_apicv);
++
+ void kvm_lapic_reset(struct kvm_vcpu *vcpu, bool init_event)
+ {
+ 	struct kvm_lapic *apic = vcpu->arch.apic;
+@@ -2229,8 +2244,7 @@ void kvm_lapic_reset(struct kvm_vcpu *vcpu, bool init_event)
+ 		kvm_lapic_set_reg(apic, APIC_ISR + 0x10 * i, 0);
+ 		kvm_lapic_set_reg(apic, APIC_TMR + 0x10 * i, 0);
+ 	}
+-	apic->irr_pending = vcpu->arch.apicv_active;
+-	apic->isr_count = vcpu->arch.apicv_active ? 1 : 0;
++	kvm_apic_update_apicv(vcpu);
+ 	apic->highest_isr_cache = -1;
+ 	update_divide_count(apic);
+ 	atomic_set(&apic->lapic_timer.pending, 0);
+@@ -2487,9 +2501,7 @@ int kvm_apic_set_state(struct kvm_vcpu *vcpu, struct kvm_lapic_state *s)
+ 	apic_manage_nmi_watchdog(apic, kvm_lapic_get_reg(apic, APIC_LVT0));
+ 	update_divide_count(apic);
+ 	start_apic_timer(apic);
+-	apic->irr_pending = true;
+-	apic->isr_count = vcpu->arch.apicv_active ?
+-				1 : count_vectors(apic->regs + APIC_ISR);
++	kvm_apic_update_apicv(vcpu);
+ 	apic->highest_isr_cache = -1;
+ 	if (vcpu->arch.apicv_active) {
+ 		kvm_x86_ops->apicv_post_state_restore(vcpu);
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index ec730ce7a344..ec6fbfe325cf 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -91,6 +91,7 @@ void kvm_apic_update_ppr(struct kvm_vcpu *vcpu);
+ int kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq,
+ 		     struct dest_map *dest_map);
+ int kvm_apic_local_deliver(struct kvm_lapic *apic, int lvt_type);
++void kvm_apic_update_apicv(struct kvm_vcpu *vcpu);
+ 
+ bool kvm_irq_delivery_to_apic_fast(struct kvm *kvm, struct kvm_lapic *src,
+ 		struct kvm_lapic_irq *irq, int *r, struct dest_map *dest_map);
+-- 
+2.34.1
+

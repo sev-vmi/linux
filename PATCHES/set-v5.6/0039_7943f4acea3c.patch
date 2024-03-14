@@ -1,0 +1,38 @@
+From 7943f4acea3caf0b6d5b6cdfce7d5a2b4a9aa608 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Tue, 25 Feb 2020 08:54:26 +0100
+Subject: [PATCH] KVM: SVM: allocate AVIC data structures based on kvm_amd
+ module parameter
+
+Even if APICv is disabled at startup, the backing page and ir_list need
+to be initialized in case they are needed later.  The only case in
+which this can be skipped is for userspace irqchip, and that must be
+done because avic_init_backing_page dereferences vcpu->arch.apic
+(which is NULL for userspace irqchip).
+
+Tested-by: rmuncrief@humanavance.com
+Fixes: https://bugzilla.kernel.org/show_bug.cgi?id=206579
+Reviewed-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index ad3f5b178a03..bd02526300ab 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -2194,8 +2194,9 @@ static void svm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
+ static int avic_init_vcpu(struct vcpu_svm *svm)
+ {
+ 	int ret;
++	struct kvm_vcpu *vcpu = &svm->vcpu;
+ 
+-	if (!kvm_vcpu_apicv_active(&svm->vcpu))
++	if (!avic || !irqchip_in_kernel(vcpu->kvm))
+ 		return 0;
+ 
+ 	ret = avic_init_backing_page(&svm->vcpu);
+-- 
+2.34.1
+

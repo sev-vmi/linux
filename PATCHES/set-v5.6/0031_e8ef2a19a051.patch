@@ -1,0 +1,30 @@
+From e8ef2a19a051b755b0b9973ef1b3f81e895e2bce Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 22 Jan 2020 17:02:36 +0100
+Subject: [PATCH] KVM: SVM: allow AVIC without split irqchip
+
+SVM is now able to disable AVIC dynamically whenever the in-kernel PIT sets
+up an ack notifier, so we can enable it even if in-kernel IOAPIC/PIC/PIT
+are in use.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 0b05967aa455..bf0556588ad0 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -2073,7 +2073,7 @@ static int svm_vm_init(struct kvm *kvm)
+ 			return ret;
+ 	}
+ 
+-	kvm_apicv_init(kvm, avic && irqchip_split(kvm));
++	kvm_apicv_init(kvm, avic);
+ 	return 0;
+ }
+ 
+-- 
+2.34.1
+

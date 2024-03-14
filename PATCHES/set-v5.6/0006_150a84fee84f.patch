@@ -1,0 +1,68 @@
+From 150a84fee84fbaf2a2a6c76c44ae027b5c7d151a Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 4 Dec 2019 20:07:21 +0100
+Subject: [PATCH] KVM: X86: Convert the last users of "shorthand = 0" to use
+ macros
+
+Change the last users of "shorthand = 0" to use APIC_DEST_NOSHORT.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/ioapic.c   | 4 ++--
+ arch/x86/kvm/irq_comm.c | 2 +-
+ arch/x86/kvm/x86.c      | 2 +-
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/x86/kvm/ioapic.c b/arch/x86/kvm/ioapic.c
+index f53daeaaeb37..77538fd77dc2 100644
+--- a/arch/x86/kvm/ioapic.c
++++ b/arch/x86/kvm/ioapic.c
+@@ -330,7 +330,7 @@ static void ioapic_write_indirect(struct kvm_ioapic *ioapic, u32 val)
+ 		if (e->fields.delivery_mode == APIC_DM_FIXED) {
+ 			struct kvm_lapic_irq irq;
+ 
+-			irq.shorthand = 0;
++			irq.shorthand = APIC_DEST_NOSHORT;
+ 			irq.vector = e->fields.vector;
+ 			irq.delivery_mode = e->fields.delivery_mode << 8;
+ 			irq.dest_id = e->fields.dest_id;
+@@ -379,7 +379,7 @@ static int ioapic_service(struct kvm_ioapic *ioapic, int irq, bool line_status)
+ 	irqe.trig_mode = entry->fields.trig_mode;
+ 	irqe.delivery_mode = entry->fields.delivery_mode << 8;
+ 	irqe.level = 1;
+-	irqe.shorthand = 0;
++	irqe.shorthand = APIC_DEST_NOSHORT;
+ 	irqe.msi_redir_hint = false;
+ 
+ 	if (irqe.trig_mode == IOAPIC_EDGE_TRIG)
+diff --git a/arch/x86/kvm/irq_comm.c b/arch/x86/kvm/irq_comm.c
+index 7d083f71fc8e..9d711c2451c7 100644
+--- a/arch/x86/kvm/irq_comm.c
++++ b/arch/x86/kvm/irq_comm.c
+@@ -121,7 +121,7 @@ void kvm_set_msi_irq(struct kvm *kvm, struct kvm_kernel_irq_routing_entry *e,
+ 	irq->msi_redir_hint = ((e->msi.address_lo
+ 		& MSI_ADDR_REDIRECTION_LOWPRI) > 0);
+ 	irq->level = 1;
+-	irq->shorthand = 0;
++	irq->shorthand = APIC_DEST_NOSHORT;
+ }
+ EXPORT_SYMBOL_GPL(kvm_set_msi_irq);
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index f4e477e6c954..16902d0aad3a 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7357,7 +7357,7 @@ static void kvm_pv_kick_cpu_op(struct kvm *kvm, unsigned long flags, int apicid)
+ {
+ 	struct kvm_lapic_irq lapic_irq;
+ 
+-	lapic_irq.shorthand = 0;
++	lapic_irq.shorthand = APIC_DEST_NOSHORT;
+ 	lapic_irq.dest_mode = APIC_DEST_PHYSICAL;
+ 	lapic_irq.level = 0;
+ 	lapic_irq.dest_id = apicid;
+-- 
+2.34.1
+

@@ -1,0 +1,114 @@
+From 8df14af42f00a434c492c9964a8095bf59831a45 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 14 Nov 2019 14:15:06 -0600
+Subject: [PATCH] kvm: x86: Add support for dynamic APICv activation
+
+Certain runtime conditions require APICv to be temporary deactivated
+during runtime.  The current implementation only support run-time
+deactivation of APICv when Hyper-V SynIC is enabled, which is not
+temporary.
+
+In addition, for AMD, when APICv is (de)activated at runtime,
+all vcpus in the VM have to operate in the same mode.  Thus the
+requesting vcpu must notify the others.
+
+So, introduce the following:
+ * A new KVM_REQ_APICV_UPDATE request bit
+ * Interfaces to request all vcpus to update APICv status
+ * A new interface to update APICV-related parameters for each vcpu
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  5 +++++
+ arch/x86/kvm/x86.c              | 37 +++++++++++++++++++++++++++++++++
+ 2 files changed, 42 insertions(+)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 9945c7bebdf8..0189687877a7 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -78,6 +78,8 @@
+ #define KVM_REQ_HV_STIMER		KVM_ARCH_REQ(22)
+ #define KVM_REQ_LOAD_EOI_EXITMAP	KVM_ARCH_REQ(23)
+ #define KVM_REQ_GET_VMCS12_PAGES	KVM_ARCH_REQ(24)
++#define KVM_REQ_APICV_UPDATE \
++	KVM_ARCH_REQ_FLAGS(25, KVM_REQUEST_WAIT | KVM_REQUEST_NO_WAKEUP)
+ 
+ #define CR0_RESERVED_BITS                                               \
+ 	(~(unsigned long)(X86_CR0_PE | X86_CR0_MP | X86_CR0_EM | X86_CR0_TS \
+@@ -1482,6 +1484,9 @@ gpa_t kvm_mmu_gva_to_gpa_system(struct kvm_vcpu *vcpu, gva_t gva,
+ void kvm_vcpu_deactivate_apicv(struct kvm_vcpu *vcpu);
+ bool kvm_apicv_activated(struct kvm *kvm);
+ void kvm_apicv_init(struct kvm *kvm, bool enable);
++void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu);
++void kvm_request_apicv_update(struct kvm *kvm, bool activate,
++			      unsigned long bit);
+ 
+ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu);
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 98209b8c18c1..616491c134ae 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -26,6 +26,7 @@
+ #include "cpuid.h"
+ #include "pmu.h"
+ #include "hyperv.h"
++#include "lapic.h"
+ 
+ #include <linux/clocksource.h>
+ #include <linux/interrupt.h>
+@@ -8013,6 +8014,40 @@ void kvm_make_scan_ioapic_request(struct kvm *kvm)
+ 	kvm_make_all_cpus_request(kvm, KVM_REQ_SCAN_IOAPIC);
+ }
+ 
++void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
++{
++	if (!lapic_in_kernel(vcpu))
++		return;
++
++	vcpu->arch.apicv_active = kvm_apicv_activated(vcpu->kvm);
++	kvm_apic_update_apicv(vcpu);
++	kvm_x86_ops->refresh_apicv_exec_ctrl(vcpu);
++}
++EXPORT_SYMBOL_GPL(kvm_vcpu_update_apicv);
++
++/*
++ * NOTE: Do not hold any lock prior to calling this.
++ *
++ * In particular, kvm_request_apicv_update() expects kvm->srcu not to be
++ * locked, because it calls __x86_set_memory_region() which does
++ * synchronize_srcu(&kvm->srcu).
++ */
++void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
++{
++	if (activate) {
++		if (!test_and_clear_bit(bit, &kvm->arch.apicv_inhibit_reasons) ||
++		    !kvm_apicv_activated(kvm))
++			return;
++	} else {
++		if (test_and_set_bit(bit, &kvm->arch.apicv_inhibit_reasons) ||
++		    kvm_apicv_activated(kvm))
++			return;
++	}
++
++	kvm_make_all_cpus_request(kvm, KVM_REQ_APICV_UPDATE);
++}
++EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
++
+ static void vcpu_scan_ioapic(struct kvm_vcpu *vcpu)
+ {
+ 	if (!kvm_apic_present(vcpu))
+@@ -8203,6 +8238,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 		 */
+ 		if (kvm_check_request(KVM_REQ_HV_STIMER, vcpu))
+ 			kvm_hv_process_stimers(vcpu);
++		if (kvm_check_request(KVM_REQ_APICV_UPDATE, vcpu))
++			kvm_vcpu_update_apicv(vcpu);
+ 	}
+ 
+ 	if (kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win) {
+-- 
+2.34.1
+

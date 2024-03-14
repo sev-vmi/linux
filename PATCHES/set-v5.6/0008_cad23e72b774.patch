@@ -1,0 +1,41 @@
+From cad23e72b7742578fad2e4ec8856d376ec8db923 Mon Sep 17 00:00:00 2001
+From: Miaohe Lin <linmiaohe@huawei.com>
+Date: Sat, 7 Dec 2019 17:25:22 +0800
+Subject: [PATCH] KVM: x86: check kvm_pit outside kvm_vm_ioctl_reinject()
+
+check kvm_pit outside kvm_vm_ioctl_reinject() to keep codestyle consistent
+with other kvm_pit func and prepare for futher cleanups.
+
+Signed-off-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 33e165c0351d..e62d2688bfec 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -4703,9 +4703,6 @@ static int kvm_vm_ioctl_reinject(struct kvm *kvm,
+ {
+ 	struct kvm_pit *pit = kvm->arch.vpit;
+ 
+-	if (!pit)
+-		return -ENXIO;
+-
+ 	/* pit->pit_state.lock was overloaded to prevent userspace from getting
+ 	 * an inconsistent state after running multiple KVM_REINJECT_CONTROL
+ 	 * ioctls in parallel.  Use a separate lock if that ioctl isn't rare.
+@@ -5072,6 +5069,9 @@ long kvm_arch_vm_ioctl(struct file *filp,
+ 		r =  -EFAULT;
+ 		if (copy_from_user(&control, argp, sizeof(control)))
+ 			goto out;
++		r = -ENXIO;
++		if (!kvm->arch.vpit)
++			goto out;
+ 		r = kvm_vm_ioctl_reinject(kvm, &control);
+ 		break;
+ 	}
+-- 
+2.34.1
+

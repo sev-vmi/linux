@@ -1,0 +1,77 @@
+From a06230b62b898e51cfb1de256b2042a09a691f58 Mon Sep 17 00:00:00 2001
+From: Oliver Upton <oupton@google.com>
+Date: Fri, 7 Feb 2020 02:36:06 -0800
+Subject: [PATCH] KVM: x86: Deliver exception payload on KVM_GET_VCPU_EVENTS
+
+KVM allows the deferral of exception payloads when a vCPU is in guest
+mode to allow the L1 hypervisor to intercept certain events (#PF, #DB)
+before register state has been modified. However, this behavior is
+incompatible with the KVM_{GET,SET}_VCPU_EVENTS ABI, as userspace
+expects register state to have been immediately modified. Userspace may
+opt-in for the payload deferral behavior with the
+KVM_CAP_EXCEPTION_PAYLOAD per-VM capability. As such,
+kvm_multiple_exception() will immediately manipulate guest registers if
+the capability hasn't been requested.
+
+Since the deferral is only necessary if a userspace ioctl were to be
+serviced at the same as a payload bearing exception is recognized, this
+behavior can be relaxed. Instead, opportunistically defer the payload
+from kvm_multiple_exception() and deliver the payload before completing
+a KVM_GET_VCPU_EVENTS ioctl.
+
+Signed-off-by: Oliver Upton <oupton@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 29 ++++++++++++++++-------------
+ 1 file changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 95b753dab207..4d3310df1758 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -498,19 +498,7 @@ static void kvm_multiple_exception(struct kvm_vcpu *vcpu,
+ 		vcpu->arch.exception.error_code = error_code;
+ 		vcpu->arch.exception.has_payload = has_payload;
+ 		vcpu->arch.exception.payload = payload;
+-		/*
+-		 * In guest mode, payload delivery should be deferred,
+-		 * so that the L1 hypervisor can intercept #PF before
+-		 * CR2 is modified (or intercept #DB before DR6 is
+-		 * modified under nVMX).  However, for ABI
+-		 * compatibility with KVM_GET_VCPU_EVENTS and
+-		 * KVM_SET_VCPU_EVENTS, we can't delay payload
+-		 * delivery unless userspace has enabled this
+-		 * functionality via the per-VM capability,
+-		 * KVM_CAP_EXCEPTION_PAYLOAD.
+-		 */
+-		if (!vcpu->kvm->arch.exception_payload_enabled ||
+-		    !is_guest_mode(vcpu))
++		if (!is_guest_mode(vcpu))
+ 			kvm_deliver_exception_payload(vcpu);
+ 		return;
+ 	}
+@@ -3803,6 +3791,21 @@ static void kvm_vcpu_ioctl_x86_get_vcpu_events(struct kvm_vcpu *vcpu,
+ {
+ 	process_nmi(vcpu);
+ 
++	/*
++	 * In guest mode, payload delivery should be deferred,
++	 * so that the L1 hypervisor can intercept #PF before
++	 * CR2 is modified (or intercept #DB before DR6 is
++	 * modified under nVMX). Unless the per-VM capability,
++	 * KVM_CAP_EXCEPTION_PAYLOAD, is set, we may not defer the delivery of
++	 * an exception payload and handle after a KVM_GET_VCPU_EVENTS. Since we
++	 * opportunistically defer the exception payload, deliver it if the
++	 * capability hasn't been requested before processing a
++	 * KVM_GET_VCPU_EVENTS.
++	 */
++	if (!vcpu->kvm->arch.exception_payload_enabled &&
++	    vcpu->arch.exception.pending && vcpu->arch.exception.has_payload)
++		kvm_deliver_exception_payload(vcpu);
++
+ 	/*
+ 	 * The API doesn't provide the instruction length for software
+ 	 * exceptions, so don't report them. As long as the guest RIP
+-- 
+2.34.1
+

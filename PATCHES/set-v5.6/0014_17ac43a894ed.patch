@@ -1,0 +1,34 @@
+From 17ac43a894ed3dd237d6def00c5ec2c7d975567e Mon Sep 17 00:00:00 2001
+From: Haiwei Li <lihaiwei@tencent.com>
+Date: Thu, 16 Jan 2020 16:50:21 +0800
+Subject: [PATCH] Adding 'else' to reduce checking.
+
+These two conditions are in conflict, adding 'else' to reduce checking.
+
+Signed-off-by: Haiwei Li <lihaiwei@tencent.com>
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Reviewed-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/lapic.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 286396c0aa7d..cce1e6b204c8 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -1571,9 +1571,9 @@ static void kvm_apic_inject_pending_timer_irqs(struct kvm_lapic *apic)
+ 	struct kvm_timer *ktimer = &apic->lapic_timer;
+ 
+ 	kvm_apic_local_deliver(apic, APIC_LVTT);
+-	if (apic_lvtt_tscdeadline(apic))
++	if (apic_lvtt_tscdeadline(apic)) {
+ 		ktimer->tscdeadline = 0;
+-	if (apic_lvtt_oneshot(apic)) {
++	} else if (apic_lvtt_oneshot(apic)) {
+ 		ktimer->tscdeadline = 0;
+ 		ktimer->target_expiration = 0;
+ 	}
+-- 
+2.34.1
+

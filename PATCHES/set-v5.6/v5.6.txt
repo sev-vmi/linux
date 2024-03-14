@@ -1,0 +1,42 @@
+b4b2963616bb KVM: X86: Fix kvm_bitmap_or_dest_vcpus() to use irq shorthand
+c96001c5702e KVM: X86: Use APIC_DEST_* macros properly in kvm_lapic_irq.dest_mode
+ac8ef992cd02 KVM: X86: Drop KVM_APIC_SHORT_MASK and KVM_APIC_DEST_MASK
+5c69d5c113f1 KVM: X86: Fix callers of kvm_apic_match_dest() to use correct macros
+150a84fee84f KVM: X86: Convert the last users of "shorthand = 0" to use macros
+dfd146fcae89 KVM: LAPIC: micro-optimize fixed mode ipi delivery
+cad23e72b774 KVM: x86: check kvm_pit outside kvm_vm_ioctl_reinject()
+8c86405f606c KVM: x86: Protect ioapic_read_indirect() from Spectre-v1/L1TF attacks
+670564559ca3 KVM: x86: Protect ioapic_write_indirect() from Spectre-v1/L1TF attacks
+4bf79cb089f6 KVM: x86: Protect kvm_lapic_reg_write() from Spectre-v1/L1TF attacks
+767b839afa5d KVM: x86: avoid clearing pending exception event twice
+3ce4dc17e0c1 KVM: apic: short-circuit kvm_apic_accept_pic_intr() when pic intr is accepted
+17ac43a894ed Adding 'else' to reduce checking.
+b26a695a1d78 kvm: lapic: Introduce APICv update helper function
+4e19c36f2df8 kvm: x86: Introduce APICv inhibit reason bits
+7e3e67a98701 KVM: x86: remove get_enable_apicv from kvm_x86_ops
+8df14af42f00 kvm: x86: Add support for dynamic APICv activation
+24bbf74c0c36 kvm: x86: Add APICv (de)activate request trace points
+8937d762396d kvm: x86: svm: Add support to (de)activate posted interrupts
+dcbcfa287e96 KVM: svm: avic: Add support for dynamic setup/teardown of virtual APIC backing page
+ef8efd7a15bb kvm: x86: Introduce APICv x86 ops for checking APIC inhibit reasons
+2de9d0ccd0fe kvm: x86: Introduce x86 ops hook for pre-update APICv
+6c3e4422dd20 svm: Add support for dynamic APICv
+f4fdc0a2edf4 kvm: x86: hyperv: Use APICv update request interface
+9a0bf0543069 svm: Deactivate AVIC when launching guest with nested SVM support
+f3515dc3bef8 svm: Temporarily deactivate AVIC during ExtINT handling
+e2ed4078a6ef kvm: i8254: Deactivate APICv when using in-kernel PIT re-injection mode.
+1ec2405c7cbf kvm: ioapic: Refactor kvm_ioapic_update_eoi()
+f458d039db7e kvm: ioapic: Lazy update IOAPIC EOI
+e8ef2a19a051 KVM: SVM: allow AVIC without split irqchip
+a06230b62b89 KVM: x86: Deliver exception payload on KVM_GET_VCPU_EVENTS
+20796447a1ab KVM: x86: remove duplicated KVM_REQ_EVENT request
+331ca0f89fc2 KVM: apic: reuse smp_wmb() in kvm_make_request()
+7455a8327674 KVM: x86: don't notify userspace IOAPIC on edge-triggered interrupt EOI
+93fd9666c269 kvm: x86: svm: Fix NULL pointer dereference when AVIC not enabled
+91a5f413af59 KVM: nVMX: handle nested posted interrupts when apicv is disabled for L1
+23520b2def95 KVM: apic: avoid calculating pending eoi from an uninitialized val
+7943f4acea3c KVM: SVM: allocate AVIC data structures based on kvm_amd module parameter
+0c22056f8c43 KVM: x86: Initializing all kvm_lapic_irq fields in ioapic_write_indirect
+edec6e015a02 KVM: LAPIC: Mark hrtimer for period or oneshot mode to expire in hard interrupt context
+94be4b85d895 KVM: LAPIC: Also cancel preemption timer when disarm LAPIC timer
+e1be9ac8e601 KVM: X86: Narrow down the IPI fastpath to single target IPI

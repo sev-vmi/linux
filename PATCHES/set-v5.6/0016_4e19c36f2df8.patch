@@ -1,0 +1,145 @@
+From 4e19c36f2df8f84da22c7287de86729aaf3e352b Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 14 Nov 2019 14:15:05 -0600
+Subject: [PATCH] kvm: x86: Introduce APICv inhibit reason bits
+
+There are several reasons in which a VM needs to deactivate APICv
+e.g. disable APICv via parameter during module loading, or when
+enable Hyper-V SynIC support. Additional inhibit reasons will be
+introduced later on when dynamic APICv is supported,
+
+Introduce KVM APICv inhibit reason bits along with a new variable,
+apicv_inhibit_reasons, to help keep track of APICv state for each VM,
+
+Initially, the APICV_INHIBIT_REASON_DISABLE bit is used to indicate
+the case where APICv is disabled during KVM module load.
+(e.g. insmod kvm_amd avic=0 or insmod kvm_intel enable_apicv=0).
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+[Do not use get_enable_apicv; consider irqchip_split in svm.c. - Paolo]
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  5 +++++
+ arch/x86/kvm/svm.c              | 14 +++++++++++++-
+ arch/x86/kvm/vmx/vmx.c          |  1 +
+ arch/x86/kvm/x86.c              | 20 +++++++++++++++++++-
+ 4 files changed, 38 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 329d01c689b7..4d57e4b74aae 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -873,6 +873,8 @@ enum kvm_irqchip_mode {
+ 	KVM_IRQCHIP_SPLIT,        /* created with KVM_CAP_SPLIT_IRQCHIP */
+ };
+ 
++#define APICV_INHIBIT_REASON_DISABLE    0
++
+ struct kvm_arch {
+ 	unsigned long n_used_mmu_pages;
+ 	unsigned long n_requested_mmu_pages;
+@@ -904,6 +906,7 @@ struct kvm_arch {
+ 	struct kvm_apic_map *apic_map;
+ 
+ 	bool apic_access_page_done;
++	unsigned long apicv_inhibit_reasons;
+ 
+ 	gpa_t wall_clock;
+ 
+@@ -1478,6 +1481,8 @@ gpa_t kvm_mmu_gva_to_gpa_system(struct kvm_vcpu *vcpu, gva_t gva,
+ 				struct x86_exception *exception);
+ 
+ void kvm_vcpu_deactivate_apicv(struct kvm_vcpu *vcpu);
++bool kvm_apicv_activated(struct kvm *kvm);
++void kvm_apicv_init(struct kvm *kvm, bool enable);
+ 
+ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu);
+ 
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 9dbb990c319a..ed39f72faeaf 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -2052,6 +2052,18 @@ static int avic_vm_init(struct kvm *kvm)
+ 	return err;
+ }
+ 
++static int svm_vm_init(struct kvm *kvm)
++{
++	if (avic) {
++		int ret = avic_vm_init(kvm);
++		if (ret)
++			return ret;
++	}
++
++	kvm_apicv_init(kvm, avic && irqchip_split(kvm));
++	return 0;
++}
++
+ static inline int
+ avic_update_iommu_vcpu_affinity(struct kvm_vcpu *vcpu, int cpu, bool r)
+ {
+@@ -7274,7 +7286,7 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
+ 
+ 	.vm_alloc = svm_vm_alloc,
+ 	.vm_free = svm_vm_free,
+-	.vm_init = avic_vm_init,
++	.vm_init = svm_vm_init,
+ 	.vm_destroy = svm_vm_destroy,
+ 
+ 	.prepare_guest_switch = svm_prepare_guest_switch,
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index c475fa2aaae0..69bd10a563c0 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -6813,6 +6813,7 @@ static int vmx_vm_init(struct kvm *kvm)
+ 			break;
+ 		}
+ 	}
++	kvm_apicv_init(kvm, enable_apicv);
+ 	return 0;
+ }
+ 
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 2d3be7f3ad67..98209b8c18c1 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7469,6 +7469,23 @@ void kvm_vcpu_deactivate_apicv(struct kvm_vcpu *vcpu)
+ 	kvm_x86_ops->refresh_apicv_exec_ctrl(vcpu);
+ }
+ 
++bool kvm_apicv_activated(struct kvm *kvm)
++{
++	return (READ_ONCE(kvm->arch.apicv_inhibit_reasons) == 0);
++}
++EXPORT_SYMBOL_GPL(kvm_apicv_activated);
++
++void kvm_apicv_init(struct kvm *kvm, bool enable)
++{
++	if (enable)
++		clear_bit(APICV_INHIBIT_REASON_DISABLE,
++			  &kvm->arch.apicv_inhibit_reasons);
++	else
++		set_bit(APICV_INHIBIT_REASON_DISABLE,
++			&kvm->arch.apicv_inhibit_reasons);
++}
++EXPORT_SYMBOL_GPL(kvm_apicv_init);
++
+ static void kvm_sched_yield(struct kvm *kvm, unsigned long dest_id)
+ {
+ 	struct kvm_vcpu *target = NULL;
+@@ -9219,10 +9236,11 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
+ 		return r;
+ 
+ 	if (irqchip_in_kernel(vcpu->kvm)) {
+-		vcpu->arch.apicv_active = kvm_x86_ops->get_enable_apicv(vcpu->kvm);
+ 		r = kvm_create_lapic(vcpu, lapic_timer_advance_ns);
+ 		if (r < 0)
+ 			goto fail_mmu_destroy;
++		if (kvm_apicv_activated(vcpu->kvm))
++			vcpu->arch.apicv_active = true;
+ 	} else
+ 		static_key_slow_inc(&kvm_no_apic_vcpu);
+ 
+-- 
+2.34.1
+

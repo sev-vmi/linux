@@ -1,0 +1,29 @@
+From 767b839afa5d62ba9cf859f4e90fef3d4a1780b5 Mon Sep 17 00:00:00 2001
+From: Miaohe Lin <linmiaohe@huawei.com>
+Date: Sat, 18 Jan 2020 10:41:55 +0800
+Subject: [PATCH] KVM: x86: avoid clearing pending exception event twice
+
+The exception pending event is cleared by kvm_clear_exception_queue(). We
+shouldn't clear it again.
+
+Signed-off-by: Miaohe Lin <linmiaohe@huawei.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 780224e76723..2b26400a3410 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -9355,7 +9355,6 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
+ 	vcpu->arch.nmi_injected = false;
+ 	kvm_clear_interrupt_queue(vcpu);
+ 	kvm_clear_exception_queue(vcpu);
+-	vcpu->arch.exception.pending = false;
+ 
+ 	memset(vcpu->arch.db, 0, sizeof(vcpu->arch.db));
+ 	kvm_update_dr0123(vcpu);
+-- 
+2.34.1
+

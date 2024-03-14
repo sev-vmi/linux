@@ -1,0 +1,69 @@
+From 2de9d0ccd0fea32fc6a684f3f22496967ed608bc Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 14 Nov 2019 14:15:11 -0600
+Subject: [PATCH] kvm: x86: Introduce x86 ops hook for pre-update APICv
+
+AMD SVM AVIC needs to update APIC backing page mapping before changing
+APICv mode. Introduce struct kvm_x86_ops.pre_update_apicv_exec_ctrl
+function hook to be called prior KVM APICv update request to each vcpu.
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 1 +
+ arch/x86/kvm/svm.c              | 6 ++++++
+ arch/x86/kvm/x86.c              | 2 ++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index 81c41bfb0a5f..19a7d0d3a5fa 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1124,6 +1124,7 @@ struct kvm_x86_ops {
+ 	void (*enable_irq_window)(struct kvm_vcpu *vcpu);
+ 	void (*update_cr8_intercept)(struct kvm_vcpu *vcpu, int tpr, int irr);
+ 	bool (*check_apicv_inhibit_reasons)(ulong bit);
++	void (*pre_update_apicv_exec_ctrl)(struct kvm *kvm, bool activate);
+ 	void (*refresh_apicv_exec_ctrl)(struct kvm_vcpu *vcpu);
+ 	void (*hwapic_irr_update)(struct kvm_vcpu *vcpu, int max_irr);
+ 	void (*hwapic_isr_update)(struct kvm_vcpu *vcpu, int isr);
+diff --git a/arch/x86/kvm/svm.c b/arch/x86/kvm/svm.c
+index 842c0630af35..d85e29bc6ff1 100644
+--- a/arch/x86/kvm/svm.c
++++ b/arch/x86/kvm/svm.c
+@@ -7305,6 +7305,11 @@ static bool svm_check_apicv_inhibit_reasons(ulong bit)
+ 	return supported & BIT(bit);
+ }
+ 
++static void svm_pre_update_apicv_exec_ctrl(struct kvm *kvm, bool activate)
++{
++	avic_update_access_page(kvm, activate);
++}
++
+ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
+ 	.cpu_has_kvm_support = has_svm,
+ 	.disabled_by_bios = is_disabled,
+@@ -7381,6 +7386,7 @@ static struct kvm_x86_ops svm_x86_ops __ro_after_init = {
+ 	.set_virtual_apic_mode = svm_set_virtual_apic_mode,
+ 	.refresh_apicv_exec_ctrl = svm_refresh_apicv_exec_ctrl,
+ 	.check_apicv_inhibit_reasons = svm_check_apicv_inhibit_reasons,
++	.pre_update_apicv_exec_ctrl = svm_pre_update_apicv_exec_ctrl,
+ 	.load_eoi_exitmap = svm_load_eoi_exitmap,
+ 	.hwapic_irr_update = svm_hwapic_irr_update,
+ 	.hwapic_isr_update = svm_hwapic_isr_update,
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index dbff8011f0f2..d2f15cbe2634 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8049,6 +8049,8 @@ void kvm_request_apicv_update(struct kvm *kvm, bool activate, ulong bit)
+ 	}
+ 
+ 	trace_kvm_apicv_update_request(activate, bit);
++	if (kvm_x86_ops->pre_update_apicv_exec_ctrl)
++		kvm_x86_ops->pre_update_apicv_exec_ctrl(kvm, activate);
+ 	kvm_make_all_cpus_request(kvm, KVM_REQ_APICV_UPDATE);
+ }
+ EXPORT_SYMBOL_GPL(kvm_request_apicv_update);
+-- 
+2.34.1
+

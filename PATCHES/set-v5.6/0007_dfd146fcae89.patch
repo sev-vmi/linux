@@ -1,0 +1,41 @@
+From dfd146fcae8974d40ef6dcfc047d7a1631e064d9 Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Thu, 21 Nov 2019 11:17:12 +0800
+Subject: [PATCH] KVM: LAPIC: micro-optimize fixed mode ipi delivery
+
+This patch optimizes redundancy logic before fixed mode ipi is delivered
+in the fast path, broadcast handling needs to go slow path, so the delivery
+mode repair can be delayed to before slow path.
+
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/irq_comm.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/irq_comm.c b/arch/x86/kvm/irq_comm.c
+index 9d711c2451c7..79afa0bb5f41 100644
+--- a/arch/x86/kvm/irq_comm.c
++++ b/arch/x86/kvm/irq_comm.c
+@@ -52,15 +52,15 @@ int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
+ 	unsigned long dest_vcpu_bitmap[BITS_TO_LONGS(KVM_MAX_VCPUS)];
+ 	unsigned int dest_vcpus = 0;
+ 
++	if (kvm_irq_delivery_to_apic_fast(kvm, src, irq, &r, dest_map))
++		return r;
++
+ 	if (irq->dest_mode == APIC_DEST_PHYSICAL &&
+ 	    irq->dest_id == 0xff && kvm_lowest_prio_delivery(irq)) {
+ 		printk(KERN_INFO "kvm: apic: phys broadcast and lowest prio\n");
+ 		irq->delivery_mode = APIC_DM_FIXED;
+ 	}
+ 
+-	if (kvm_irq_delivery_to_apic_fast(kvm, src, irq, &r, dest_map))
+-		return r;
+-
+ 	memset(dest_vcpu_bitmap, 0, sizeof(dest_vcpu_bitmap));
+ 
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
+-- 
+2.34.1
+

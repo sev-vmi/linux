@@ -1,0 +1,92 @@
+From 59508b303e4e35de9dd708ec87b1e89b1f3c1616 Mon Sep 17 00:00:00 2001
+From: Peter Xu <peterx@redhat.com>
+Date: Wed, 4 Dec 2019 20:07:17 +0100
+Subject: [PATCH] KVM: X86: Move irrelevant declarations out of ioapic.h
+
+kvm_apic_match_dest() is declared in both ioapic.h and lapic.h.
+Remove the declaration in ioapic.h.
+
+kvm_apic_compare_prio() is declared in ioapic.h but defined in
+lapic.c.  Move the declaration to lapic.h.
+
+kvm_irq_delivery_to_apic() is declared in ioapic.h but defined in
+irq_comm.c.  Move the declaration to irq.h.
+
+hyperv.c needs to use kvm_irq_delivery_to_apic(). Include irq.h in
+hyperv.c.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Peter Xu <peterx@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/hyperv.c | 1 +
+ arch/x86/kvm/ioapic.h | 6 ------
+ arch/x86/kvm/irq.h    | 3 +++
+ arch/x86/kvm/lapic.h  | 2 +-
+ 4 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/arch/x86/kvm/hyperv.c b/arch/x86/kvm/hyperv.c
+index 23ff65504d7e..c7d4640b7b1c 100644
+--- a/arch/x86/kvm/hyperv.c
++++ b/arch/x86/kvm/hyperv.c
+@@ -33,6 +33,7 @@
+ #include <trace/events/kvm.h>
+ 
+ #include "trace.h"
++#include "irq.h"
+ 
+ #define KVM_HV_MAX_SPARSE_VCPU_SET_BITS DIV_ROUND_UP(KVM_MAX_VCPUS, 64)
+ 
+diff --git a/arch/x86/kvm/ioapic.h b/arch/x86/kvm/ioapic.h
+index ea1a4e0297da..2fb2e3c80724 100644
+--- a/arch/x86/kvm/ioapic.h
++++ b/arch/x86/kvm/ioapic.h
+@@ -116,9 +116,6 @@ static inline int ioapic_in_kernel(struct kvm *kvm)
+ }
+ 
+ void kvm_rtc_eoi_tracking_restore_one(struct kvm_vcpu *vcpu);
+-bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
+-		int short_hand, unsigned int dest, int dest_mode);
+-int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2);
+ void kvm_ioapic_update_eoi(struct kvm_vcpu *vcpu, int vector,
+ 			int trigger_mode);
+ int kvm_ioapic_init(struct kvm *kvm);
+@@ -126,9 +123,6 @@ void kvm_ioapic_destroy(struct kvm *kvm);
+ int kvm_ioapic_set_irq(struct kvm_ioapic *ioapic, int irq, int irq_source_id,
+ 		       int level, bool line_status);
+ void kvm_ioapic_clear_all(struct kvm_ioapic *ioapic, int irq_source_id);
+-int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
+-			     struct kvm_lapic_irq *irq,
+-			     struct dest_map *dest_map);
+ void kvm_get_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
+ void kvm_set_ioapic(struct kvm *kvm, struct kvm_ioapic_state *state);
+ void kvm_ioapic_scan_entry(struct kvm_vcpu *vcpu,
+diff --git a/arch/x86/kvm/irq.h b/arch/x86/kvm/irq.h
+index 7c6233d37c64..f173ab6b407e 100644
+--- a/arch/x86/kvm/irq.h
++++ b/arch/x86/kvm/irq.h
+@@ -113,5 +113,8 @@ int apic_has_pending_timer(struct kvm_vcpu *vcpu);
+ 
+ int kvm_setup_default_irq_routing(struct kvm *kvm);
+ int kvm_setup_empty_irq_routing(struct kvm *kvm);
++int kvm_irq_delivery_to_apic(struct kvm *kvm, struct kvm_lapic *src,
++			     struct kvm_lapic_irq *irq,
++			     struct dest_map *dest_map);
+ 
+ #endif
+diff --git a/arch/x86/kvm/lapic.h b/arch/x86/kvm/lapic.h
+index 39925afdfcdc..0b9bbadd1f3c 100644
+--- a/arch/x86/kvm/lapic.h
++++ b/arch/x86/kvm/lapic.h
+@@ -83,7 +83,7 @@ int kvm_lapic_reg_read(struct kvm_lapic *apic, u32 offset, int len,
+ 		       void *data);
+ bool kvm_apic_match_dest(struct kvm_vcpu *vcpu, struct kvm_lapic *source,
+ 			   int short_hand, unsigned int dest, int dest_mode);
+-
++int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2);
+ bool __kvm_apic_update_irr(u32 *pir, void *regs, int *max_irr);
+ bool kvm_apic_update_irr(struct kvm_vcpu *vcpu, u32 *pir, int *max_irr);
+ void kvm_apic_update_ppr(struct kvm_vcpu *vcpu);
+-- 
+2.34.1
+
