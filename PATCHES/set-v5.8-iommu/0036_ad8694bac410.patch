@@ -1,0 +1,116 @@
+From ad8694bac410e5d72ad610dfb146f58bf2fe0365 Mon Sep 17 00:00:00 2001
+From: Joerg Roedel <jroedel@suse.de>
+Date: Tue, 9 Jun 2020 15:03:02 +0200
+Subject: [PATCH] iommu/amd: Move AMD IOMMU driver into subdirectory
+
+Move all files related to the AMD IOMMU driver into its own
+subdirectory.
+
+Signed-off-by: Joerg Roedel <jroedel@suse.de>
+Reviewed-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Reviewed-by: Jerry Snitselaar <jsnitsel@redhat.com>
+Link: https://lore.kernel.org/r/20200609130303.26974-2-joro@8bytes.org
+---
+ MAINTAINERS                                          | 2 +-
+ drivers/iommu/Makefile                               | 6 +++---
+ drivers/iommu/{ => amd}/amd_iommu.h                  | 0
+ drivers/iommu/{ => amd}/amd_iommu_types.h            | 0
+ drivers/iommu/{amd_iommu_debugfs.c => amd/debugfs.c} | 0
+ drivers/iommu/{amd_iommu_init.c => amd/init.c}       | 2 +-
+ drivers/iommu/{amd_iommu.c => amd/iommu.c}           | 2 +-
+ drivers/iommu/{amd_iommu_v2.c => amd/iommu_v2.c}     | 0
+ drivers/iommu/{amd_iommu_quirks.c => amd/quirks.c}   | 0
+ 9 files changed, 6 insertions(+), 6 deletions(-)
+ rename drivers/iommu/{ => amd}/amd_iommu.h (100%)
+ rename drivers/iommu/{ => amd}/amd_iommu_types.h (100%)
+ rename drivers/iommu/{amd_iommu_debugfs.c => amd/debugfs.c} (100%)
+ rename drivers/iommu/{amd_iommu_init.c => amd/init.c} (99%)
+ rename drivers/iommu/{amd_iommu.c => amd/iommu.c} (99%)
+ rename drivers/iommu/{amd_iommu_v2.c => amd/iommu_v2.c} (100%)
+ rename drivers/iommu/{amd_iommu_quirks.c => amd/quirks.c} (100%)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 50659d76976b..dd59ec6676d9 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -876,7 +876,7 @@ M:	Joerg Roedel <joro@8bytes.org>
+ L:	iommu@lists.linux-foundation.org
+ S:	Maintained
+ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/joro/iommu.git
+-F:	drivers/iommu/amd_iommu*.[ch]
++F:	drivers/iommu/amd/
+ F:	include/linux/amd-iommu.h
+ 
+ AMD KFD
+diff --git a/drivers/iommu/Makefile b/drivers/iommu/Makefile
+index 57cf4ba5e27c..3af7e374b0cb 100644
+--- a/drivers/iommu/Makefile
++++ b/drivers/iommu/Makefile
+@@ -11,9 +11,9 @@ obj-$(CONFIG_IOASID) += ioasid.o
+ obj-$(CONFIG_IOMMU_IOVA) += iova.o
+ obj-$(CONFIG_OF_IOMMU)	+= of_iommu.o
+ obj-$(CONFIG_MSM_IOMMU) += msm_iommu.o
+-obj-$(CONFIG_AMD_IOMMU) += amd_iommu.o amd_iommu_init.o amd_iommu_quirks.o
+-obj-$(CONFIG_AMD_IOMMU_DEBUGFS) += amd_iommu_debugfs.o
+-obj-$(CONFIG_AMD_IOMMU_V2) += amd_iommu_v2.o
++obj-$(CONFIG_AMD_IOMMU) += amd/iommu.o amd/init.o amd/quirks.o
++obj-$(CONFIG_AMD_IOMMU_DEBUGFS) += amd/debugfs.o
++obj-$(CONFIG_AMD_IOMMU_V2) += amd/iommu_v2.o
+ obj-$(CONFIG_ARM_SMMU) += arm_smmu.o
+ arm_smmu-objs += arm-smmu.o arm-smmu-impl.o arm-smmu-qcom.o
+ obj-$(CONFIG_ARM_SMMU_V3) += arm-smmu-v3.o
+diff --git a/drivers/iommu/amd_iommu.h b/drivers/iommu/amd/amd_iommu.h
+similarity index 100%
+rename from drivers/iommu/amd_iommu.h
+rename to drivers/iommu/amd/amd_iommu.h
+diff --git a/drivers/iommu/amd_iommu_types.h b/drivers/iommu/amd/amd_iommu_types.h
+similarity index 100%
+rename from drivers/iommu/amd_iommu_types.h
+rename to drivers/iommu/amd/amd_iommu_types.h
+diff --git a/drivers/iommu/amd_iommu_debugfs.c b/drivers/iommu/amd/debugfs.c
+similarity index 100%
+rename from drivers/iommu/amd_iommu_debugfs.c
+rename to drivers/iommu/amd/debugfs.c
+diff --git a/drivers/iommu/amd_iommu_init.c b/drivers/iommu/amd/init.c
+similarity index 99%
+rename from drivers/iommu/amd_iommu_init.c
+rename to drivers/iommu/amd/init.c
+index 3faff7f80fd2..6ebd4825e320 100644
+--- a/drivers/iommu/amd_iommu_init.c
++++ b/drivers/iommu/amd/init.c
+@@ -33,7 +33,7 @@
+ #include <linux/crash_dump.h>
+ 
+ #include "amd_iommu.h"
+-#include "irq_remapping.h"
++#include "../irq_remapping.h"
+ 
+ /*
+  * definitions for the ACPI scanning code
+diff --git a/drivers/iommu/amd_iommu.c b/drivers/iommu/amd/iommu.c
+similarity index 99%
+rename from drivers/iommu/amd_iommu.c
+rename to drivers/iommu/amd/iommu.c
+index 311ef7105c6d..74cca1757172 100644
+--- a/drivers/iommu/amd_iommu.c
++++ b/drivers/iommu/amd/iommu.c
+@@ -43,7 +43,7 @@
+ #include <asm/dma.h>
+ 
+ #include "amd_iommu.h"
+-#include "irq_remapping.h"
++#include "../irq_remapping.h"
+ 
+ #define CMD_SET_TYPE(cmd, t) ((cmd)->data[1] |= ((t) << 28))
+ 
+diff --git a/drivers/iommu/amd_iommu_v2.c b/drivers/iommu/amd/iommu_v2.c
+similarity index 100%
+rename from drivers/iommu/amd_iommu_v2.c
+rename to drivers/iommu/amd/iommu_v2.c
+diff --git a/drivers/iommu/amd_iommu_quirks.c b/drivers/iommu/amd/quirks.c
+similarity index 100%
+rename from drivers/iommu/amd_iommu_quirks.c
+rename to drivers/iommu/amd/quirks.c
+-- 
+2.34.1
+
