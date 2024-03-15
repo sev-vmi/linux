@@ -2904,6 +2904,7 @@ static bool device_is_rmrr_locked(struct device *dev)
  *  - IOMMU_DOMAIN_IDENTITY: device requires an identical mapping domain
  *  - 0: both identity and dynamic domains work for this device
  */
+#if 0
 static int device_def_domain_type(struct device *dev)
 {
 	if (dev_is_pci(dev)) {
@@ -2951,6 +2952,7 @@ static int device_def_domain_type(struct device *dev)
 	return (iommu_identity_mapping & IDENTMAP_ALL) ?
 			IOMMU_DOMAIN_IDENTITY : 0;
 }
+#endif
 
 static void intel_iommu_init_qi(struct intel_iommu *iommu)
 {
@@ -3398,6 +3400,7 @@ static unsigned long intel_alloc_iova(struct device *dev,
 	return iova_pfn;
 }
 
+#if 0
 static struct dmar_domain *get_private_domain_for_dev(struct device *dev)
 {
 	struct dmar_domain *domain, *tmp;
@@ -3445,6 +3448,7 @@ out:
 
 	return domain;
 }
+#endif
 
 /* Check if the dev needs to go through non-identity map and unmap process.*/
 static bool iommu_need_mapping(struct device *dev)
@@ -3469,6 +3473,7 @@ static bool iommu_need_mapping(struct device *dev)
 		 * non-identity mapping.
 		 */
 		dmar_remove_one_dev_info(dev);
+#if 0
 		ret = iommu_request_dma_domain_for_dev(dev);
 		if (ret) {
 			struct iommu_domain *domain;
@@ -3482,6 +3487,7 @@ static bool iommu_need_mapping(struct device *dev)
 			dmar_remove_one_dev_info(dev);
 			get_private_domain_for_dev(dev);
 		}
+#endif
 
 		dev_info(dev, "32bit DMA uses non-identity mapping\n");
 	}
@@ -5572,6 +5578,7 @@ static bool intel_iommu_capable(enum iommu_cap cap)
 	return false;
 }
 
+#if 0
 static int intel_iommu_add_device(struct device *dev)
 {
 	struct dmar_domain *dmar_domain;
@@ -5661,6 +5668,7 @@ static void intel_iommu_remove_device(struct device *dev)
 	if (device_needs_bounce(dev))
 		set_dma_ops(dev, NULL);
 }
+#endif
 
 static void intel_iommu_get_resv_regions(struct device *device,
 					 struct list_head *head)
@@ -5966,8 +5974,10 @@ const struct iommu_ops intel_iommu_ops = {
 	.map			= intel_iommu_map,
 	.unmap			= intel_iommu_unmap,
 	.iova_to_phys		= intel_iommu_iova_to_phys,
+#if 0
 	.add_device		= intel_iommu_add_device,
 	.remove_device		= intel_iommu_remove_device,
+#endif
 	.get_resv_regions	= intel_iommu_get_resv_regions,
 	.put_resv_regions	= intel_iommu_put_resv_regions,
 	.apply_resv_region	= intel_iommu_apply_resv_region,
