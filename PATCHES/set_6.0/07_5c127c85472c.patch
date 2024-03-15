@@ -1,0 +1,78 @@
+From 5c127c85472c0c4c9d1f88e2807adcab9335d97c Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:59 -0500
+Subject: [PATCH] KVM: SVM: Adding support for configuring x2APIC MSRs
+ interception
+
+When enabling x2APIC virtualization (x2AVIC), the interception of
+x2APIC MSRs must be disabled to let the hardware virtualize guest
+MSR accesses.
+
+Current implementation keeps track of list of MSR interception state
+in the svm_direct_access_msrs array. Therefore, extends the array to
+include x2APIC MSRs.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-8-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 5c127c85472c
+---
+ arch/x86/kvm/svm/svm.c | 25 +++++++++++++++++++++++++
+ arch/x86/kvm/svm/svm.h |  4 ++--
+ 2 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index e45568aea060..382edac728c7 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -100,6 +100,31 @@ static const struct svm_direct_access_msrs {
+ 	{ .index = MSR_IA32_CR_PAT,			.always = false },
+ 	{ .index = MSR_AMD64_SEV_ES_GHCB,		.always = true  },
+ 	{ .index = MSR_TSC_AUX,				.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ID),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_TASKPRI),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ARBPRI),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_PROCPRI),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_EOI),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_RRR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LDR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_DFR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_SPIV),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ISR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_TMR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_IRR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ESR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ICR),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_ICR2),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVTT),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVTTHMR),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVTPC),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVT0),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVT1),		.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_LVTERR),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_TMICT),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_TMCCT),	.always = false },
++	{ .index = (APIC_BASE_MSR + APIC_TDCR),		.always = false },
+ 	{ .index = MSR_INVALID,				.always = false },
+ };
+ 
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 6d6390f785c5..172c2a37e60e 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -29,8 +29,8 @@
+ #define	IOPM_SIZE PAGE_SIZE * 3
+ #define	MSRPM_SIZE PAGE_SIZE * 2
+ 
+-#define MAX_DIRECT_ACCESS_MSRS	21
+-#define MSRPM_OFFSETS	16
++#define MAX_DIRECT_ACCESS_MSRS	46
++#define MSRPM_OFFSETS	32
+ extern u32 msrpm_offsets[MSRPM_OFFSETS] __read_mostly;
+ extern bool npt_enabled;
+ extern int vgif;
+-- 
+2.27.0
+

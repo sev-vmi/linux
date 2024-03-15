@@ -1,0 +1,66 @@
+From 8c9e639da435874fb845c4d296ce55664071ea7a Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:27:07 -0500
+Subject: [PATCH] KVM: SVM: Use target APIC ID to complete x2AVIC IRQs when
+ possible
+
+For x2AVIC, the index from incomplete IPI #vmexit info is invalid
+for logical cluster mode. Only ICRH/ICRL values can be used
+to determine the IPI destination APIC ID.
+
+Since QEMU defines guest physical APIC ID to be the same as
+vCPU ID, it can be used to quickly identify the target vCPU to deliver IPI,
+and avoid the overhead from searching through all vCPUs to match the target
+vCPU.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-16-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 8c9e639da435
+---
+ arch/x86/kvm/svm/avic.c | 21 ++++++++++++++++++---
+ 1 file changed, 18 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index a8db5d2532bc..229de5fe665d 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -390,9 +390,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 
+ 		logid_index = cluster + __ffs(bitmap);
+ 
+-		if (apic_x2apic_mode(source)) {
+-			l1_physical_id = logid_index;
+-		} else {
++		if (!apic_x2apic_mode(source)) {
+ 			u32 *avic_logical_id_table =
+ 				page_address(kvm_svm->avic_logical_id_table_page);
+ 
+@@ -407,6 +405,23 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 
+ 			l1_physical_id = logid_entry &
+ 					 AVIC_LOGICAL_ID_ENTRY_GUEST_PHYSICAL_ID_MASK;
++		} else {
++			/*
++			 * For x2APIC logical mode, cannot leverage the index.
++			 * Instead, calculate physical ID from logical ID in ICRH.
++			 */
++			int cluster = (icrh & 0xffff0000) >> 16;
++			int apic = ffs(icrh & 0xffff) - 1;
++
++			/*
++			 * If the x2APIC logical ID sub-field (i.e. icrh[15:0])
++			 * contains anything but a single bit, we cannot use the
++			 * fast path, because it is limited to a single vCPU.
++			 */
++			if (apic < 0 || icrh != (1 << apic))
++				return -EINVAL;
++
++			l1_physical_id = (cluster << 4) + apic;
+ 		}
+ 	}
+ 
+-- 
+2.27.0
+

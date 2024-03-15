@@ -1,0 +1,45 @@
+From 0a8735a6acf36ac35499563dc44f3e3d5034a2ce Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Sun, 24 Jul 2022 22:34:28 -0500
+Subject: [PATCH] KVM: SVM: Do not virtualize MSR accesses for APIC LVTT
+ register
+
+AMD does not support APIC TSC-deadline timer mode. AVIC hardware
+will generate GP fault when guest kernel writes 1 to bits [18]
+of the APIC LVTT register (offset 0x32) to set the timer mode.
+(Note: bit 18 is reserved on AMD system).
+
+Therefore, always intercept and let KVM emulate the MSR accesses.
+
+Fixes: f3d7c8aa6882 ("KVM: SVM: Fix x2APIC MSRs interception")
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220725033428.3699-1-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 0a8735a6acf3
+---
+ arch/x86/kvm/svm/svm.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index aef63aae922d..3e0639a68385 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -118,7 +118,14 @@ static const struct svm_direct_access_msrs {
+ 	{ .index = X2APIC_MSR(APIC_ESR),		.always = false },
+ 	{ .index = X2APIC_MSR(APIC_ICR),		.always = false },
+ 	{ .index = X2APIC_MSR(APIC_ICR2),		.always = false },
+-	{ .index = X2APIC_MSR(APIC_LVTT),		.always = false },
++
++	/*
++	 * Note:
++	 * AMD does not virtualize APIC TSC-deadline timer mode, but it is
++	 * emulated by KVM. When setting APIC LVTT (0x832) register bit 18,
++	 * the AVIC hardware would generate GP fault. Therefore, always
++	 * intercept the MSR 0x832, and do not setup direct_access_msr.
++	 */
+ 	{ .index = X2APIC_MSR(APIC_LVTTHMR),		.always = false },
+ 	{ .index = X2APIC_MSR(APIC_LVTPC),		.always = false },
+ 	{ .index = X2APIC_MSR(APIC_LVT0),		.always = false },
+-- 
+2.27.0
+

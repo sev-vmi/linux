@@ -1,0 +1,63 @@
+From ab1b1dc131cd7da4c66758e711c0f69da3633561 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:58 -0500
+Subject: [PATCH] KVM: SVM: Do not support updating APIC ID when in x2APIC mode
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In X2APIC mode, the Logical Destination Register is read-only,
+which provides a fixed mapping between the logical and physical
+APIC IDs. Therefore, there is no Logical APIC ID table in X2AVIC
+and the processor uses the X2APIC ID in the backing page to create
+a vCPU’s logical ID.
+
+In addition, KVM does not support updating APIC ID in x2APIC mode,
+which means AVIC does not need to handle this case.
+
+Therefore, check x2APIC mode when handling physical and logical
+APIC ID update, and when invalidating logical APIC ID table.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Suggested-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-7-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: ab1b1dc131cd
+---
+ arch/x86/kvm/svm/avic.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 8b8a221cd635..cc4da232040c 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -526,8 +526,13 @@ static void avic_invalidate_logical_id_entry(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 	bool flat = svm->dfr_reg == APIC_DFR_FLAT;
+-	u32 *entry = avic_get_logical_id_entry(vcpu, svm->ldr_reg, flat);
++	u32 *entry;
+ 
++	/* Note: x2AVIC does not use logical APIC ID table */
++	if (apic_x2apic_mode(vcpu->arch.apic))
++		return;
++
++	entry = avic_get_logical_id_entry(vcpu, svm->ldr_reg, flat);
+ 	if (entry)
+ 		clear_bit(AVIC_LOGICAL_ID_ENTRY_VALID_BIT, (unsigned long *)entry);
+ }
+@@ -539,6 +544,10 @@ static int avic_handle_ldr_update(struct kvm_vcpu *vcpu)
+ 	u32 ldr = kvm_lapic_get_reg(vcpu->arch.apic, APIC_LDR);
+ 	u32 id = kvm_xapic_id(vcpu->arch.apic);
+ 
++	/* AVIC does not support LDR update for x2APIC */
++	if (apic_x2apic_mode(vcpu->arch.apic))
++		return 0;
++
+ 	if (ldr == svm->ldr_reg)
+ 		return 0;
+ 
+-- 
+2.27.0
+

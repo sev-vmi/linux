@@ -1,0 +1,117 @@
+From bf348f667ed36c0799dd6d10adb7be9cdfea48c3 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:54 -0500
+Subject: [PATCH] KVM: x86: lapic: Rename [GET/SET]_APIC_DEST_FIELD to
+ [GET/SET]_XAPIC_DEST_FIELD
+
+To signify that the macros only support 8-bit xAPIC destination ID.
+
+Suggested-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Pankaj Gupta <pankaj.gupta@amd.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Reviewed-by: Paolo Bonzini <pbonzini@redhat.com>
+Message-Id: <20220519102709.24125-3-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: bf348f667ed3
+---
+ arch/x86/hyperv/hv_apic.c      | 2 +-
+ arch/x86/include/asm/apicdef.h | 4 ++--
+ arch/x86/kernel/apic/apic.c    | 2 +-
+ arch/x86/kernel/apic/ipi.c     | 2 +-
+ arch/x86/kvm/lapic.c           | 2 +-
+ arch/x86/kvm/svm/avic.c        | 4 ++--
+ 6 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/hyperv/hv_apic.c b/arch/x86/hyperv/hv_apic.c
+index db2d92fb44da..fb8b2c088681 100644
+--- a/arch/x86/hyperv/hv_apic.c
++++ b/arch/x86/hyperv/hv_apic.c
+@@ -46,7 +46,7 @@ static void hv_apic_icr_write(u32 low, u32 id)
+ {
+ 	u64 reg_val;
+ 
+-	reg_val = SET_APIC_DEST_FIELD(id);
++	reg_val = SET_XAPIC_DEST_FIELD(id);
+ 	reg_val = reg_val << 32;
+ 	reg_val |= low;
+ 
+diff --git a/arch/x86/include/asm/apicdef.h b/arch/x86/include/asm/apicdef.h
+index 92035eb3afee..68d213e83fcc 100644
+--- a/arch/x86/include/asm/apicdef.h
++++ b/arch/x86/include/asm/apicdef.h
+@@ -89,8 +89,8 @@
+ #define		APIC_DM_EXTINT		0x00700
+ #define		APIC_VECTOR_MASK	0x000FF
+ #define	APIC_ICR2	0x310
+-#define		GET_APIC_DEST_FIELD(x)	(((x) >> 24) & 0xFF)
+-#define		SET_APIC_DEST_FIELD(x)	((x) << 24)
++#define		GET_XAPIC_DEST_FIELD(x)	(((x) >> 24) & 0xFF)
++#define		SET_XAPIC_DEST_FIELD(x)	((x) << 24)
+ #define	APIC_LVTT	0x320
+ #define	APIC_LVTTHMR	0x330
+ #define	APIC_LVTPC	0x340
+diff --git a/arch/x86/kernel/apic/apic.c b/arch/x86/kernel/apic/apic.c
+index 189d3a5e471a..a4347605ab00 100644
+--- a/arch/x86/kernel/apic/apic.c
++++ b/arch/x86/kernel/apic/apic.c
+@@ -275,7 +275,7 @@ void native_apic_icr_write(u32 low, u32 id)
+ 	unsigned long flags;
+ 
+ 	local_irq_save(flags);
+-	apic_write(APIC_ICR2, SET_APIC_DEST_FIELD(id));
++	apic_write(APIC_ICR2, SET_XAPIC_DEST_FIELD(id));
+ 	apic_write(APIC_ICR, low);
+ 	local_irq_restore(flags);
+ }
+diff --git a/arch/x86/kernel/apic/ipi.c b/arch/x86/kernel/apic/ipi.c
+index d1fb874fbe64..2a6509e8c840 100644
+--- a/arch/x86/kernel/apic/ipi.c
++++ b/arch/x86/kernel/apic/ipi.c
+@@ -99,7 +99,7 @@ void native_send_call_func_ipi(const struct cpumask *mask)
+ 
+ static inline int __prepare_ICR2(unsigned int mask)
+ {
+-	return SET_APIC_DEST_FIELD(mask);
++	return SET_XAPIC_DEST_FIELD(mask);
+ }
+ 
+ static inline void __xapic_wait_icr_idle(void)
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index f03facc2ee3e..6f31cc0548f0 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -1326,7 +1326,7 @@ void kvm_apic_send_ipi(struct kvm_lapic *apic, u32 icr_low, u32 icr_high)
+ 	if (apic_x2apic_mode(apic))
+ 		irq.dest_id = icr_high;
+ 	else
+-		irq.dest_id = GET_APIC_DEST_FIELD(icr_high);
++		irq.dest_id = GET_XAPIC_DEST_FIELD(icr_high);
+ 
+ 	trace_kvm_apic_ipi(icr_low, irq.dest_id);
+ 
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index d1bc5820ea46..37016feb5ac4 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -303,7 +303,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 	if (apic_x2apic_mode(source))
+ 		dest = icrh;
+ 	else
+-		dest = GET_APIC_DEST_FIELD(icrh);
++		dest = GET_XAPIC_DEST_FIELD(icrh);
+ 
+ 	if (dest_mode == APIC_DEST_PHYSICAL) {
+ 		/* broadcast destination, use slow path */
+@@ -397,7 +397,7 @@ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 	 */
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
+ 		if (kvm_apic_match_dest(vcpu, source, icrl & APIC_SHORT_MASK,
+-					GET_APIC_DEST_FIELD(icrh),
++					GET_XAPIC_DEST_FIELD(icrh),
+ 					icrl & APIC_DEST_MASK)) {
+ 			vcpu->arch.apic->irr_pending = true;
+ 			svm_complete_interrupt_delivery(vcpu,
+-- 
+2.27.0
+
