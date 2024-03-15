@@ -1,0 +1,43 @@
+From c514d3a348ac4358215fdfb9ed17d4c01dd39731 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:57 -0500
+Subject: [PATCH] KVM: SVM: Update avic_kick_target_vcpus to support 32-bit
+ APIC ID
+
+In x2APIC mode, ICRH contains 32-bit destination APIC ID.
+So, update the avic_kick_target_vcpus() accordingly.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-6-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: c514d3a348ac
+---
+ arch/x86/kvm/svm/avic.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 15dc6ca2c498..8b8a221cd635 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -402,9 +402,15 @@ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 	 * since entered the guest will have processed pending IRQs at VMRUN.
+ 	 */
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
++		u32 dest;
++
++		if (apic_x2apic_mode(vcpu->arch.apic))
++			dest = icrh;
++		else
++			dest = GET_XAPIC_DEST_FIELD(icrh);
++
+ 		if (kvm_apic_match_dest(vcpu, source, icrl & APIC_SHORT_MASK,
+-					GET_XAPIC_DEST_FIELD(icrh),
+-					icrl & APIC_DEST_MASK)) {
++					dest, icrl & APIC_DEST_MASK)) {
+ 			vcpu->arch.apic->irr_pending = true;
+ 			svm_complete_interrupt_delivery(vcpu,
+ 							icrl & APIC_MODE_MASK,
+-- 
+2.27.0
+

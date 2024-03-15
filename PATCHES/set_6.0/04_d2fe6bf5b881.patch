@@ -1,0 +1,83 @@
+From d2fe6bf5b881205ae99e858ed9b7ba1ebdb9c029 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:56 -0500
+Subject: [PATCH] KVM: SVM: Update max number of vCPUs supported for x2AVIC
+ mode
+
+xAVIC and x2AVIC modes can support diffferent number of vcpus.
+Update existing logics to support each mode accordingly.
+
+Also, modify the maximum physical APIC ID for AVIC to 255 to reflect
+the actual value supported by the architecture.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Pankaj Gupta <pankaj.gupta@amd.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-5-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: d2fe6bf5b881
+---
+ arch/x86/include/asm/svm.h | 12 +++++++++---
+ arch/x86/kvm/svm/avic.c    |  8 +++++---
+ 2 files changed, 14 insertions(+), 6 deletions(-)
+
+diff --git a/arch/x86/include/asm/svm.h b/arch/x86/include/asm/svm.h
+index 1d4d30cd84c2..ed4b83d7f09e 100644
+--- a/arch/x86/include/asm/svm.h
++++ b/arch/x86/include/asm/svm.h
+@@ -258,10 +258,16 @@ enum avic_ipi_failure_cause {
+ 
+ 
+ /*
+- * 0xff is broadcast, so the max index allowed for physical APIC ID
+- * table is 0xfe.  APIC IDs above 0xff are reserved.
++ * For AVIC, the max index allowed for physical APIC ID
++ * table is 0xff (255).
+  */
+-#define AVIC_MAX_PHYSICAL_ID_COUNT	0xff
++#define AVIC_MAX_PHYSICAL_ID		0XFEULL
++
++/*
++ * For x2AVIC, the max index allowed for physical APIC ID
++ * table is 0x1ff (511).
++ */
++#define X2AVIC_MAX_PHYSICAL_ID		0x1FFUL
+ 
+ #define AVIC_HPA_MASK	~((0xFFFULL << 52) | 0xFFF)
+ #define VMCB_AVIC_APIC_BAR_MASK		0xFFFFFFFFFF000ULL
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 509163833cbc..15dc6ca2c498 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -179,7 +179,7 @@ void avic_init_vmcb(struct vcpu_svm *svm, struct vmcb *vmcb)
+ 	vmcb->control.avic_backing_page = bpa & AVIC_HPA_MASK;
+ 	vmcb->control.avic_logical_id = lpa & AVIC_HPA_MASK;
+ 	vmcb->control.avic_physical_id = ppa & AVIC_HPA_MASK;
+-	vmcb->control.avic_physical_id |= AVIC_MAX_PHYSICAL_ID_COUNT;
++	vmcb->control.avic_physical_id |= AVIC_MAX_PHYSICAL_ID;
+ 	vmcb->control.avic_vapic_bar = APIC_DEFAULT_PHYS_BASE & VMCB_AVIC_APIC_BAR_MASK;
+ 
+ 	if (kvm_apicv_activated(svm->vcpu.kvm))
+@@ -194,7 +194,8 @@ static u64 *avic_get_physical_id_entry(struct kvm_vcpu *vcpu,
+ 	u64 *avic_physical_id_table;
+ 	struct kvm_svm *kvm_svm = to_kvm_svm(vcpu->kvm);
+ 
+-	if (index >= AVIC_MAX_PHYSICAL_ID_COUNT)
++	if ((avic_mode == AVIC_MODE_X1 && index > AVIC_MAX_PHYSICAL_ID) ||
++	    (avic_mode == AVIC_MODE_X2 && index > X2AVIC_MAX_PHYSICAL_ID))
+ 		return NULL;
+ 
+ 	avic_physical_id_table = page_address(kvm_svm->avic_physical_id_table_page);
+@@ -241,7 +242,8 @@ static int avic_init_backing_page(struct kvm_vcpu *vcpu)
+ 	int id = vcpu->vcpu_id;
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
+-	if (id >= AVIC_MAX_PHYSICAL_ID_COUNT)
++	if ((avic_mode == AVIC_MODE_X1 && id > AVIC_MAX_PHYSICAL_ID) ||
++	    (avic_mode == AVIC_MODE_X2 && id > X2AVIC_MAX_PHYSICAL_ID))
+ 		return -EINVAL;
+ 
+ 	if (!vcpu->arch.apic->regs)
+-- 
+2.27.0
+

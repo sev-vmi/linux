@@ -1,0 +1,93 @@
+From 091abbf578f926e763adc0f577baeb7f405b4bdc Mon Sep 17 00:00:00 2001
+From: Maxim Levitsky <mlevitsk@redhat.com>
+Date: Thu, 19 May 2022 05:27:09 -0500
+Subject: [PATCH] KVM: x86: nSVM: optimize svm_set_x2apic_msr_interception
+
+- Avoid toggling the x2apic msr interception if it is already up to date.
+
+- Avoid touching L0 msr bitmap when AVIC is inhibited on entry to
+  the guest mode, because in this case the guest usually uses its
+  own msr bitmap.
+
+  Later on VM exit, the 1st optimization will allow KVM to skip
+  touching the L0 msr bitmap as well.
+
+Reviewed-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Tested-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Signed-off-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20220519102709.24125-18-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 091abbf578f9
+---
+ arch/x86/kvm/svm/avic.c | 8 ++++++++
+ arch/x86/kvm/svm/svm.c  | 7 +++++++
+ arch/x86/kvm/svm/svm.h  | 2 ++
+ 3 files changed, 17 insertions(+)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index f18c852b6900..6919dee69f18 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -100,6 +100,14 @@ static void avic_deactivate_vmcb(struct vcpu_svm *svm)
+ 	vmcb->control.int_ctl &= ~(AVIC_ENABLE_MASK | X2APIC_MODE_MASK);
+ 	vmcb->control.avic_physical_id &= ~AVIC_PHYSICAL_MAX_INDEX_MASK;
+ 
++	/*
++	 * If running nested and the guest uses its own MSR bitmap, there
++	 * is no need to update L0's msr bitmap
++	 */
++	if (is_guest_mode(&svm->vcpu) &&
++	    vmcb12_is_intercept(&svm->nested.ctl, INTERCEPT_MSR_PROT))
++		return;
++
+ 	/* Enabling MSR intercept for x2APIC registers */
+ 	svm_set_x2apic_msr_interception(svm, true);
+ }
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index bb0457c1e41c..37ce061dfc76 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -809,6 +809,9 @@ void svm_set_x2apic_msr_interception(struct vcpu_svm *svm, bool intercept)
+ {
+ 	int i;
+ 
++	if (intercept == svm->x2avic_msrs_intercepted)
++		return;
++
+ 	if (avic_mode != AVIC_MODE_X2 ||
+ 	    !apic_x2apic_mode(svm->vcpu.arch.apic))
+ 		return;
+@@ -822,6 +825,8 @@ void svm_set_x2apic_msr_interception(struct vcpu_svm *svm, bool intercept)
+ 		set_msr_interception(&svm->vcpu, svm->msrpm, index,
+ 				     !intercept, !intercept);
+ 	}
++
++	svm->x2avic_msrs_intercepted = intercept;
+ }
+ 
+ void svm_vcpu_free_msrpm(u32 *msrpm)
+@@ -1393,6 +1398,8 @@ static int svm_vcpu_create(struct kvm_vcpu *vcpu)
+ 		goto error_free_vmsa_page;
+ 	}
+ 
++	svm->x2avic_msrs_intercepted = true;
++
+ 	svm->vmcb01.ptr = page_address(vmcb01_page);
+ 	svm->vmcb01.pa = __sme_set(page_to_pfn(vmcb01_page) << PAGE_SHIFT);
+ 	svm_switch_vmcb(svm, &svm->vmcb01);
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index ccaae7d160cd..558ca1296d36 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -276,6 +276,8 @@ struct vcpu_svm {
+ 	struct vcpu_sev_es_state sev_es;
+ 
+ 	bool guest_state_loaded;
++
++	bool x2avic_msrs_intercepted;
+ };
+ 
+ struct svm_cpu_data {
+-- 
+2.27.0
+

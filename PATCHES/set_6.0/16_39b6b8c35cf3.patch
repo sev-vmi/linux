@@ -1,0 +1,79 @@
+From 39b6b8c35cf37970e07e9081c0e7d1083930b2f7 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:27:08 -0500
+Subject: [PATCH] KVM: SVM: Add AVIC doorbell tracepoint
+
+Add a tracepoint to track number of doorbells being sent
+to signal a running vCPU to process IRQ after being injected.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-17-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 39b6b8c35cf3
+---
+ arch/x86/kvm/svm/avic.c |  4 +++-
+ arch/x86/kvm/trace.h    | 18 ++++++++++++++++++
+ arch/x86/kvm/x86.c      |  1 +
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 229de5fe665d..f18c852b6900 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -324,8 +324,10 @@ void avic_ring_doorbell(struct kvm_vcpu *vcpu)
+ 	 */
+ 	int cpu = READ_ONCE(vcpu->cpu);
+ 
+-	if (cpu != get_cpu())
++	if (cpu != get_cpu()) {
+ 		wrmsrl(MSR_AMD64_SVM_AVIC_DOORBELL, kvm_cpu_get_apicid(cpu));
++		trace_kvm_avic_doorbell(vcpu->vcpu_id, kvm_cpu_get_apicid(cpu));
++	}
+ 	put_cpu();
+ }
+ 
+diff --git a/arch/x86/kvm/trace.h b/arch/x86/kvm/trace.h
+index fd28dd40b813..bc85622e28b2 100644
+--- a/arch/x86/kvm/trace.h
++++ b/arch/x86/kvm/trace.h
+@@ -1490,6 +1490,24 @@ TRACE_EVENT(kvm_avic_kick_vcpu_slowpath,
+ 		  __entry->icrh, __entry->icrl, __entry->index)
+ );
+ 
++TRACE_EVENT(kvm_avic_doorbell,
++	    TP_PROTO(u32 vcpuid, u32 apicid),
++	    TP_ARGS(vcpuid, apicid),
++
++	TP_STRUCT__entry(
++		__field(u32, vcpuid)
++		__field(u32, apicid)
++	),
++
++	TP_fast_assign(
++		__entry->vcpuid = vcpuid;
++		__entry->apicid = apicid;
++	),
++
++	TP_printk("vcpuid=%u, apicid=%u",
++		  __entry->vcpuid, __entry->apicid)
++);
++
+ TRACE_EVENT(kvm_hv_timer_state,
+ 		TP_PROTO(unsigned int vcpu_id, unsigned int hv_timer_in_use),
+ 		TP_ARGS(vcpu_id, hv_timer_in_use),
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index acd7ce1dcb9f..d88600e41ff8 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -13328,6 +13328,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_unaccelerated_access);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_incomplete_ipi);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_ga_log);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_kick_vcpu_slowpath);
++EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_avic_doorbell);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_apicv_accept_irq);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_vmgexit_enter);
+ EXPORT_TRACEPOINT_SYMBOL_GPL(kvm_vmgexit_exit);
+-- 
+2.27.0
+

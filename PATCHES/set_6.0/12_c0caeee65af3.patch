@@ -1,0 +1,41 @@
+From c0caeee65af3944b7b8abbf566e7cc1fae15c775 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:27:04 -0500
+Subject: [PATCH] KVM: SVM: Do not throw warning when calling avic_vcpu_load on
+ a running vcpu
+
+Originalliy, this WARN_ON is designed to detect when calling
+avic_vcpu_load() on an already running vcpu in AVIC mode (i.e. the AVIC
+is_running bit is set).
+
+However, for x2AVIC, the vCPU can switch from xAPIC to x2APIC mode while in
+running state, in which the avic_vcpu_load() will be called from
+svm_refresh_apicv_exec_ctrl().
+
+Therefore, remove this warning since it is no longer appropriate.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Pankaj Gupta <pankaj.gupta@amd.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-13-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: c0caeee65af3
+---
+ arch/x86/kvm/svm/avic.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index c7db96428b19..fcff249e73cd 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -1030,7 +1030,6 @@ void avic_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
+ 		return;
+ 
+ 	entry = READ_ONCE(*(svm->avic_physical_id_cache));
+-	WARN_ON(entry & AVIC_PHYSICAL_ID_ENTRY_IS_RUNNING_MASK);
+ 
+ 	entry &= ~AVIC_PHYSICAL_ID_ENTRY_HOST_PHYSICAL_ID_MASK;
+ 	entry |= (h_physical_id & AVIC_PHYSICAL_ID_ENTRY_HOST_PHYSICAL_ID_MASK);
+-- 
+2.27.0
+

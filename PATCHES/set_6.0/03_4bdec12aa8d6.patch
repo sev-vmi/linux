@@ -1,0 +1,168 @@
+From 4bdec12aa8d6d0fd7f1ac6740c456bf726e53c0b Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:26:55 -0500
+Subject: [PATCH] KVM: SVM: Detect X2APIC virtualization (x2AVIC) support
+
+Add CPUID check for the x2APIC virtualization (x2AVIC) feature.
+If available, the SVM driver can support both AVIC and x2AVIC modes
+when load the kvm_amd driver with avic=1. The operating mode will be
+determined at runtime depending on the guest APIC mode.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Pankaj Gupta <pankaj.gupta@amd.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-4-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 4bdec12aa8d6
+---
+ arch/x86/include/asm/svm.h |  3 +++
+ arch/x86/kvm/svm/avic.c    | 45 ++++++++++++++++++++++++++++++++++++++
+ arch/x86/kvm/svm/svm.c     | 15 ++-----------
+ arch/x86/kvm/svm/svm.h     |  9 ++++++++
+ 4 files changed, 59 insertions(+), 13 deletions(-)
+
+diff --git a/arch/x86/include/asm/svm.h b/arch/x86/include/asm/svm.h
+index 1b07fba11704..1d4d30cd84c2 100644
+--- a/arch/x86/include/asm/svm.h
++++ b/arch/x86/include/asm/svm.h
+@@ -195,6 +195,9 @@ struct __attribute__ ((__packed__)) vmcb_control_area {
+ #define AVIC_ENABLE_SHIFT 31
+ #define AVIC_ENABLE_MASK (1 << AVIC_ENABLE_SHIFT)
+ 
++#define X2APIC_MODE_SHIFT 30
++#define X2APIC_MODE_MASK (1 << X2APIC_MODE_SHIFT)
++
+ #define LBR_CTL_ENABLE_MASK BIT_ULL(0)
+ #define VIRTUAL_VMLOAD_VMSAVE_ENABLE_MASK BIT_ULL(1)
+ 
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 37016feb5ac4..509163833cbc 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -40,6 +40,9 @@
+ #define AVIC_GATAG_TO_VMID(x)		((x >> AVIC_VCPU_ID_BITS) & AVIC_VM_ID_MASK)
+ #define AVIC_GATAG_TO_VCPUID(x)		(x & AVIC_VCPU_ID_MASK)
+ 
++static bool force_avic;
++module_param_unsafe(force_avic, bool, 0444);
++
+ /* Note:
+  * This hash table is used to map VM_ID to a struct kvm_svm,
+  * when handling AMD IOMMU GALOG notification to schedule in
+@@ -50,6 +53,7 @@ static DEFINE_HASHTABLE(svm_vm_data_hash, SVM_VM_DATA_HASH_BITS);
+ static u32 next_vm_id = 0;
+ static bool next_vm_id_wrapped = 0;
+ static DEFINE_SPINLOCK(svm_vm_data_hash_lock);
++enum avic_modes avic_mode;
+ 
+ /*
+  * This is a wrapper of struct amd_iommu_ir_data.
+@@ -1058,3 +1062,44 @@ void avic_vcpu_unblocking(struct kvm_vcpu *vcpu)
+ 
+ 	avic_vcpu_load(vcpu, vcpu->cpu);
+ }
++
++/*
++ * Note:
++ * - The module param avic enable both xAPIC and x2APIC mode.
++ * - Hypervisor can support both xAVIC and x2AVIC in the same guest.
++ * - The mode can be switched at run-time.
++ */
++bool avic_hardware_setup(struct kvm_x86_ops *x86_ops)
++{
++	if (!npt_enabled)
++		return false;
++
++	if (boot_cpu_has(X86_FEATURE_AVIC)) {
++		avic_mode = AVIC_MODE_X1;
++		pr_info("AVIC enabled\n");
++	} else if (force_avic) {
++		/*
++		 * Some older systems does not advertise AVIC support.
++		 * See Revision Guide for specific AMD processor for more detail.
++		 */
++		avic_mode = AVIC_MODE_X1;
++		pr_warn("AVIC is not supported in CPUID but force enabled");
++		pr_warn("Your system might crash and burn");
++	}
++
++	/* AVIC is a prerequisite for x2AVIC. */
++	if (boot_cpu_has(X86_FEATURE_X2AVIC)) {
++		if (avic_mode == AVIC_MODE_X1) {
++			avic_mode = AVIC_MODE_X2;
++			pr_info("x2AVIC enabled\n");
++		} else {
++			pr_warn(FW_BUG "Cannot support x2AVIC due to AVIC is disabled");
++			pr_warn(FW_BUG "Try enable AVIC using force_avic option");
++		}
++	}
++
++	if (avic_mode != AVIC_MODE_NONE)
++		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
++
++	return !!avic_mode;
++}
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 136298cfb3fb..e45568aea060 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -188,9 +188,6 @@ module_param(tsc_scaling, int, 0444);
+ static bool avic;
+ module_param(avic, bool, 0444);
+ 
+-static bool force_avic;
+-module_param_unsafe(force_avic, bool, 0444);
+-
+ bool __read_mostly dump_invalid_vmcb;
+ module_param(dump_invalid_vmcb, bool, 0644);
+ 
+@@ -5016,17 +5013,9 @@ static __init int svm_hardware_setup(void)
+ 			nrips = false;
+ 	}
+ 
+-	enable_apicv = avic = avic && npt_enabled && (boot_cpu_has(X86_FEATURE_AVIC) || force_avic);
++	enable_apicv = avic = avic && avic_hardware_setup(&svm_x86_ops);
+ 
+-	if (enable_apicv) {
+-		if (!boot_cpu_has(X86_FEATURE_AVIC)) {
+-			pr_warn("AVIC is not supported in CPUID but force enabled");
+-			pr_warn("Your system might crash and burn");
+-		} else
+-			pr_info("AVIC enabled\n");
+-
+-		amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
+-	} else {
++	if (!enable_apicv) {
+ 		svm_x86_ops.vcpu_blocking = NULL;
+ 		svm_x86_ops.vcpu_unblocking = NULL;
+ 		svm_x86_ops.vcpu_get_apicv_inhibit_reasons = NULL;
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index d51de3c9264a..6d6390f785c5 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -36,6 +36,14 @@ extern bool npt_enabled;
+ extern int vgif;
+ extern bool intercept_smi;
+ 
++enum avic_modes {
++	AVIC_MODE_NONE = 0,
++	AVIC_MODE_X1,
++	AVIC_MODE_X2,
++};
++
++extern enum avic_modes avic_mode;
++
+ /*
+  * Clean bits in VMCB.
+  * VMCB_ALL_CLEAN_MASK might also need to
+@@ -607,6 +615,7 @@ extern struct kvm_x86_nested_ops svm_nested_ops;
+ 
+ /* avic.c */
+ 
++bool avic_hardware_setup(struct kvm_x86_ops *ops);
+ int avic_ga_log_notifier(u32 ga_tag);
+ void avic_vm_destroy(struct kvm *kvm);
+ int avic_vm_init(struct kvm *kvm);
+-- 
+2.27.0
+

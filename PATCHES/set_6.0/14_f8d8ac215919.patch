@@ -1,0 +1,43 @@
+From f8d8ac215919cf40d3b358846ed8e8e3a3683131 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Thu, 19 May 2022 05:27:06 -0500
+Subject: [PATCH] KVM: x86: Warning APICv inconsistency only when vcpu APIC
+ mode is valid
+
+When launching a VM with x2APIC and specify more than 255 vCPUs,
+the guest kernel can disable x2APIC (e.g. specify nox2apic kernel option).
+The VM fallbacks to xAPIC mode, and disable the vCPU ID 255 and greater.
+
+In this case, APICV is deactivated for the disabled vCPUs.
+However, the current APICv consistency warning does not account for
+this case, which results in a warning.
+
+Therefore, modify warning logic to report only when vCPU APIC mode
+is valid.
+
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220519102709.24125-15-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: f8d8ac215919
+---
+ arch/x86/kvm/x86.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 47981e97d686..acd7ce1dcb9f 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -10477,7 +10477,8 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 		 * per-VM state, and responsing vCPUs must wait for the update
+ 		 * to complete before servicing KVM_REQ_APICV_UPDATE.
+ 		 */
+-		WARN_ON_ONCE(kvm_vcpu_apicv_activated(vcpu) != kvm_vcpu_apicv_active(vcpu));
++		WARN_ON_ONCE((kvm_vcpu_apicv_activated(vcpu) != kvm_vcpu_apicv_active(vcpu)) &&
++			     (kvm_get_apic_mode(vcpu) != LAPIC_MODE_DISABLED));
+ 
+ 		exit_fastpath = static_call(kvm_x86_vcpu_run)(vcpu);
+ 		if (likely(exit_fastpath != EXIT_FASTPATH_REENTER_GUEST))
+-- 
+2.27.0
+

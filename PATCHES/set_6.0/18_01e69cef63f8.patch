@@ -1,0 +1,93 @@
+From 01e69cef63f88d809181f62f03a01d7295f2d5a4 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Mon, 18 Jul 2022 03:38:33 -0500
+Subject: [PATCH] KVM: SVM: Fix x2APIC MSRs interception
+
+The index for svm_direct_access_msrs was incorrectly initialized with
+the APIC MMIO register macros. Fix by introducing a macro for calculating
+x2APIC MSRs.
+
+Fixes: 5c127c85472c ("KVM: SVM: Adding support for configuring x2APIC MSRs interception")
+Cc: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <20220718083833.222117-1-suravee.suthikulpanit@amd.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 01e69cef63f8
+---
+ arch/x86/kvm/svm/svm.c | 52 ++++++++++++++++++++++--------------------
+ 1 file changed, 27 insertions(+), 25 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index ba81a7e58f75..aef63aae922d 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -74,6 +74,8 @@ static uint64_t osvw_len = 4, osvw_status;
+ 
+ static DEFINE_PER_CPU(u64, current_tsc_ratio);
+ 
++#define X2APIC_MSR(x)	(APIC_BASE_MSR + (x >> 4))
++
+ static const struct svm_direct_access_msrs {
+ 	u32 index;   /* Index of the MSR */
+ 	bool always; /* True if intercept is initially cleared */
+@@ -100,31 +102,31 @@ static const struct svm_direct_access_msrs {
+ 	{ .index = MSR_IA32_CR_PAT,			.always = false },
+ 	{ .index = MSR_AMD64_SEV_ES_GHCB,		.always = true  },
+ 	{ .index = MSR_TSC_AUX,				.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ID),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_TASKPRI),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ARBPRI),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_PROCPRI),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_EOI),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_RRR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LDR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_DFR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_SPIV),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ISR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_TMR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_IRR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ESR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ICR),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_ICR2),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVTT),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVTTHMR),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVTPC),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVT0),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVT1),		.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_LVTERR),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_TMICT),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_TMCCT),	.always = false },
+-	{ .index = (APIC_BASE_MSR + APIC_TDCR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ID),			.always = false },
++	{ .index = X2APIC_MSR(APIC_LVR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_TASKPRI),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ARBPRI),		.always = false },
++	{ .index = X2APIC_MSR(APIC_PROCPRI),		.always = false },
++	{ .index = X2APIC_MSR(APIC_EOI),		.always = false },
++	{ .index = X2APIC_MSR(APIC_RRR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LDR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_DFR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_SPIV),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ISR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_TMR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_IRR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ESR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ICR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_ICR2),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVTT),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVTTHMR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVTPC),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVT0),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVT1),		.always = false },
++	{ .index = X2APIC_MSR(APIC_LVTERR),		.always = false },
++	{ .index = X2APIC_MSR(APIC_TMICT),		.always = false },
++	{ .index = X2APIC_MSR(APIC_TMCCT),		.always = false },
++	{ .index = X2APIC_MSR(APIC_TDCR),		.always = false },
+ 	{ .index = MSR_INVALID,				.always = false },
+ };
+ 
+-- 
+2.27.0
+
