@@ -1,0 +1,73 @@
+From 1d22a597b3e9fd4d0a7e921ce4d32321bcad8576 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:12:49 +0000
+Subject: [PATCH] KVM: SVM: Add helper to perform final AVIC "kick" of single
+ vCPU
+
+Add a helper to perform the final kick, two instances of the ICR decoding
+is one too many.
+
+No functional change intended.
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20230106011306.85230-17-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 1d22a597b3e9
+---
+ arch/x86/kvm/svm/avic.c | 25 +++++++++++++------------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index eb2ad5b54877..76da9f19272e 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -317,6 +317,16 @@ void avic_ring_doorbell(struct kvm_vcpu *vcpu)
+ 	put_cpu();
+ }
+ 
++
++static void avic_kick_vcpu(struct kvm_vcpu *vcpu, u32 icrl)
++{
++	vcpu->arch.apic->irr_pending = true;
++	svm_complete_interrupt_delivery(vcpu,
++					icrl & APIC_MODE_MASK,
++					icrl & APIC_INT_LEVELTRIG,
++					icrl & APIC_VECTOR_MASK);
++}
++
+ /*
+  * A fast-path version of avic_kick_target_vcpus(), which attempts to match
+  * destination APIC ID to vCPU without looping through all vCPUs.
+@@ -415,11 +425,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 	if (unlikely(!target_vcpu))
+ 		return 0;
+ 
+-	target_vcpu->arch.apic->irr_pending = true;
+-	svm_complete_interrupt_delivery(target_vcpu,
+-					icrl & APIC_MODE_MASK,
+-					icrl & APIC_INT_LEVELTRIG,
+-					icrl & APIC_VECTOR_MASK);
++	avic_kick_vcpu(target_vcpu, icrl);
+ 	return 0;
+ }
+ 
+@@ -443,13 +449,8 @@ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 	 */
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
+ 		if (kvm_apic_match_dest(vcpu, source, icrl & APIC_SHORT_MASK,
+-					dest, icrl & APIC_DEST_MASK)) {
+-			vcpu->arch.apic->irr_pending = true;
+-			svm_complete_interrupt_delivery(vcpu,
+-							icrl & APIC_MODE_MASK,
+-							icrl & APIC_INT_LEVELTRIG,
+-							icrl & APIC_VECTOR_MASK);
+-		}
++					dest, icrl & APIC_DEST_MASK))
++			avic_kick_vcpu(vcpu, icrl);
+ 	}
+ }
+ 
+-- 
+2.27.0
+

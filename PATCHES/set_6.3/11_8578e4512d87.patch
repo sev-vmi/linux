@@ -1,0 +1,66 @@
+From 8578e4512d873b0aa9805e9772162578d54bb6a1 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:12:48 +0000
+Subject: [PATCH] KVM: SVM: Document that vCPU ID == APIC ID in AVIC kick
+ fastpatch
+
+Document that AVIC is inhibited if any vCPU's APIC ID diverges from its
+vCPU ID, i.e. that there's no need to check for a destination match in
+the AVIC kick fast path.
+
+Opportunistically tweak comments to remove "guest bug", as that suggests
+KVM is punting on error handling, which is not the case.  Targeting a
+non-existent vCPU or no vCPUs _may_ be a guest software bug, but whether
+or not it's a guest bug is irrelevant.  Such behavior is architecturally
+legal and thus needs to faithfully emulated by KVM (and it is).
+
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20230106011306.85230-16-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 8578e4512d87
+---
+ arch/x86/kvm/svm/avic.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index e4b5f8b14882..eb2ad5b54877 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -368,8 +368,8 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 			cluster = (dest >> 4) << 2;
+ 		}
+ 
++		/* Nothing to do if there are no destinations in the cluster. */
+ 		if (unlikely(!bitmap))
+-			/* guest bug: nobody to send the logical interrupt to */
+ 			return 0;
+ 
+ 		if (!is_power_of_2(bitmap))
+@@ -397,7 +397,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 			if (WARN_ON_ONCE(index != logid_index))
+ 				return -EINVAL;
+ 
+-			/* guest bug: non existing/reserved logical destination */
++			/* Nothing to do if the logical destination is invalid. */
+ 			if (unlikely(!(logid_entry & AVIC_LOGICAL_ID_ENTRY_VALID_MASK)))
+ 				return 0;
+ 
+@@ -406,9 +406,13 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 		}
+ 	}
+ 
++	/*
++	 * KVM inhibits AVIC if any vCPU ID diverges from the vCPUs APIC ID,
++	 * i.e. APIC ID == vCPU ID.  Once again, nothing to do if the target
++	 * vCPU doesn't exist.
++	 */
+ 	target_vcpu = kvm_get_vcpu_by_id(kvm, l1_physical_id);
+ 	if (unlikely(!target_vcpu))
+-		/* guest bug: non existing vCPU is a target of this IPI*/
+ 		return 0;
+ 
+ 	target_vcpu->arch.apic->irr_pending = true;
+-- 
+2.27.0
+

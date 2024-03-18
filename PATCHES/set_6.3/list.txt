@@ -1,0 +1,20 @@
+b3f257a84696 -- Fri Jan 13 10:45:34 2023 -0500 -- Sean Christopherson -- KVM: x86: Track required APICv inhibits with variable, not callback
+e2ed3e64a2bd -- Fri Jan 13 10:45:34 2023 -0500 -- Sean Christopherson -- Revert "KVM: SVM: Do not throw warning when calling avic_vcpu_load on a running vcpu"
+a790e338c7c4 -- Fri Jan 13 10:45:34 2023 -0500 -- Sean Christopherson -- KVM: SVM: Ignore writes to Remote Read Data on AVIC write traps
+bbfc7aa62a4a -- Fri Jan 13 10:45:33 2023 -0500 -- Sean Christopherson -- KVM: SVM: Handle multiple logical targets in AVIC kick fastpath
+1808c950955d -- Fri Jan 13 10:45:33 2023 -0500 -- Sean Christopherson -- KVM: SVM: Require logical ID to be power-of-2 for AVIC entry
+4f160b7bd481 -- Fri Jan 13 10:45:32 2023 -0500 -- Sean Christopherson -- KVM: SVM: Update svm->ldr_reg cache even if LDR is "bad"
+1ba59a445467 -- Fri Jan 13 10:45:32 2023 -0500 -- Sean Christopherson -- KVM: SVM: Always update local APIC on writes to logical dest register
+9a364857ab4f -- Fri Jan 13 10:45:31 2023 -0500 -- Sean Christopherson -- KVM: SVM: Inhibit AVIC if vCPUs are aliased in logical mode
+5063c41bebac -- Fri Jan 13 10:45:31 2023 -0500 -- Sean Christopherson -- KVM: x86: Inhibit APICv/AVIC if the optimized physical map is disabled
+1d22a597b3e9 -- Fri Jan 13 10:45:28 2023 -0500 -- Sean Christopherson -- KVM: SVM: Add helper to perform final AVIC "kick" of single vCPU
+8578e4512d87 -- Fri Jan 13 10:45:27 2023 -0500 -- Sean Christopherson -- KVM: SVM: Document that vCPU ID == APIC ID in AVIC kick fastpatch
+f9829c907661 -- Fri Jan 13 10:45:27 2023 -0500 -- Sean Christopherson -- Revert "KVM: SVM: Use target APIC ID to complete x2AVIC IRQs when possible"
+da3fb46d226a -- Fri Jan 13 10:45:26 2023 -0500 -- Suravee Suthikulpanit -- KVM: SVM: Fix x2APIC Logical ID calculation for avic_kick_target_vcpus_fast
+a879a88e05f3 -- Fri Jan 13 10:45:26 2023 -0500 -- Sean Christopherson -- KVM: SVM: Compute dest based on sender's x2APIC status for AVIC kick
+f628a34a9d52 -- Fri Jan 13 10:45:26 2023 -0500 -- Sean Christopherson -- KVM: SVM: Replace "avic_mode" enum with "x2avic_enabled" boolean
+2008fab34530 -- Fri Jan 13 10:45:25 2023 -0500 -- Sean Christopherson -- KVM: x86: Inhibit APIC memslot if x2APIC and AVIC are enabled
+c482f2cebe2d -- Fri Jan 13 10:45:25 2023 -0500 -- Sean Christopherson -- KVM: x86: Move APIC access page helper to common x86 code
+e0bead97e759 -- Fri Jan 13 10:45:24 2023 -0500 -- Sean Christopherson -- KVM: SVM: Don't put/load AVIC when setting virtual APIC mode
+5aede752a839 -- Fri Jan 13 10:45:22 2023 -0500 -- Sean Christopherson -- KVM: SVM: Process ICR on AVIC IPI delivery failure due to invalid target
+0ccf3e7cb95a -- Fri Jan 13 10:45:22 2023 -0500 -- Sean Christopherson -- KVM: SVM: Flush the "current" TLB when activating AVIC

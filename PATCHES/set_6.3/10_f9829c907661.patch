@@ -1,0 +1,80 @@
+From f9829c9076616afa4f4811f2fc2992a734593d59 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:12:47 +0000
+Subject: [PATCH] Revert "KVM: SVM: Use target APIC ID to complete x2AVIC IRQs
+ when possible"
+
+Due to a likely mismerge of patches, KVM ended up with a superfluous
+commit to "enable" AVIC's fast path for x2AVIC mode.  Even worse, the
+superfluous commit has several bugs and creates a nasty local shadow
+variable.
+
+Rather than fix the bugs piece-by-piece[*] to achieve the same end
+result, revert the patch wholesale.
+
+Opportunistically add a comment documenting the x2AVIC dependencies.
+
+This reverts commit 8c9e639da435874fb845c4d296ce55664071ea7a.
+
+[*] https://lore.kernel.org/all/YxEP7ZBRIuFWhnYJ@google.com
+
+Fixes: 8c9e639da435 ("KVM: SVM: Use target APIC ID to complete x2AVIC IRQs when possible")
+Suggested-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20230106011306.85230-15-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: f9829c907661
+---
+ arch/x86/kvm/svm/avic.c | 29 +++++++++++------------------
+ 1 file changed, 11 insertions(+), 18 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 0f67fd34ef99..e4b5f8b14882 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -378,7 +378,17 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 
+ 		logid_index = cluster + __ffs(bitmap);
+ 
+-		if (!apic_x2apic_mode(source)) {
++		if (apic_x2apic_mode(source)) {
++			/*
++			 * For x2APIC, the logical APIC ID is a read-only value
++			 * that is derived from the x2APIC ID, thus the x2APIC
++			 * ID can be found by reversing the calculation (done
++			 * above).  Note, bits 31:20 of the x2APIC ID are not
++			 * propagated to the logical ID, but KVM limits the
++			 * x2APIC ID limited to KVM_MAX_VCPU_IDS.
++			 */
++			l1_physical_id = logid_index;
++		} else {
+ 			u32 *avic_logical_id_table =
+ 				page_address(kvm_svm->avic_logical_id_table_page);
+ 
+@@ -393,23 +403,6 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 
+ 			l1_physical_id = logid_entry &
+ 					 AVIC_LOGICAL_ID_ENTRY_GUEST_PHYSICAL_ID_MASK;
+-		} else {
+-			/*
+-			 * For x2APIC logical mode, cannot leverage the index.
+-			 * Instead, calculate physical ID from logical ID in ICRH.
+-			 */
+-			int cluster = (icrh & 0xffff0000) >> 16;
+-			int apic = ffs(icrh & 0xffff) - 1;
+-
+-			/*
+-			 * If the x2APIC logical ID sub-field (i.e. icrh[15:0])
+-			 * contains anything but a single bit, we cannot use the
+-			 * fast path, because it is limited to a single vCPU.
+-			 */
+-			if (apic < 0 || icrh != (1 << apic))
+-				return -EINVAL;
+-
+-			l1_physical_id = (cluster << 4) + apic;
+ 		}
+ 	}
+ 
+-- 
+2.27.0
+
