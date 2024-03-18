@@ -1,0 +1,50 @@
+From a879a88e05f36153987ad9836e85009eb4114346 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:12:45 +0000
+Subject: [PATCH] KVM: SVM: Compute dest based on sender's x2APIC status for
+ AVIC kick
+
+Compute the destination from ICRH using the sender's x2APIC status, not
+each (potential) target's x2APIC status.
+
+Fixes: c514d3a348ac ("KVM: SVM: Update avic_kick_target_vcpus to support 32-bit APIC ID")
+Cc: Li RongQing <lirongqing@baidu.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Li RongQing <lirongqing@baidu.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20230106011306.85230-13-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: a879a88e05f3
+---
+ arch/x86/kvm/svm/avic.c | 8 +-------
+ 1 file changed, 1 insertion(+), 7 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 10b0e996e2e3..f2db0021c45f 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -429,6 +429,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 				   u32 icrl, u32 icrh, u32 index)
+ {
++	u32 dest = apic_x2apic_mode(source) ? icrh : GET_XAPIC_DEST_FIELD(icrh);
+ 	unsigned long i;
+ 	struct kvm_vcpu *vcpu;
+ 
+@@ -444,13 +445,6 @@ static void avic_kick_target_vcpus(struct kvm *kvm, struct kvm_lapic *source,
+ 	 * since entered the guest will have processed pending IRQs at VMRUN.
+ 	 */
+ 	kvm_for_each_vcpu(i, vcpu, kvm) {
+-		u32 dest;
+-
+-		if (apic_x2apic_mode(vcpu->arch.apic))
+-			dest = icrh;
+-		else
+-			dest = GET_XAPIC_DEST_FIELD(icrh);
+-
+ 		if (kvm_apic_match_dest(vcpu, source, icrl & APIC_SHORT_MASK,
+ 					dest, icrl & APIC_DEST_MASK)) {
+ 			vcpu->arch.apic->irr_pending = true;
+-- 
+2.27.0
+

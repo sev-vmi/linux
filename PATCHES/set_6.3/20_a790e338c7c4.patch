@@ -1,0 +1,39 @@
+From a790e338c7c4971f83e680e59a91d1b91263c8f7 Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:13:02 +0000
+Subject: [PATCH] KVM: SVM: Ignore writes to Remote Read Data on AVIC write
+ traps
+
+Drop writes to APIC_RRR, a.k.a. Remote Read Data Register, on AVIC
+unaccelerated write traps.  The register is read-only and isn't emulated
+by KVM.  Sending the register through kvm_apic_write_nodecode() will
+result in screaming when x2APIC is enabled due to the unexpected failure
+to retrieve the MSR (KVM expects that only "legal" accesses will trap).
+
+Fixes: 4d1d7942e36a ("KVM: SVM: Introduce logic to (de)activate x2AVIC mode")
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Message-Id: <20230106011306.85230-30-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: a790e338c7c4
+---
+ arch/x86/kvm/svm/avic.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index 2c6737f72bd4..ff08732469cb 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -628,6 +628,9 @@ static int avic_unaccel_trap_write(struct kvm_vcpu *vcpu)
+ 	case APIC_DFR:
+ 		avic_handle_dfr_update(vcpu);
+ 		break;
++	case APIC_RRR:
++		/* Ignore writes to Read Remote Data, it's read-only. */
++		return 1;
+ 	default:
+ 		break;
+ 	}
+-- 
+2.27.0
+

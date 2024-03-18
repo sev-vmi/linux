@@ -1,0 +1,44 @@
+From 1459f5c6b8b8dfbc16adf4844421d46459c9ab1f Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <seanjc@google.com>
+Date: Fri, 6 Jan 2023 01:12:41 +0000
+Subject: [PATCH] KVM: x86: Handle APICv updates for APIC "mode" changes via
+ request
+
+Use KVM_REQ_UPDATE_APICV to react to APIC "mode" changes, i.e. to handle
+the APIC being hardware enabled/disabled and/or x2APIC being toggled.
+There is no need to immediately update APICv state, the only requirement
+is that APICv be updating prior to the next VM-Enter.
+
+Making a request will allow piggybacking KVM_REQ_UPDATE_APICV to "inhibit"
+the APICv memslot when x2APIC is enabled.  Doing that directly from
+kvm_lapic_set_base() isn't feasible as KVM's SRCU must not be held when
+modifying memslots (to avoid deadlock), and may or may not be held when
+kvm_lapic_set_base() is called, i.e. KVM can't do the right thing without
+tracking that is rightly buried behind CONFIG_PROVE_RCU=y.
+
+Suggested-by: Maxim Levitsky <mlevitsk@redhat.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20230106011306.85230-9-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: 1459f5c6b
+---
+ arch/x86/kvm/lapic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/lapic.c b/arch/x86/kvm/lapic.c
+index 2183a9b8efa5..3ed74ad60516 100644
+--- a/arch/x86/kvm/lapic.c
++++ b/arch/x86/kvm/lapic.c
+@@ -2401,7 +2401,7 @@ void kvm_lapic_set_base(struct kvm_vcpu *vcpu, u64 value)
+ 		kvm_apic_set_x2apic_id(apic, vcpu->vcpu_id);
+ 
+ 	if ((old_value ^ value) & (MSR_IA32_APICBASE_ENABLE | X2APIC_ENABLE)) {
+-		kvm_vcpu_update_apicv(vcpu);
++		kvm_make_request(KVM_REQ_APICV_UPDATE, vcpu);
+ 		static_call_cond(kvm_x86_set_virtual_apic_mode)(vcpu);
+ 	}
+ 
+-- 
+2.27.0
+

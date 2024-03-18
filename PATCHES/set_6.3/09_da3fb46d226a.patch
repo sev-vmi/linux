@@ -1,0 +1,36 @@
+From da3fb46d226a8c1b61d309f3b99056c18b8d93e2 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Fri, 6 Jan 2023 01:12:46 +0000
+Subject: [PATCH] KVM: SVM: Fix x2APIC Logical ID calculation for
+ avic_kick_target_vcpus_fast
+
+For X2APIC ID in cluster mode, the logical ID is bit [15:0].
+
+Fixes: 603ccef42ce9 ("KVM: x86: SVM: fix avic_kick_target_vcpus_fast")
+Cc: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Reviewed-by: Maxim Levitsky <mlevitsk@redhat.com>
+Signed-off-by: Sean Christopherson <seanjc@google.com>
+Message-Id: <20230106011306.85230-14-seanjc@google.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+Original-commit: da3fb46d226a
+---
+ arch/x86/kvm/svm/avic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/svm/avic.c b/arch/x86/kvm/svm/avic.c
+index f2db0021c45f..0f67fd34ef99 100644
+--- a/arch/x86/kvm/svm/avic.c
++++ b/arch/x86/kvm/svm/avic.c
+@@ -356,7 +356,7 @@ static int avic_kick_target_vcpus_fast(struct kvm *kvm, struct kvm_lapic *source
+ 
+ 		if (apic_x2apic_mode(source)) {
+ 			/* 16 bit dest mask, 16 bit cluster id */
+-			bitmap = dest & 0xFFFF0000;
++			bitmap = dest & 0xFFFF;
+ 			cluster = (dest >> 16) << 4;
+ 		} else if (kvm_lapic_get_reg(source, APIC_DFR) == APIC_DFR_FLAT) {
+ 			/* 8 bit dest mask*/
+-- 
+2.27.0
+
