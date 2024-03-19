@@ -679,9 +679,17 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	save->x87_rip = xsave->i387.rip;
 
 	for (i = 0; i < 8; i++) {
-		d = save->fpreg_x87 + i * 10;
+		/*
+		 * The format of the x87 save area is totally undocumented,
+		 * and definitely not what you would expect.  It consists
+		 * of an 8*8 bytes area with bytes 0-7 and an 8*2 bytes area
+		 * with bytes 8-9 of each register.
+		 */
+		d = save->fpreg_x87 + i * 8;
 		s = ((u8 *)xsave->i387.st_space) + i * 16;
-		memcpy(d, s, 10);
+		memcpy(d, s, 8);
+		save->fpreg_x87[64 + i * 2] = s[8];
+		save->fpreg_x87[64 + i * 2 + 1] = s[9];
 	}
 	memcpy(save->fpreg_xmm, xsave->i387.xmm_space, 256);
 
