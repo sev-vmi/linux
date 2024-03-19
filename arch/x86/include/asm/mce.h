@@ -59,6 +59,7 @@
  *  - TCC bit is present in MCx_STATUS.
  */
 #define MCI_CONFIG_MCAX		0x1
+#define MCI_CONFIG_LSB_IN_STAT	BIT_ULL(8)
 #define MCI_CONFIG_FRUTEXT	BIT_ULL(9)
 
 /*

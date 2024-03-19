@@ -654,12 +654,29 @@ static struct notifier_block mce_default_nb = {
 	.priority	= MCE_PRIO_LOWEST,
 };
 
+static inline void smca_read_aux(struct mce_hw_err *err, int i)
+{
+	if (!mce_flags.smca)
+		return;
+
+	err->m.ipid = mce_rdmsrl(MSR_AMD64_SMCA_MCx_IPID(i));
+	err->vi.amd.config = mce_rdmsrl(MSR_AMD64_SMCA_MCx_CONFIG(i));
+
+	if (err->m.status & MCI_STATUS_SYNDV) {
+		err->m.synd = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND(i));
+		err->vi.amd.synd1 = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND1(i));
+		err->vi.amd.synd2 = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND2(i));
+	}
+}
+
 /*
  * Read ADDR and MISC registers.
  */
 static noinstr void mce_read_aux(struct mce_hw_err *err, int i)
 {
 	struct mce *m = &err->m;
+
+	smca_read_aux(err, i);
 
 	if (m->status & MCI_STATUS_MISCV)
 		m->misc = mce_rdmsrl(mca_msr_reg(i, MCA_MISC));
@@ -676,18 +693,7 @@ static noinstr void mce_read_aux(struct mce_hw_err *err, int i)
 			m->addr <<= shift;
 		}
 
-		smca_extract_err_addr(m);
-	}
-
-	if (mce_flags.smca) {
-		m->ipid = mce_rdmsrl(MSR_AMD64_SMCA_MCx_IPID(i));
-		err->vi.amd.config = mce_rdmsrl(MSR_AMD64_SMCA_MCx_CONFIG(i));
-
-		if (m->status & MCI_STATUS_SYNDV) {
-			m->synd = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND(i));
-			err->vi.amd.synd1 = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND1(i));
-			err->vi.amd.synd2 = mce_rdmsrl(MSR_AMD64_SMCA_MCx_SYND2(i));
-		}
+		smca_extract_err_addr(err);
 	}
 }
 

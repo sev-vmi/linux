@@ -63,7 +63,6 @@
 #define CFG_DFR_INT_TYPE		GENMASK_ULL(38, 37)
 #define CFG_MCAX_EN			BIT_ULL(32)
 #define CFG_CE_INT_PRESENT		BIT_ULL(10)
-#define CFG_LSB_IN_STATUS		BIT_ULL(8)
 #define CFG_DFR_INT_SUPP		BIT_ULL(5)
 #define CFG_DFR_LOG_SUPP		BIT_ULL(2)
 
@@ -409,9 +408,6 @@ static void configure_smca(unsigned int bank, u64 mca_intr_cfg)
 	mca_config |= FIELD_PREP(CFG_MCAX_EN, 0x1);
 
 	configure_smca_dfr(bank, &mca_config);
-
-	if (FIELD_GET(CFG_LSB_IN_STATUS, mca_config))
-		this_cpu_ptr(mce_banks_array)[bank].lsb_in_status = true;
 
 	if (FIELD_GET(CFG_CE_INT_PRESENT, mca_config) && smca_thr_handler_enabled(mca_intr_cfg))
 		mca_config |= FIELD_PREP(CFG_CE_INT_EN, 0x1);

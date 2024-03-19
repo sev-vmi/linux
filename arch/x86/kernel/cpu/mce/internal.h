@@ -238,13 +238,7 @@ struct mce_bank {
 	/* initialise bank? */
 	__u64 init		: 1,
 
-	/*
-	 * (AMD) MCA_CONFIG[McaLsbInStatusSupported]: When set, this bit indicates
-	 * the LSB field is found in MCA_STATUS and not in MCA_ADDR.
-	 */
-	lsb_in_status		: 1,
-
-	__reserved_1		: 62;
+	__reserved_1		: 63;
 };
 
 DECLARE_PER_CPU_READ_MOSTLY(struct mce_bank[MAX_NR_BANKS], mce_banks_array);
@@ -270,14 +264,15 @@ void amd_handle_error(struct mce_hw_err *err);
  * If MCA_CONFIG[McaLsbInStatusSupported] is set, extract ErrAddr in bits
  * [56:0] of MCA_STATUS, else in bits [55:0] of MCA_ADDR.
  */
-static __always_inline void smca_extract_err_addr(struct mce *m)
+static __always_inline void smca_extract_err_addr(struct mce_hw_err *err)
 {
+	struct mce *m = &err->m;
 	u8 lsb;
 
 	if (!mce_flags.smca)
 		return;
 
-	if (this_cpu_ptr(mce_banks_array)[m->bank].lsb_in_status) {
+	if (FIELD_GET(MCI_CONFIG_LSB_IN_STAT, err->vi.amd.config)) {
 		lsb = (m->status >> 24) & 0x3f;
 
 		m->addr &= GENMASK_ULL(56, lsb);
