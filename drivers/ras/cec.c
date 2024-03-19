@@ -543,8 +543,8 @@ static int cec_notifier(struct notifier_block *nb, unsigned long val,
 	/* We eat only correctable DRAM errors with usable addresses. */
 	if (mce_is_memory_error(m) &&
 	    mce_is_correctable(m)  &&
-	    mce_usable_address(m)) {
-		if (!cec_add_elem(m->addr >> PAGE_SHIFT)) {
+	    mce_has_phys_addr(err)) {
+		if (!cec_add_elem(err->phys_addr >> PAGE_SHIFT)) {
 			m->kflags |= MCE_HANDLED_CEC;
 			return NOTIFY_OK;
 		}

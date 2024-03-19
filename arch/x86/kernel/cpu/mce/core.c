@@ -583,6 +583,14 @@ bool mce_is_correctable(struct mce *m)
 }
 EXPORT_SYMBOL_GPL(mce_is_correctable);
 
+static void mce_get_phys_addr(struct mce_hw_err *err)
+{
+	if (!mce_usable_address(&err->m))
+		return;
+
+	err->phys_addr = err->m.addr & MCI_ADDR_PHYSADDR;
+}
+
 static int mce_early_notifier(struct notifier_block *nb, unsigned long val,
 			      void *data)
 {
@@ -590,6 +598,8 @@ static int mce_early_notifier(struct notifier_block *nb, unsigned long val,
 
 	if (!err)
 		return NOTIFY_DONE;
+
+	mce_get_phys_addr(err);
 
 	/* Emit the trace record: */
 	trace_mce_record(err);
@@ -613,14 +623,14 @@ static int uc_decode_notifier(struct notifier_block *nb, unsigned long val,
 	struct mce *mce = &err->m;
 	unsigned long pfn;
 
-	if (!mce || !mce_usable_address(mce))
+	if (!mce || !mce_has_phys_addr(err))
 		return NOTIFY_DONE;
 
 	if (mce->severity != MCE_AO_SEVERITY &&
 	    mce->severity != MCE_DEFERRED_SEVERITY)
 		return NOTIFY_DONE;
 
-	pfn = (mce->addr & MCI_ADDR_PHYSADDR) >> PAGE_SHIFT;
+	pfn = err->phys_addr >> PAGE_SHIFT;
 	if (!memory_failure(pfn, 0)) {
 		set_mce_nospec(pfn);
 		mce->kflags |= MCE_HANDLED_UC;
@@ -675,6 +685,8 @@ static inline void smca_read_aux(struct mce_hw_err *err, int i)
 static noinstr void mce_read_aux(struct mce_hw_err *err, int i)
 {
 	struct mce *m = &err->m;
+
+	err->phys_addr = MCE_INVALID_ADDR;
 
 	smca_read_aux(err, i);
 

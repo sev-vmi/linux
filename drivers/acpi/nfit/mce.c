@@ -23,11 +23,11 @@ static int nfit_handle_mce(struct notifier_block *nb, unsigned long val,
 		return NOTIFY_DONE;
 
 	/* Verify the address reported in the MCE is valid. */
-	if (!mce_usable_address(mce))
+	if (!mce_has_phys_addr(err))
 		return NOTIFY_DONE;
 
 	/*
-	 * mce->addr contains the physical addr accessed that caused the
+	 * err->phys_addr contains the physical addr accessed that caused the
 	 * machine check. We need to walk through the list of NFITs, and see
 	 * if any of them matches that address, and only then start a scrub.
 	 */
@@ -44,9 +44,9 @@ static int nfit_handle_mce(struct notifier_block *nb, unsigned long val,
 			if (nfit_spa_type(spa) != NFIT_SPA_PM)
 				continue;
 			/* find the spa that covers the mce addr */
-			if (spa->address > mce->addr)
+			if (spa->address > err->phys_addr)
 				continue;
-			if ((spa->address + spa->length - 1) < mce->addr)
+			if ((spa->address + spa->length - 1) < err->phys_addr)
 				continue;
 			found_match = 1;
 			dev_dbg(dev, "addr in SPA %d (0x%llx, 0x%llx)\n",

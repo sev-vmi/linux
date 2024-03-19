@@ -8,6 +8,8 @@
  * Machine Check support for x86
  */
 
+#define MCE_INVALID_ADDR	~0ULL
+
 /* MCG_CAP register defines */
 #define MCG_BANKCNT_MASK	0xff         /* Number of Banks */
 #define MCG_CTL_P		BIT_ULL(8)   /* MCG_CTL register available */
@@ -193,6 +195,8 @@ enum mce_notifier_prios {
 struct mce_hw_err {
 	struct mce m;
 
+	u64 phys_addr;
+
 	union vendor_info {
 		struct {
 			u64 synd1;
@@ -201,6 +205,11 @@ struct mce_hw_err {
 		} amd;
 	} vi;
 };
+
+static __always_inline bool mce_has_phys_addr(struct mce_hw_err *err)
+{
+	return err->phys_addr != MCE_INVALID_ADDR;
+}
 
 struct notifier_block;
 extern void mce_register_decode_chain(struct notifier_block *nb);
