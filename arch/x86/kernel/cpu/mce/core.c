@@ -588,6 +588,9 @@ static void mce_get_phys_addr(struct mce_hw_err *err)
 	if (!mce_usable_address(&err->m))
 		return;
 
+	if (err->m.cpuvendor == X86_VENDOR_AMD)
+		return amd_mce_get_phys_addr(err);
+
 	err->phys_addr = err->m.addr & MCI_ADDR_PHYSADDR;
 }
 

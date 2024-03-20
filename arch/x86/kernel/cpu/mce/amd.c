@@ -20,6 +20,7 @@
 #include <linux/cpu.h>
 #include <linux/smp.h>
 #include <linux/string.h>
+#include <linux/ras.h>
 
 #include <asm/amd_nb.h>
 #include <asm/traps.h>
@@ -877,8 +878,10 @@ bool amd_mce_is_memory_error(struct mce *m)
  *	a) Reported in legacy bank 4 with extended error code (XEC) 8.
  *	b) MCA_STATUS[43] is *not* defined as poison in legacy bank 4. Therefore,
  *	   this bit should not be checked.
- *
- * NOTE: SMCA UMC memory errors fall into case #1.
+ * 4) SMCA UMC DRAM ECC errors
+ * 	a) Reported in UMC-type banks with extended error code (XEC) 0.
+ * 	b) MCA_ADDR must be translated to a usable value.
+ * 	c) Return 'true' if translation services are available.
  */
 bool amd_mce_usable_address(struct mce *m)
 {
@@ -894,8 +897,35 @@ bool amd_mce_usable_address(struct mce *m)
 	if (m->status & MCI_STATUS_POISON)
 		return true;
 
+	if (smca_mce_is_memory_error(m) && IS_REACHABLE(CONFIG_AMD_ATL))
+		return true;
+
 	/* Assume address is not usable for all others. */
 	return false;
+}
+
+void amd_mce_get_phys_addr(struct mce_hw_err *err)
+{
+	unsigned long addr = err->m.addr;
+	struct atl_err a_err;
+
+	if (!amd_mce_usable_address(&err->m))
+		return;
+
+	if (!smca_mce_is_memory_error(&err->m))
+		goto out;
+
+	memset(&a_err, 0, sizeof(struct atl_err));
+
+	a_err.addr = addr;
+	a_err.ipid = err->m.ipid;
+	a_err.cpu  = err->m.extcpu;
+
+	addr = amd_convert_umc_mca_addr_to_sys_addr(&a_err);
+	if (IS_ERR_VALUE(addr))
+		return;
+out:
+	err->phys_addr = addr & MCI_ADDR_PHYSADDR;
 }
 
 DEFINE_IDTENTRY_SYSVEC(sysvec_deferred_error)
