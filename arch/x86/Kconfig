@@ -1172,7 +1172,7 @@ config X86_MCE_AMD
 	def_bool y
 	prompt "AMD MCE features"
 	depends on X86_MCE && X86_LOCAL_APIC && AMD_NB
-	imply AMD_ATL
+	select AMD_ATL
 	help
 	  Additional support for AMD specific MCE features such as
 	  the DRAM Error Threshold.
