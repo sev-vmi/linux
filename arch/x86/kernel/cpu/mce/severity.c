@@ -306,11 +306,34 @@ static noinstr int error_context(struct mce *m, struct pt_regs *regs)
 	}
 }
 
+/*
+ * Some Zen-based Instruction Fetch Units set EIPV=RIPV=0 on poison consumption
+ * errors. This means mce_gather_info() will not save the "ip" and "cs" registers.
+ *
+ * However, the context is still valid, so save the "cs" register for later use.
+ *
+ * The "ip" register is truly unknown, so don't save it or fixup EIPV/RIPV.
+ *
+ * The Instruction Fetch Unit is at MCA bank 1 for all affected systems.
+ */
+static __always_inline void quirk_zen_ifu(struct mce *m, struct pt_regs *regs)
+{
+	if (m->bank != 1)
+		return;
+	if (!(m->status & MCI_STATUS_POISON))
+		return;
+
+	m->cs = regs->cs;
+}
+
 /* See AMD PPR(s) section Machine Check Error Handling. */
 static noinstr int mce_severity_amd(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp)
 {
 	char *panic_msg = NULL;
 	int ret;
+
+	if (mce_flags.zen_ifu_quirk)
+		quirk_zen_ifu(m, regs);
 
 	/*
 	 * Default return value: Action required, the error must be handled

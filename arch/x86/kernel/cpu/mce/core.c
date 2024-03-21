@@ -953,26 +953,6 @@ static noinstr bool quirk_skylake_repmov(void)
 }
 
 /*
- * Some Zen-based Instruction Fetch Units set EIPV=RIPV=0 on poison consumption
- * errors. This means mce_gather_info() will not save the "ip" and "cs" registers.
- *
- * However, the context is still valid, so save the "cs" register for later use.
- *
- * The "ip" register is truly unknown, so don't save it or fixup EIPV/RIPV.
- *
- * The Instruction Fetch Unit is at MCA bank 1 for all affected systems.
- */
-static __always_inline void quirk_zen_ifu(int bank, struct mce *m, struct pt_regs *regs)
-{
-	if (bank != 1)
-		return;
-	if (!(m->status & MCI_STATUS_POISON))
-		return;
-
-	m->cs = regs->cs;
-}
-
-/*
  * Do a quick check if any of the events requires a panic.
  * This decides if we keep the events around or clear them.
  */
@@ -991,9 +971,6 @@ static __always_inline int mce_no_way_out(struct mce_hw_err *err, char **msg, un
 		arch___set_bit(i, validp);
 		if (mce_flags.snb_ifu_quirk)
 			quirk_sandybridge_ifu(i, m, regs);
-
-		if (mce_flags.zen_ifu_quirk)
-			quirk_zen_ifu(i, m, regs);
 
 		m->bank = i;
 		if (mce_severity(m, regs, &tmp, true) >= MCE_PANIC_SEVERITY) {
