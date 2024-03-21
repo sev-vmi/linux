@@ -45,6 +45,7 @@ struct psp_device {
 	void *tee_data;
 	void *platform_access_data;
 	void *dbc_data;
+	void *sfs_data;
 
 	unsigned int capability;
 };
@@ -58,6 +59,7 @@ struct psp_device *psp_get_master_device(void);
 #define PSP_CAPABILITY_SEV			BIT(0)
 #define PSP_CAPABILITY_TEE			BIT(1)
 #define PSP_CAPABILITY_DBC_THRU_EXT		BIT(2)
+#define PSP_CAPABILITY_SFS			BIT(3)
 #define PSP_CAPABILITY_PSP_SECURITY_REPORTING	BIT(7)
 
 #define PSP_CAPABILITY_PSP_SECURITY_OFFSET	8
@@ -122,6 +124,7 @@ enum psp_sub_cmd {
 	PSP_SUB_CMD_DBC_SET_UID		= PSP_DYNAMIC_BOOST_SET_UID,
 	PSP_SUB_CMD_DBC_GET_PARAMETER	= PSP_DYNAMIC_BOOST_GET_PARAMETER,
 	PSP_SUB_CMD_DBC_SET_PARAMETER	= PSP_DYNAMIC_BOOST_SET_PARAMETER,
+	PSP_SUB_CMD_SFS_GET_FW_VERS	= PSP_SFS_GET_FW_VERSIONS,
 };
 
 int psp_extended_mailbox_cmd(struct psp_device *psp, unsigned int timeout_msecs,
