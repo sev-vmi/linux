@@ -424,7 +424,7 @@ noinstr u64 mce_rdmsrl(u32 msr)
 	return EAX_EDX_VAL(val, low, high);
 }
 
-static noinstr void mce_wrmsrl(u32 msr, u64 v)
+noinstr void mce_wrmsrl(u32 msr, u64 v)
 {
 	u32 low, high;
 
@@ -869,59 +869,6 @@ clear_it:
 	return error_seen;
 }
 EXPORT_SYMBOL_GPL(machine_check_poll);
-
-/*
- * Disable fast string copy and return from the MCE handler upon the first SRAR
- * MCE on bank 1 due to a CPU erratum on Intel Skylake/Cascade Lake/Cooper Lake
- * CPUs.
- * The fast string copy instructions ("REP; MOVS*") could consume an
- * uncorrectable memory error in the cache line _right after_ the desired region
- * to copy and raise an MCE with RIP pointing to the instruction _after_ the
- * "REP; MOVS*".
- * This mitigation addresses the issue completely with the caveat of performance
- * degradation on the CPU affected. This is still better than the OS crashing on
- * MCEs raised on an irrelevant process due to "REP; MOVS*" accesses from a
- * kernel context (e.g., copy_page).
- *
- * Returns true when fast string copy on CPU has been disabled.
- */
-static noinstr bool quirk_skylake_repmov(void)
-{
-	u64 mcgstatus   = mce_rdmsrl(MSR_IA32_MCG_STATUS);
-	u64 misc_enable = mce_rdmsrl(MSR_IA32_MISC_ENABLE);
-	u64 mc1_status;
-
-	/*
-	 * Apply the quirk only to local machine checks, i.e., no broadcast
-	 * sync is needed.
-	 */
-	if (!(mcgstatus & MCG_STATUS_LMCES) ||
-	    !(misc_enable & MSR_IA32_MISC_ENABLE_FAST_STRING))
-		return false;
-
-	mc1_status = mce_rdmsrl(MSR_IA32_MCx_STATUS(1));
-
-	/* Check for a software-recoverable data fetch error. */
-	if ((mc1_status &
-	     (MCI_STATUS_VAL | MCI_STATUS_OVER | MCI_STATUS_UC | MCI_STATUS_EN |
-	      MCI_STATUS_ADDRV | MCI_STATUS_MISCV | MCI_STATUS_PCC |
-	      MCI_STATUS_AR | MCI_STATUS_S)) ==
-	     (MCI_STATUS_VAL |                   MCI_STATUS_UC | MCI_STATUS_EN |
-	      MCI_STATUS_ADDRV | MCI_STATUS_MISCV |
-	      MCI_STATUS_AR | MCI_STATUS_S)) {
-		misc_enable &= ~MSR_IA32_MISC_ENABLE_FAST_STRING;
-		mce_wrmsrl(MSR_IA32_MISC_ENABLE, misc_enable);
-		mce_wrmsrl(MSR_IA32_MCx_STATUS(1), 0);
-
-		instrumentation_begin();
-		pr_err_once("Erratum detected, disable fast string copy instructions.\n");
-		instrumentation_end();
-
-		return true;
-	}
-
-	return false;
-}
 
 /*
  * Do a quick check if any of the events requires a panic.

@@ -48,6 +48,7 @@ void intel_init_lmce(void);
 void intel_clear_lmce(void);
 bool intel_filter_mce(struct mce *m);
 bool intel_mce_usable_address(struct mce *m);
+bool quirk_skylake_repmov(void);
 #else
 static inline void mce_intel_handle_storm(int bank, bool on) { }
 static inline void cmci_disable_bank(int bank) { }
@@ -56,6 +57,7 @@ static inline void intel_init_lmce(void) { }
 static inline void intel_clear_lmce(void) { }
 static inline bool intel_filter_mce(struct mce *m) { return false; }
 static inline bool intel_mce_usable_address(struct mce *m) { return false; }
+static inline bool quirk_skylake_repmov(void) { return false; }
 #endif
 
 void mce_timer_kick(bool storm);
@@ -311,6 +313,7 @@ static __always_inline void winchip_machine_check(struct pt_regs *regs) {}
 #endif
 
 noinstr u64 mce_rdmsrl(u32 msr);
+noinstr void mce_wrmsrl(u32 msr, u64 v);
 
 static __always_inline u32 mca_msr_reg(int bank, enum mca_msr reg)
 {
