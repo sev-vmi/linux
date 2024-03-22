@@ -31,7 +31,6 @@
  * panic situations)
  */
 
-enum context { IN_KERNEL = 1, IN_USER = 2, IN_KERNEL_RECOV = 3 };
 enum ser { SER_REQUIRED = 1, NO_SER = 2 };
 enum exception { EXCP_CONTEXT = 1, NO_EXCP = 2 };
 
@@ -327,13 +326,16 @@ static __always_inline void quirk_zen_ifu(struct mce *m, struct pt_regs *regs)
 }
 
 /* See AMD PPR(s) section Machine Check Error Handling. */
-static noinstr int mce_severity_amd(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp)
+static noinstr enum severity_level mce_severity_amd(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp,
+				    enum context *ctx)
 {
 	char *panic_msg = NULL;
 	int ret;
 
 	if (mce_flags.zen_ifu_quirk)
 		quirk_zen_ifu(m, regs);
+
+	*ctx = error_context(m, regs);
 
 	/*
 	 * Default return value: Action required, the error must be handled
@@ -378,7 +380,7 @@ static noinstr int mce_severity_amd(struct mce *m, struct pt_regs *regs, char **
 		goto out;
 	}
 
-	if (error_context(m, regs) == IN_KERNEL) {
+	if (*ctx == IN_KERNEL) {
 		panic_msg = "Uncorrected unrecoverable error in kernel context";
 		ret = MCE_PANIC_SEVERITY;
 	}
@@ -418,16 +420,16 @@ static __always_inline void quirk_sandybridge_ifu(struct mce *m, struct pt_regs 
 	m->cs = regs->cs;
 }
 
-static noinstr int mce_severity_intel(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp)
+static noinstr int mce_severity_intel(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp,
+				      enum context *ctx)
 {
 	enum exception excp = (is_excp ? EXCP_CONTEXT : NO_EXCP);
 	struct severity *s;
-	enum context ctx;
 
 	if (mce_flags.snb_ifu_quirk)
 		quirk_sandybridge_ifu(m, regs);
 
-	ctx = error_context(m, regs);
+	*ctx = error_context(m, regs);
 
 	for (s = severities;; s++) {
 		if ((m->status & s->mask) != s->result)
@@ -438,7 +440,7 @@ static noinstr int mce_severity_intel(struct mce *m, struct pt_regs *regs, char 
 			continue;
 		if (s->ser == NO_SER && mca_cfg.ser)
 			continue;
-		if (s->context && ctx != s->context)
+		if (s->context && *ctx != s->context)
 			continue;
 		if (s->excp && excp != s->excp)
 			continue;
@@ -456,13 +458,52 @@ static noinstr int mce_severity_intel(struct mce *m, struct pt_regs *regs, char 
 	}
 }
 
-int noinstr mce_severity(struct mce *m, struct pt_regs *regs, char **msg, bool is_excp)
+static enum mce_actions noinstr mce_get_action(struct mce_hw_err *err, enum context ctx, bool is_excp)
 {
+	struct mce *m = &err->m;
+
+	if (!is_excp)
+		goto out;
+
+	if (ctx == IN_KERNEL_RECOV) {
+	       if (m->kflags & MCE_IN_KERNEL_COPYIN)
+			return MCE_EXP_KERNEL_COPYIN_ACTION;
+
+	       return MCE_EXP_KERNEL_RECOV_ACTION;
+	}
+
+	if (ctx == IN_USER) {
+	       if (m->mcgstatus & MCG_STATUS_RIPV)
+		       return MCE_EXP_USER_KILL_ACTION;
+
+	       return MCE_EXP_USER_RECOV_ACTION;
+	}
+
+out:
+	if (mce_is_memory_error(m) && mce_usable_address(m)) {
+		if (mce_is_correctable(m))
+			return MCE_COR_MEM_ACTION;
+
+		return MCE_UNCOR_MEM_ACTION;
+	}
+
+	return MCE_NO_ACTION;
+}
+
+enum severity_level noinstr mce_severity(struct mce_hw_err *err, struct pt_regs *regs, char **msg, bool is_excp)
+{
+	struct mce *m = &err->m;
+	enum context ctx;
+
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_AMD ||
 	    boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
-		return mce_severity_amd(m, regs, msg, is_excp);
+		m->severity = mce_severity_amd(m, regs, msg, is_excp, &ctx);
 	else
-		return mce_severity_intel(m, regs, msg, is_excp);
+		m->severity = mce_severity_intel(m, regs, msg, is_excp, &ctx);
+
+	err->action = mce_get_action(err, ctx, is_excp);
+
+	return m->severity;
 }
 
 #ifdef CONFIG_DEBUG_FS

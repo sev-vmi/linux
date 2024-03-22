@@ -586,12 +586,18 @@ EXPORT_SYMBOL_GPL(mce_is_correctable);
 static void mce_get_phys_addr(struct mce_hw_err *err)
 {
 	if (!mce_usable_address(&err->m))
-		return;
+		goto out;
 
-	if (err->m.cpuvendor == X86_VENDOR_AMD)
-		return amd_mce_get_phys_addr(err);
+	if (err->m.cpuvendor == X86_VENDOR_AMD) {
+		amd_mce_get_phys_addr(err);
+		goto out;
+	}
 
 	err->phys_addr = err->m.addr & MCI_ADDR_PHYSADDR;
+
+out:
+	if (err->phys_addr == MCE_INVALID_ADDR)
+		err->action = MCE_NO_ACTION;
 }
 
 static int mce_early_notifier(struct notifier_block *nb, unsigned long val,
@@ -626,11 +632,10 @@ static int uc_decode_notifier(struct notifier_block *nb, unsigned long val,
 	struct mce *mce = &err->m;
 	unsigned long pfn;
 
-	if (!mce || !mce_has_phys_addr(err))
+	if (!err)
 		return NOTIFY_DONE;
 
-	if (mce->severity != MCE_AO_SEVERITY &&
-	    mce->severity != MCE_DEFERRED_SEVERITY)
+	if (err->action != MCE_UNCOR_MEM_ACTION)
 		return NOTIFY_DONE;
 
 	pfn = err->phys_addr >> PAGE_SHIFT;
@@ -835,14 +840,14 @@ log_it:
 			goto clear_it;
 
 		mce_read_aux(&err, i);
-		m->severity = mce_severity(m, NULL, NULL, false);
+		m->severity = mce_severity(&err, NULL, NULL, false);
 
 		/*
 		 * Don't get the IP here because it's unlikely to
 		 * have anything to do with the actual error location.
 		 */
 
-		if (mca_cfg.dont_log_ce && !mce_usable_address(m))
+		if (mca_cfg.dont_log_ce && err.action == MCE_NO_ACTION)
 			goto clear_it;
 
 		if (flags & MCP_QUEUE_LOG)
@@ -889,7 +894,7 @@ static __always_inline int mce_no_way_out(struct mce_hw_err *err, char **msg, un
 		arch___set_bit(i, validp);
 
 		m->bank = i;
-		if (mce_severity(m, regs, &tmp, true) >= MCE_PANIC_SEVERITY) {
+		if (mce_severity(err, regs, &tmp, true) >= MCE_PANIC_SEVERITY) {
 			mce_read_aux(err, i);
 			*msg = tmp;
 			return 1;
@@ -1008,9 +1013,9 @@ static void mce_reign(void)
 	 * This dumps all the mces in the log buffer and stops the
 	 * other CPUs.
 	 */
-	if (m && global_worst >= MCE_PANIC_SEVERITY) {
+	if (err && global_worst >= MCE_PANIC_SEVERITY) {
 		/* call mce_severity() to get "msg" for panic */
-		mce_severity(m, NULL, &msg, true);
+		mce_severity(err, NULL, &msg, true);
 		mce_panic("Fatal machine check", err, msg);
 	}
 
@@ -1272,7 +1277,7 @@ __mc_scan_banks(struct mce_hw_err *err, struct pt_regs *regs, struct mce *final,
 		/* Set taint even when machine check was not enabled. */
 		taint++;
 
-		severity = mce_severity(m, regs, NULL, true);
+		severity = mce_severity(err, regs, NULL, true);
 
 		/*
 		 * When machine check was for corrected/deferred handler don't
@@ -1407,6 +1412,30 @@ static noinstr void unexpected_machine_check(struct pt_regs *regs)
 	instrumentation_end();
 }
 
+static noinstr void mce_queue_work(struct mce_hw_err *err, char *msg, void (*func)(struct callback_head *))
+{
+	instrumentation_begin();
+	queue_task_work(err, msg, func);
+	instrumentation_end();
+}
+
+/*
+ * Handle an MCE which has happened in kernel space but from
+ * which the kernel can recover: ex_has_fault_handler() has
+ * already verified that the rIP at which the error happened is
+ * a rIP from which the kernel can recover (by jumping to
+ * recovery code specified in _ASM_EXTABLE_FAULT()) and the
+ * corresponding exception handler which would do that is the
+ * proper one.
+ */
+static noinstr void try_kernel_recovery(struct mce_hw_err *err, char *msg, struct pt_regs *regs)
+{
+	instrumentation_begin();
+	if (!fixup_exception(regs, X86_TRAP_MC, 0, 0))
+		mce_panic("Failed kernel mode recovery", err, msg);
+	instrumentation_end();
+}
+
 /*
  * The actual machine check handler. This only handles real exceptions when
  * something got corrupted coming in through int 18.
@@ -1435,7 +1464,7 @@ static noinstr void unexpected_machine_check(struct pt_regs *regs)
  */
 noinstr void do_machine_check(struct pt_regs *regs)
 {
-	int worst = 0, order, no_way_out, kill_current_task, lmce, taint = 0;
+	int worst = 0, order, no_way_out, lmce, taint = 0;
 	DECLARE_BITMAP(valid_banks, MAX_NR_BANKS) = { 0 };
 	DECLARE_BITMAP(toclear, MAX_NR_BANKS) = { 0 };
 	struct mce_hw_err *final;
@@ -1470,12 +1499,6 @@ noinstr void do_machine_check(struct pt_regs *regs)
 	no_way_out = 0;
 
 	/*
-	 * If kill_current_task is not set, there might be a way to recover from this
-	 * error.
-	 */
-	kill_current_task = 0;
-
-	/*
 	 * MCEs are always local on AMD. Same is determined by MCG_STATUS_LMCES
 	 * on Intel.
 	 */
@@ -1493,13 +1516,6 @@ noinstr void do_machine_check(struct pt_regs *regs)
 
 	barrier();
 
-	/*
-	 * When no restart IP might need to kill or panic.
-	 * Assume the worst for now, but if we find the
-	 * severity is MCE_AR_SEVERITY we have other options.
-	 */
-	if (!(m->mcgstatus & MCG_STATUS_RIPV))
-		kill_current_task = 1;
 	/*
 	 * Check if this MCE is signaled to only this logical processor,
 	 * on Intel, Zhaoxin only.
@@ -1549,55 +1565,34 @@ noinstr void do_machine_check(struct pt_regs *regs)
 		 * make sure we have the right "msg".
 		 */
 		if (worst >= MCE_PANIC_SEVERITY) {
-			mce_severity(m, regs, &msg, true);
+			mce_severity(&err, regs, &msg, true);
 			mce_panic("Local fatal machine check!", &err, msg);
 		}
 	}
 
-	/*
-	 * Enable instrumentation around the external facilities like task_work_add()
-	 * (via queue_task_work()), fixup_exception() etc. For now, that is. Fixing this
-	 * properly would need a lot more involved reorganization.
-	 */
-	instrumentation_begin();
-
 	if (taint)
 		add_taint(TAINT_MACHINE_CHECK, LOCKDEP_NOW_UNRELIABLE);
 
-	if (worst != MCE_AR_SEVERITY && !kill_current_task)
-		goto out;
-
-	/* Fault was in user mode and we need to take some action */
-	if ((m->cs & 3) == 3) {
+	switch (err.action) {
+	case MCE_EXP_KERNEL_RECOV_ACTION:
+		try_kernel_recovery(&err, msg, regs);
+		break;
+	case MCE_EXP_KERNEL_COPYIN_ACTION:
+		mce_queue_work(&err, msg, kill_me_never);
+		break;
+	case MCE_EXP_USER_KILL_ACTION:
 		/* If this triggers there is no way to recover. Die hard. */
 		BUG_ON(!on_thread_stack() || !user_mode(regs));
-
-		if (!mce_usable_address(m))
-			queue_task_work(&err, msg, kill_me_now);
-		else
-			queue_task_work(&err, msg, kill_me_maybe);
-
-	} else {
-		/*
-		 * Handle an MCE which has happened in kernel space but from
-		 * which the kernel can recover: ex_has_fault_handler() has
-		 * already verified that the rIP at which the error happened is
-		 * a rIP from which the kernel can recover (by jumping to
-		 * recovery code specified in _ASM_EXTABLE_FAULT()) and the
-		 * corresponding exception handler which would do that is the
-		 * proper one.
-		 */
-		if (m->kflags & MCE_IN_KERNEL_RECOV) {
-			if (!fixup_exception(regs, X86_TRAP_MC, 0, 0))
-				mce_panic("Failed kernel mode recovery", &err, msg);
-		}
-
-		if (m->kflags & MCE_IN_KERNEL_COPYIN)
-			queue_task_work(&err, msg, kill_me_never);
-	}
-
-out:
-	instrumentation_end();
+		mce_queue_work(&err, msg, kill_me_now);
+		break;
+	case MCE_EXP_USER_RECOV_ACTION:
+		/* If this triggers there is no way to recover. Die hard. */
+		BUG_ON(!on_thread_stack() || !user_mode(regs));
+		mce_queue_work(&err, msg, kill_me_maybe);
+		break;
+	default:
+		break;
+	};
 
 clear:
 	mce_wrmsrl(MSR_IA32_MCG_STATUS, 0);

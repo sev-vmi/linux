@@ -537,17 +537,13 @@ static int cec_notifier(struct notifier_block *nb, unsigned long val,
 	struct mce_hw_err *err = (struct mce_hw_err *)data;
 	struct mce *m = &err->m;
 
-	if (!m)
+	if (!m || err->action != MCE_COR_MEM_ACTION)
 		return NOTIFY_DONE;
 
 	/* We eat only correctable DRAM errors with usable addresses. */
-	if (mce_is_memory_error(m) &&
-	    mce_is_correctable(m)  &&
-	    mce_has_phys_addr(err)) {
-		if (!cec_add_elem(err->phys_addr >> PAGE_SHIFT)) {
-			m->kflags |= MCE_HANDLED_CEC;
-			return NOTIFY_OK;
-		}
+	if (!cec_add_elem(err->phys_addr >> PAGE_SHIFT)) {
+		m->kflags |= MCE_HANDLED_CEC;
+		return NOTIFY_OK;
 	}
 
 	return NOTIFY_DONE;

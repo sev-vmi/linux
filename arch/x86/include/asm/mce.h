@@ -8,6 +8,28 @@
  * Machine Check support for x86
  */
 
+/*
+ * List of possible recovery actions.
+ *
+ * Panic is not included here, since MCE_PANIC_SEVERITY fully covers that.
+ */
+enum mce_actions {
+	/* No action needed. */
+	MCE_NO_ACTION,
+	/* Correctable memory error with usable address. */
+	MCE_COR_MEM_ACTION,
+	/* Uncorrectable memory error with usable address. */
+	MCE_UNCOR_MEM_ACTION,
+	/* Recoverable #MC in user space. */
+	MCE_EXP_USER_RECOV_ACTION,
+	/* Unrecoverable #MC in user space. */
+	MCE_EXP_USER_KILL_ACTION,
+	/* Recoverable #MC from a kernel copy-in operation. */
+	MCE_EXP_KERNEL_COPYIN_ACTION,
+	/* Recoverable #MC from kernel space. */
+	MCE_EXP_KERNEL_RECOV_ACTION,
+};
+
 #define MCE_INVALID_ADDR	~0ULL
 
 /* MCG_CAP register defines */
@@ -195,6 +217,7 @@ enum mce_notifier_prios {
 struct mce_hw_err {
 	struct mce m;
 
+	enum mce_actions action;
 	u64 phys_addr;
 
 	union vendor_info {
@@ -205,11 +228,6 @@ struct mce_hw_err {
 		} amd;
 	} vi;
 };
-
-static __always_inline bool mce_has_phys_addr(struct mce_hw_err *err)
-{
-	return err->phys_addr != MCE_INVALID_ADDR;
-}
 
 struct notifier_block;
 extern void mce_register_decode_chain(struct notifier_block *nb);

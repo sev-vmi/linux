@@ -17,9 +17,13 @@ enum severity_level {
 	MCE_AO_SEVERITY,
 	MCE_UC_SEVERITY,
 	MCE_AR_SEVERITY,
+	MCE_USER_RECOV_SEVERITY,
+	MCE_KERNEL_COPYIN_SEVERITY,
+	MCE_KERNEL_RECOV_SEVERITY,
 	MCE_PANIC_SEVERITY,
 };
 
+enum context { IN_KERNEL = 1, IN_USER = 2, IN_KERNEL_RECOV = 3 };
 extern struct blocking_notifier_head x86_mce_decoder_chain;
 
 #define INITIAL_CHECK_INTERVAL	5 * 60 /* 5 minutes */
@@ -35,7 +39,7 @@ int mce_gen_pool_add(struct mce_hw_err *err);
 int mce_gen_pool_init(void);
 struct llist_node *mce_gen_pool_prepare_records(void);
 
-int mce_severity(struct mce *a, struct pt_regs *regs, char **msg, bool is_excp);
+enum severity_level mce_severity(struct mce_hw_err *err, struct pt_regs *regs, char **msg, bool is_excp);
 struct dentry *mce_get_debugfs_dir(void);
 
 extern mce_banks_t mce_banks_ce_disabled;
