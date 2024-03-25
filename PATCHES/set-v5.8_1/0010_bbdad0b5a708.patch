@@ -1,0 +1,66 @@
+From bbdad0b5a708ddb37a9f051504c2133fa92df97a Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 23 Apr 2020 08:06:43 -0400
+Subject: [PATCH] KVM: nSVM: Report NMIs as allowed when in L2 and Exit-on-NMI
+ is set
+
+Report NMIs as allowed when the vCPU is in L2 and L2 is being run with
+Exit-on-NMI enabled, as NMIs are always unblocked from L1's perspective
+in this case.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/nested.c | 5 -----
+ arch/x86/kvm/svm/svm.c    | 3 +++
+ arch/x86/kvm/svm/svm.h    | 5 +++++
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 3f268a3041a3..2828fa5b6016 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -799,11 +799,6 @@ int nested_svm_check_exception(struct vcpu_svm *svm, unsigned nr,
+ 	return vmexit;
+ }
+ 
+-static bool nested_exit_on_nmi(struct vcpu_svm *svm)
+-{
+-	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
+-}
+-
+ static void nested_svm_nmi(struct vcpu_svm *svm)
+ {
+ 	svm->vmcb->control.exit_code = SVM_EXIT_NMI;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 739414028536..c4f1846b6259 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3071,6 +3071,9 @@ static bool svm_nmi_allowed(struct kvm_vcpu *vcpu)
+ 	struct vmcb *vmcb = svm->vmcb;
+ 	bool ret;
+ 
++	if (is_guest_mode(vcpu) && nested_exit_on_nmi(svm))
++		return true;
++
+ 	ret = !(vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK) &&
+ 	      !(svm->vcpu.arch.hflags & HF_NMI_MASK);
+ 	ret = ret && gif_set(svm);
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index a2bc33aadb67..d8ae654340d4 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -378,6 +378,11 @@ static inline bool svm_nested_virtualize_tpr(struct kvm_vcpu *vcpu)
+ 	return is_guest_mode(vcpu) && (vcpu->arch.hflags & HF_VINTR_MASK);
+ }
+ 
++static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
++{
++	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
++}
++
+ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
+ 			  struct vmcb *nested_vmcb, struct kvm_host_map *map);
+ int nested_svm_vmrun(struct vcpu_svm *svm);
+-- 
+2.27.0
+

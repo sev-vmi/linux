@@ -1,0 +1,30 @@
+From de182481629c2dc248adbb4ec5df83cd9d633dd4 Mon Sep 17 00:00:00 2001
+From: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Date: Wed, 6 May 2020 08:17:56 -0500
+Subject: [PATCH] KVM: SVM: Remove unnecessary V_IRQ unsetting
+
+This has already been handled in the prior call to svm_clear_vintr().
+
+Signed-off-by: Suravee Suthikulpanit <suravee.suthikulpanit@amd.com>
+Message-Id: <1588771076-73790-5-git-send-email-suravee.suthikulpanit@amd.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/svm.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 801886142cc4..4e9cd2a73ad0 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -2660,8 +2660,6 @@ static int interrupt_window_interception(struct vcpu_svm *svm)
+ 	 */
+ 	svm_toggle_avic_for_irq_window(&svm->vcpu, true);
+ 
+-	svm->vmcb->control.int_ctl &= ~V_IRQ_MASK;
+-	mark_dirty(svm->vmcb, VMCB_INTR);
+ 	++svm->vcpu.stat.irq_window_exits;
+ 	return 1;
+ }
+-- 
+2.27.0
+

@@ -1,0 +1,48 @@
+From 56083bdf67c78030f11cdaed5b2b54959a329b02 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 17 Apr 2020 10:32:53 -0400
+Subject: [PATCH] KVM: x86: check_nested_events is never NULL
+
+Both Intel and AMD now implement it, so there is no need to check if the
+callback is implemented.
+
+Reviewed-by: Vitaly Kuznetsov <vkuznets@redhat.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 59958ce2b681..0492baeb78ab 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7699,7 +7699,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
+ 	 * from L2 to L1 due to pending L1 events which require exit
+ 	 * from L2 to L1.
+ 	 */
+-	if (is_guest_mode(vcpu) && kvm_x86_ops.check_nested_events) {
++	if (is_guest_mode(vcpu)) {
+ 		r = kvm_x86_ops.check_nested_events(vcpu);
+ 		if (r != 0)
+ 			return r;
+@@ -7761,7 +7761,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
+ 		 * proposal and current concerns.  Perhaps we should be setting
+ 		 * KVM_REQ_EVENT only on certain events and not unconditionally?
+ 		 */
+-		if (is_guest_mode(vcpu) && kvm_x86_ops.check_nested_events) {
++		if (is_guest_mode(vcpu)) {
+ 			r = kvm_x86_ops.check_nested_events(vcpu);
+ 			if (r != 0)
+ 				return r;
+@@ -8527,7 +8527,7 @@ static inline int vcpu_block(struct kvm *kvm, struct kvm_vcpu *vcpu)
+ 
+ static inline bool kvm_vcpu_running(struct kvm_vcpu *vcpu)
+ {
+-	if (is_guest_mode(vcpu) && kvm_x86_ops.check_nested_events)
++	if (is_guest_mode(vcpu))
+ 		kvm_x86_ops.check_nested_events(vcpu);
+ 
+ 	return (vcpu->arch.mp_state == KVM_MP_STATE_RUNNABLE &&
+-- 
+2.27.0
+

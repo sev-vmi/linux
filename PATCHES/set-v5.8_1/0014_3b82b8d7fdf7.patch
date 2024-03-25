@@ -1,0 +1,45 @@
+From 3b82b8d7fdf7c1c284cfa6ebe273435483bcbd9d Mon Sep 17 00:00:00 2001
+From: Sean Christopherson <sean.j.christopherson@intel.com>
+Date: Wed, 22 Apr 2020 19:25:47 -0700
+Subject: [PATCH] KVM: x86: WARN on injected+pending exception even in nested
+ case
+
+WARN if a pending exception is coincident with an injected exception
+before calling check_nested_events() so that the WARN will fire even if
+inject_pending_event() bails early because check_nested_events() detects
+the conflict.  Bailing early isn't problematic (quite the opposite), but
+suppressing the WARN is undesirable as it could mask a bug elsewhere in
+KVM.
+
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Message-Id: <20200423022550.15113-11-sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 446fbdd05bd4..cb250f16bdf5 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7713,6 +7713,9 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
+ 			kvm_x86_ops.set_irq(vcpu);
+ 	}
+ 
++	WARN_ON_ONCE(vcpu->arch.exception.injected &&
++		     vcpu->arch.exception.pending);
++
+ 	/*
+ 	 * Call check_nested_events() even if we reinjected a previous event
+ 	 * in order for caller to determine if it should require immediate-exit
+@@ -7731,7 +7734,6 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
+ 					vcpu->arch.exception.has_error_code,
+ 					vcpu->arch.exception.error_code);
+ 
+-		WARN_ON_ONCE(vcpu->arch.exception.injected);
+ 		vcpu->arch.exception.pending = false;
+ 		vcpu->arch.exception.injected = true;
+ 
+-- 
+2.27.0
+

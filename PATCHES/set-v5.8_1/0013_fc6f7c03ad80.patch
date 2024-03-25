@@ -1,0 +1,92 @@
+From fc6f7c03ad80693c953d5cdacfad41f174289531 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 23 Apr 2020 18:02:45 -0400
+Subject: [PATCH] KVM: nSVM: Report interrupts as allowed when in L2 and
+ exit-on-interrupt is set
+
+Report interrupts as allowed when the vCPU is in L2 and L2 is being run with
+exit-on-interrupts enabled and EFLAGS.IF=1 (either on the host or on the guest
+according to VINTR).  Interrupts are always unblocked from L1's perspective
+in this case.
+
+While moving nested_exit_on_intr to svm.h, use INTERCEPT_INTR properly instead
+of assuming it's zero (which it is of course).
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/nested.c |  5 -----
+ arch/x86/kvm/svm/svm.c    | 23 +++++++++++++++++------
+ arch/x86/kvm/svm/svm.h    |  5 +++++
+ 3 files changed, 22 insertions(+), 11 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index aaec6d0aa701..9c813e08e2cf 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -828,11 +828,6 @@ static void nested_svm_intr(struct vcpu_svm *svm)
+ 	nested_svm_vmexit(svm);
+ }
+ 
+-static bool nested_exit_on_intr(struct vcpu_svm *svm)
+-{
+-	return (svm->nested.intercept & 1ULL);
+-}
+-
+ static int svm_check_nested_events(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 5738be661a1f..fba8bdcfed0e 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3117,14 +3117,25 @@ bool svm_interrupt_blocked(struct kvm_vcpu *vcpu)
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 	struct vmcb *vmcb = svm->vmcb;
+ 
+-	if (!gif_set(svm) ||
+-	     (vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK))
++	if (!gif_set(svm))
+ 		return true;
+ 
+-	if (is_guest_mode(vcpu) && (svm->vcpu.arch.hflags & HF_VINTR_MASK))
+-		return !(svm->vcpu.arch.hflags & HF_HIF_MASK);
+-	else
+-		return !(kvm_get_rflags(vcpu) & X86_EFLAGS_IF);
++	if (is_guest_mode(vcpu)) {
++		/* As long as interrupts are being delivered...  */
++		if ((svm->vcpu.arch.hflags & HF_VINTR_MASK)
++		    ? !(svm->vcpu.arch.hflags & HF_HIF_MASK)
++		    : !(kvm_get_rflags(vcpu) & X86_EFLAGS_IF))
++			return true;
++
++		/* ... vmexits aren't blocked by the interrupt shadow  */
++		if (nested_exit_on_intr(svm))
++			return false;
++	} else {
++		if (!(kvm_get_rflags(vcpu) & X86_EFLAGS_IF))
++			return true;
++	}
++
++	return (vmcb->control.int_state & SVM_INTERRUPT_SHADOW_MASK);
+ }
+ 
+ static bool svm_interrupt_allowed(struct kvm_vcpu *vcpu)
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index f6d604b72a4c..5cc559ab862d 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -386,6 +386,11 @@ static inline bool nested_exit_on_smi(struct vcpu_svm *svm)
+ 	return (svm->nested.intercept & (1ULL << INTERCEPT_SMI));
+ }
+ 
++static inline bool nested_exit_on_intr(struct vcpu_svm *svm)
++{
++	return (svm->nested.intercept & (1ULL << INTERCEPT_INTR));
++}
++
+ static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
+ {
+ 	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
+-- 
+2.27.0
+

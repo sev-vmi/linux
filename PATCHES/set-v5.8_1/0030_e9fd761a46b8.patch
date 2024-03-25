@@ -1,0 +1,84 @@
+From e9fd761a46b8655aa5ff84b4adc0c8cf43952145 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Wed, 13 May 2020 13:28:23 -0400
+Subject: [PATCH] KVM: nSVM: remove HF_VINTR_MASK
+
+Now that the int_ctl field is stored in svm->nested.ctl.int_ctl, we can
+use it instead of vcpu->arch.hflags to check whether L2 is running
+in V_INTR_MASKING mode.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h | 1 -
+ arch/x86/kvm/svm/nested.c       | 6 +-----
+ arch/x86/kvm/svm/svm.c          | 2 +-
+ arch/x86/kvm/svm/svm.h          | 4 +++-
+ 4 files changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index e6f2e1a2dab6..0dfc522f96cc 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1596,7 +1596,6 @@ enum {
+ 
+ #define HF_GIF_MASK		(1 << 0)
+ #define HF_HIF_MASK		(1 << 1)
+-#define HF_VINTR_MASK		(1 << 2)
+ #define HF_NMI_MASK		(1 << 3)
+ #define HF_IRET_MASK		(1 << 4)
+ #define HF_GUEST_MASK		(1 << 5) /* VCPU is in guest-mode */
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index c3c04fef11df..6967fe884eaf 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -118,7 +118,7 @@ void recalc_intercepts(struct vcpu_svm *svm)
+ 	c->intercept_exceptions = h->intercept_exceptions;
+ 	c->intercept = h->intercept;
+ 
+-	if (svm->vcpu.arch.hflags & HF_VINTR_MASK) {
++	if (g->int_ctl & V_INTR_MASKING_MASK) {
+ 		/* We only want the cr8 intercept bits of L1 */
+ 		c->intercept_cr &= ~(1U << INTERCEPT_CR8_READ);
+ 		c->intercept_cr &= ~(1U << INTERCEPT_CR8_WRITE);
+@@ -338,10 +338,6 @@ static void nested_prepare_vmcb_control(struct vcpu_svm *svm)
+ 	kvm_mmu_reset_context(&svm->vcpu);
+ 
+ 	svm_flush_tlb(&svm->vcpu);
+-	if (svm->nested.ctl.int_ctl & V_INTR_MASKING_MASK)
+-		svm->vcpu.arch.hflags |= HF_VINTR_MASK;
+-	else
+-		svm->vcpu.arch.hflags &= ~HF_VINTR_MASK;
+ 
+ 	svm->vmcb->control.tsc_offset = svm->vcpu.arch.tsc_offset =
+ 		svm->vcpu.arch.l1_tsc_offset + svm->nested.ctl.tsc_offset;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 422b1cc62a20..6867dba4f736 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3104,7 +3104,7 @@ bool svm_interrupt_blocked(struct kvm_vcpu *vcpu)
+ 
+ 	if (is_guest_mode(vcpu)) {
+ 		/* As long as interrupts are being delivered...  */
+-		if ((svm->vcpu.arch.hflags & HF_VINTR_MASK)
++		if ((svm->nested.ctl.int_ctl & V_INTR_MASKING_MASK)
+ 		    ? !(svm->vcpu.arch.hflags & HF_HIF_MASK)
+ 		    : !(kvm_get_rflags(vcpu) & X86_EFLAGS_IF))
+ 			return true;
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 10b7b55720a0..be8e830f83fa 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -367,7 +367,9 @@ void svm_set_gif(struct vcpu_svm *svm, bool value);
+ 
+ static inline bool svm_nested_virtualize_tpr(struct kvm_vcpu *vcpu)
+ {
+-	return is_guest_mode(vcpu) && (vcpu->arch.hflags & HF_VINTR_MASK);
++	struct vcpu_svm *svm = to_svm(vcpu);
++
++	return is_guest_mode(vcpu) && (svm->nested.ctl.int_ctl & V_INTR_MASKING_MASK);
+ }
+ 
+ static inline bool nested_exit_on_smi(struct vcpu_svm *svm)
+-- 
+2.27.0
+

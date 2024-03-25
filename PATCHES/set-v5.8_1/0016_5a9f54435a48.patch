@@ -1,0 +1,62 @@
+From 5a9f54435a488f8a1153efd36cccee3e7e0fc28b Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Tue, 28 Apr 2020 14:23:26 +0800
+Subject: [PATCH] KVM: X86: Introduce kvm_vcpu_exit_request() helper
+
+Introduce kvm_vcpu_exit_request() helper, we need to check some conditions
+before enter guest again immediately, we skip invoking the exit handler and
+go through full run loop if complete fastpath but there is stuff preventing
+we enter guest again immediately.
+
+Tested-by: Haiwei Li <lihaiwei@tencent.com>
+Cc: Haiwei Li <lihaiwei@tencent.com>
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Message-Id: <1588055009-12677-5-git-send-email-wanpengli@tencent.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/x86.c | 10 ++++++++--
+ arch/x86/kvm/x86.h |  1 +
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 370288fdedba..29a41aa98929 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -1573,6 +1573,13 @@ int kvm_emulate_wrmsr(struct kvm_vcpu *vcpu)
+ }
+ EXPORT_SYMBOL_GPL(kvm_emulate_wrmsr);
+ 
++bool kvm_vcpu_exit_request(struct kvm_vcpu *vcpu)
++{
++	return vcpu->mode == EXITING_GUEST_MODE || kvm_request_pending(vcpu) ||
++		need_resched() || signal_pending(current);
++}
++EXPORT_SYMBOL_GPL(kvm_vcpu_exit_request);
++
+ /*
+  * The fast path for frequent and performance sensitive wrmsr emulation,
+  * i.e. the sending of IPI, sending IPI early in the VM-Exit flow reduces
+@@ -8396,8 +8403,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	if (kvm_lapic_enabled(vcpu) && vcpu->arch.apicv_active)
+ 		kvm_x86_ops.sync_pir_to_irr(vcpu);
+ 
+-	if (vcpu->mode == EXITING_GUEST_MODE || kvm_request_pending(vcpu)
+-	    || need_resched() || signal_pending(current)) {
++	if (kvm_vcpu_exit_request(vcpu)) {
+ 		vcpu->mode = OUTSIDE_GUEST_MODE;
+ 		smp_wmb();
+ 		local_irq_enable();
+diff --git a/arch/x86/kvm/x86.h b/arch/x86/kvm/x86.h
+index 7b5ed8ed628e..e02fe28254b6 100644
+--- a/arch/x86/kvm/x86.h
++++ b/arch/x86/kvm/x86.h
+@@ -364,5 +364,6 @@ static inline bool kvm_dr7_valid(u64 data)
+ void kvm_load_guest_xsave_state(struct kvm_vcpu *vcpu);
+ void kvm_load_host_xsave_state(struct kvm_vcpu *vcpu);
+ u64 kvm_spec_ctrl_valid_bits(struct kvm_vcpu *vcpu);
++bool kvm_vcpu_exit_request(struct kvm_vcpu *vcpu);
+ 
+ #endif
+-- 
+2.27.0
+

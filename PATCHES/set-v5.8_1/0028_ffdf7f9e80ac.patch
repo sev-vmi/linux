@@ -1,0 +1,170 @@
+From ffdf7f9e80ac1b6fea3bc6a65ea1f264bc226eab Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Fri, 22 May 2020 12:18:27 -0400
+Subject: [PATCH] KVM: nSVM: extract svm_set_gif
+
+Extract the code that is needed to implement CLGI and STGI,
+so that we can run it from VMRUN and vmexit (and in the future,
+KVM_SET_NESTED_STATE).  Skip the request for KVM_REQ_EVENT unless needed,
+subsuming the evaluate_pending_interrupts optimization that is found
+in enter_svm_guest_mode.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/irq.c        |  1 +
+ arch/x86/kvm/svm/nested.c | 22 ++---------------
+ arch/x86/kvm/svm/svm.c    | 51 ++++++++++++++++++++++++++-------------
+ arch/x86/kvm/svm/svm.h    |  1 +
+ 4 files changed, 38 insertions(+), 37 deletions(-)
+
+diff --git a/arch/x86/kvm/irq.c b/arch/x86/kvm/irq.c
+index 54f7ea68083b..99d118ffc67d 100644
+--- a/arch/x86/kvm/irq.c
++++ b/arch/x86/kvm/irq.c
+@@ -83,6 +83,7 @@ int kvm_cpu_has_injectable_intr(struct kvm_vcpu *v)
+ 
+ 	return kvm_apic_has_interrupt(v) != -1; /* LAPIC */
+ }
++EXPORT_SYMBOL_GPL(kvm_cpu_has_injectable_intr);
+ 
+ /*
+  * check if there is pending interrupt without
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 921466eba556..7e4a506828c9 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -333,10 +333,6 @@ static void nested_prepare_vmcb_control(struct vcpu_svm *svm)
+ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
+ 			  struct vmcb *nested_vmcb)
+ {
+-	bool evaluate_pending_interrupts =
+-		is_intercept(svm, INTERCEPT_VINTR) ||
+-		is_intercept(svm, INTERCEPT_IRET);
+-
+ 	svm->nested.vmcb = vmcb_gpa;
+ 	if (kvm_get_rflags(&svm->vcpu) & X86_EFLAGS_IF)
+ 		svm->vcpu.arch.hflags |= HF_HIF_MASK;
+@@ -347,21 +343,7 @@ void enter_svm_guest_mode(struct vcpu_svm *svm, u64 vmcb_gpa,
+ 	nested_prepare_vmcb_save(svm, nested_vmcb);
+ 	nested_prepare_vmcb_control(svm);
+ 
+-	/*
+-	 * If L1 had a pending IRQ/NMI before executing VMRUN,
+-	 * which wasn't delivered because it was disallowed (e.g.
+-	 * interrupts disabled), L0 needs to evaluate if this pending
+-	 * event should cause an exit from L2 to L1 or be delivered
+-	 * directly to L2.
+-	 *
+-	 * Usually this would be handled by the processor noticing an
+-	 * IRQ/NMI window request.  However, VMRUN can unblock interrupts
+-	 * by implicitly setting GIF, so force L0 to perform pending event
+-	 * evaluation by requesting a KVM_REQ_EVENT.
+-	 */
+-	enable_gif(svm);
+-	if (unlikely(evaluate_pending_interrupts))
+-		kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
++	svm_set_gif(svm, true);
+ }
+ 
+ int nested_svm_vmrun(struct vcpu_svm *svm)
+@@ -505,7 +487,7 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
+ 	svm->vcpu.arch.mp_state = KVM_MP_STATE_RUNNABLE;
+ 
+ 	/* Give the current vmcb to the guest */
+-	disable_gif(svm);
++	svm_set_gif(svm, false);
+ 
+ 	nested_vmcb->save.es     = vmcb->save.es;
+ 	nested_vmcb->save.cs     = vmcb->save.cs;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 7383f821eb3b..e48e4173bc60 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -1981,6 +1981,38 @@ static int vmrun_interception(struct vcpu_svm *svm)
+ 	return nested_svm_vmrun(svm);
+ }
+ 
++void svm_set_gif(struct vcpu_svm *svm, bool value)
++{
++	if (value) {
++		/*
++		 * If VGIF is enabled, the STGI intercept is only added to
++		 * detect the opening of the SMI/NMI window; remove it now.
++		 * Likewise, clear the VINTR intercept, we will set it
++		 * again while processing KVM_REQ_EVENT if needed.
++		 */
++		if (vgif_enabled(svm))
++			clr_intercept(svm, INTERCEPT_STGI);
++		if (is_intercept(svm, SVM_EXIT_VINTR))
++			svm_clear_vintr(svm);
++
++		enable_gif(svm);
++		if (svm->vcpu.arch.smi_pending ||
++		    svm->vcpu.arch.nmi_pending ||
++		    kvm_cpu_has_injectable_intr(&svm->vcpu))
++			kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
++	} else {
++		disable_gif(svm);
++
++		/*
++		 * After a CLGI no interrupts should come.  But if vGIF is
++		 * in use, we still rely on the VINTR intercept (rather than
++		 * STGI) to detect an open interrupt window.
++		*/
++		if (!vgif_enabled(svm))
++			svm_clear_vintr(svm);
++	}
++}
++
+ static int stgi_interception(struct vcpu_svm *svm)
+ {
+ 	int ret;
+@@ -1988,18 +2020,8 @@ static int stgi_interception(struct vcpu_svm *svm)
+ 	if (nested_svm_check_permissions(svm))
+ 		return 1;
+ 
+-	/*
+-	 * If VGIF is enabled, the STGI intercept is only added to
+-	 * detect the opening of the SMI/NMI window; remove it now.
+-	 */
+-	if (vgif_enabled(svm))
+-		clr_intercept(svm, INTERCEPT_STGI);
+-
+ 	ret = kvm_skip_emulated_instruction(&svm->vcpu);
+-	kvm_make_request(KVM_REQ_EVENT, &svm->vcpu);
+-
+-	enable_gif(svm);
+-
++	svm_set_gif(svm, true);
+ 	return ret;
+ }
+ 
+@@ -2011,12 +2033,7 @@ static int clgi_interception(struct vcpu_svm *svm)
+ 		return 1;
+ 
+ 	ret = kvm_skip_emulated_instruction(&svm->vcpu);
+-
+-	disable_gif(svm);
+-
+-	/* After a CLGI no interrupts should come */
+-	svm_clear_vintr(svm);
+-
++	svm_set_gif(svm, false);
+ 	return ret;
+ }
+ 
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index 7e79f0af1204..10b7b55720a0 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -357,6 +357,7 @@ void disable_nmi_singlestep(struct vcpu_svm *svm);
+ bool svm_smi_blocked(struct kvm_vcpu *vcpu);
+ bool svm_nmi_blocked(struct kvm_vcpu *vcpu);
+ bool svm_interrupt_blocked(struct kvm_vcpu *vcpu);
++void svm_set_gif(struct vcpu_svm *svm, bool value);
+ 
+ /* nested.c */
+ 
+-- 
+2.27.0
+

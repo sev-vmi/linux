@@ -1,0 +1,228 @@
+From a9ab13ff6e844ad5b3ed39339e6db9a76bb539ad Mon Sep 17 00:00:00 2001
+From: Wanpeng Li <wanpengli@tencent.com>
+Date: Fri, 10 Apr 2020 10:47:03 -0700
+Subject: [PATCH] KVM: X86: Improve latency for single target IPI fastpath
+
+IPI and Timer cause the main MSRs write vmexits in cloud environment
+observation, let's optimize virtual IPI latency more aggressively to
+inject target IPI as soon as possible.
+
+Running kvm-unit-tests/vmexit.flat IPI testing on SKX server, disable
+adaptive advance lapic timer and adaptive halt-polling to avoid the
+interference, this patch can give another 7% improvement.
+
+w/o fastpath   -> x86.c fastpath      4238 -> 3543  16.4%
+x86.c fastpath -> vmx.c fastpath      3543 -> 3293     7%
+w/o fastpath   -> vmx.c fastpath      4238 -> 3293  22.3%
+
+Cc: Haiwei Li <lihaiwei@tencent.com>
+Signed-off-by: Wanpeng Li <wanpengli@tencent.com>
+Signed-off-by: Sean Christopherson <sean.j.christopherson@intel.com>
+Message-Id: <20200410174703.1138-3-sean.j.christopherson@intel.com>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/include/asm/kvm_host.h |  5 ++---
+ arch/x86/kvm/svm/svm.c          | 24 ++++++++++++++++--------
+ arch/x86/kvm/vmx/vmx.c          | 22 +++++++++++++---------
+ arch/x86/kvm/x86.c              |  6 +++---
+ 4 files changed, 34 insertions(+), 23 deletions(-)
+
+diff --git a/arch/x86/include/asm/kvm_host.h b/arch/x86/include/asm/kvm_host.h
+index ceba205d32a2..f26df2cb0591 100644
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1126,7 +1126,7 @@ struct kvm_x86_ops {
+ 	 */
+ 	void (*tlb_flush_guest)(struct kvm_vcpu *vcpu);
+ 
+-	void (*run)(struct kvm_vcpu *vcpu);
++	enum exit_fastpath_completion (*run)(struct kvm_vcpu *vcpu);
+ 	int (*handle_exit)(struct kvm_vcpu *vcpu,
+ 		enum exit_fastpath_completion exit_fastpath);
+ 	int (*skip_emulated_instruction)(struct kvm_vcpu *vcpu);
+@@ -1176,8 +1176,7 @@ struct kvm_x86_ops {
+ 			       struct x86_instruction_info *info,
+ 			       enum x86_intercept_stage stage,
+ 			       struct x86_exception *exception);
+-	void (*handle_exit_irqoff)(struct kvm_vcpu *vcpu,
+-		enum exit_fastpath_completion *exit_fastpath);
++	void (*handle_exit_irqoff)(struct kvm_vcpu *vcpu);
+ 
+ 	int (*check_nested_events)(struct kvm_vcpu *vcpu);
+ 	void (*request_immediate_exit)(struct kvm_vcpu *vcpu);
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 747e60c65c98..a6f4e1bdb045 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3299,10 +3299,21 @@ static void svm_cancel_injection(struct kvm_vcpu *vcpu)
+ 	svm_complete_interrupts(svm);
+ }
+ 
++static enum exit_fastpath_completion svm_exit_handlers_fastpath(struct kvm_vcpu *vcpu)
++{
++	if (!is_guest_mode(vcpu) &&
++	    to_svm(vcpu)->vmcb->control.exit_code == SVM_EXIT_MSR &&
++	    to_svm(vcpu)->vmcb->control.exit_info_1)
++		return handle_fastpath_set_msr_irqoff(vcpu);
++
++	return EXIT_FASTPATH_NONE;
++}
++
+ void __svm_vcpu_run(unsigned long vmcb_pa, unsigned long *regs);
+ 
+-static void svm_vcpu_run(struct kvm_vcpu *vcpu)
++static enum exit_fastpath_completion svm_vcpu_run(struct kvm_vcpu *vcpu)
+ {
++	enum exit_fastpath_completion exit_fastpath;
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 
+ 	svm->vmcb->save.rax = vcpu->arch.regs[VCPU_REGS_RAX];
+@@ -3314,7 +3325,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
+ 	 * again.
+ 	 */
+ 	if (unlikely(svm->nested.exit_required))
+-		return;
++		return EXIT_FASTPATH_NONE;
+ 
+ 	/*
+ 	 * Disable singlestep if we're injecting an interrupt/exception.
+@@ -3398,6 +3409,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
+ 	stgi();
+ 
+ 	/* Any pending NMI will happen here */
++	exit_fastpath = svm_exit_handlers_fastpath(vcpu);
+ 
+ 	if (unlikely(svm->vmcb->control.exit_code == SVM_EXIT_NMI))
+ 		kvm_after_interrupt(&svm->vcpu);
+@@ -3426,6 +3438,7 @@ static void svm_vcpu_run(struct kvm_vcpu *vcpu)
+ 		svm_handle_mce(svm);
+ 
+ 	mark_all_clean(svm->vmcb);
++	return exit_fastpath;
+ }
+ 
+ static void svm_load_mmu_pgd(struct kvm_vcpu *vcpu, unsigned long root)
+@@ -3727,13 +3740,8 @@ static int svm_check_intercept(struct kvm_vcpu *vcpu,
+ 	return ret;
+ }
+ 
+-static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu,
+-	enum exit_fastpath_completion *exit_fastpath)
++static void svm_handle_exit_irqoff(struct kvm_vcpu *vcpu)
+ {
+-	if (!is_guest_mode(vcpu) &&
+-	    to_svm(vcpu)->vmcb->control.exit_code == SVM_EXIT_MSR &&
+-	    to_svm(vcpu)->vmcb->control.exit_info_1)
+-		*exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
+ }
+ 
+ static void svm_sched_in(struct kvm_vcpu *vcpu, int cpu)
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 1fc10b821b78..766303b31949 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -6350,8 +6350,7 @@ static void handle_external_interrupt_irqoff(struct kvm_vcpu *vcpu)
+ }
+ STACK_FRAME_NON_STANDARD(handle_external_interrupt_irqoff);
+ 
+-static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu,
+-	enum exit_fastpath_completion *exit_fastpath)
++static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu)
+ {
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 
+@@ -6359,9 +6358,6 @@ static void vmx_handle_exit_irqoff(struct kvm_vcpu *vcpu,
+ 		handle_external_interrupt_irqoff(vcpu);
+ 	else if (vmx->exit_reason == EXIT_REASON_EXCEPTION_NMI)
+ 		handle_exception_nmi_irqoff(vmx);
+-	else if (!is_guest_mode(vcpu) &&
+-		vmx->exit_reason == EXIT_REASON_MSR_WRITE)
+-		*exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
+ }
+ 
+ static bool vmx_has_emulated_msr(int index)
+@@ -6565,8 +6561,9 @@ void vmx_update_host_rsp(struct vcpu_vmx *vmx, unsigned long host_rsp)
+ 
+ bool __vmx_vcpu_run(struct vcpu_vmx *vmx, unsigned long *regs, bool launched);
+ 
+-static void vmx_vcpu_run(struct kvm_vcpu *vcpu)
++static enum exit_fastpath_completion vmx_vcpu_run(struct kvm_vcpu *vcpu)
+ {
++	enum exit_fastpath_completion exit_fastpath;
+ 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+ 	unsigned long cr3, cr4;
+ 
+@@ -6578,7 +6575,7 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu)
+ 	/* Don't enter VMX if guest state is invalid, let the exit handler
+ 	   start emulation until we arrive back to a valid state */
+ 	if (vmx->emulation_required)
+-		return;
++		return EXIT_FASTPATH_NONE;
+ 
+ 	if (vmx->ple_window_dirty) {
+ 		vmx->ple_window_dirty = false;
+@@ -6726,7 +6723,7 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu)
+ 
+ 	if (unlikely(vmx->fail)) {
+ 		vmx->exit_reason = 0xdead;
+-		return;
++		return EXIT_FASTPATH_NONE;
+ 	}
+ 
+ 	vmx->exit_reason = vmcs_read32(VM_EXIT_REASON);
+@@ -6734,13 +6731,20 @@ static void vmx_vcpu_run(struct kvm_vcpu *vcpu)
+ 		kvm_machine_check();
+ 
+ 	if (unlikely(vmx->exit_reason & VMX_EXIT_REASONS_FAILED_VMENTRY))
+-		return;
++		return EXIT_FASTPATH_NONE;
++
++	if (!is_guest_mode(vcpu) && vmx->exit_reason == EXIT_REASON_MSR_WRITE)
++		exit_fastpath = handle_fastpath_set_msr_irqoff(vcpu);
++	else
++		exit_fastpath = EXIT_FASTPATH_NONE;
+ 
+ 	vmx->loaded_vmcs->launched = 1;
+ 	vmx->idt_vectoring_info = vmcs_read32(IDT_VECTORING_INFO_FIELD);
+ 
+ 	vmx_recover_nmi_blocking(vmx);
+ 	vmx_complete_interrupts(vmx);
++
++	return exit_fastpath;
+ }
+ 
+ static void vmx_free_vcpu(struct kvm_vcpu *vcpu)
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index 8104dc9ff5b2..8d9bcd5faac5 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -8179,7 +8179,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	bool req_int_win =
+ 		dm_request_for_irq_injection(vcpu) &&
+ 		kvm_cpu_accept_dm_intr(vcpu);
+-	enum exit_fastpath_completion exit_fastpath = EXIT_FASTPATH_NONE;
++	enum exit_fastpath_completion exit_fastpath;
+ 
+ 	bool req_immediate_exit = false;
+ 
+@@ -8406,7 +8406,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 		vcpu->arch.switch_db_regs &= ~KVM_DEBUGREG_RELOAD;
+ 	}
+ 
+-	kvm_x86_ops.run(vcpu);
++	exit_fastpath = kvm_x86_ops.run(vcpu);
+ 
+ 	/*
+ 	 * Do this here before restoring debug registers on the host.  And
+@@ -8438,7 +8438,7 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
+ 	vcpu->mode = OUTSIDE_GUEST_MODE;
+ 	smp_wmb();
+ 
+-	kvm_x86_ops.handle_exit_irqoff(vcpu, &exit_fastpath);
++	kvm_x86_ops.handle_exit_irqoff(vcpu);
+ 
+ 	/*
+ 	 * Consume any pending interrupts, including the possible source of
+-- 
+2.27.0
+

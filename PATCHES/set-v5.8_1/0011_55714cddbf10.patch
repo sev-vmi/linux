@@ -1,0 +1,95 @@
+From 55714cddbf1028bbfa19fd7d69182de3f135ce99 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 23 Apr 2020 08:17:28 -0400
+Subject: [PATCH] KVM: nSVM: Move SMI vmexit handling to
+ svm_check_nested_events()
+
+Unlike VMX, SVM allows a hypervisor to take a SMI vmexit without having
+any special SMM-monitor enablement sequence.  Therefore, it has to be
+handled like interrupts and NMIs.  Check for an unblocked SMI in
+svm_check_nested_events() so that pending SMIs are correctly prioritized
+over IRQs and NMIs when the latter events will trigger VM-Exit.
+
+Note that there is no need to test explicitly for SMI vmexits, because
+guests always runs outside SMM and therefore can never get an SMI while
+they are blocked.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/nested.c | 16 ++++++++++++++++
+ arch/x86/kvm/svm/svm.c    |  8 --------
+ arch/x86/kvm/svm/svm.h    |  5 +++++
+ 3 files changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 2828fa5b6016..aaec6d0aa701 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -799,6 +799,15 @@ int nested_svm_check_exception(struct vcpu_svm *svm, unsigned nr,
+ 	return vmexit;
+ }
+ 
++static void nested_svm_smi(struct vcpu_svm *svm)
++{
++	svm->vmcb->control.exit_code = SVM_EXIT_SMI;
++	svm->vmcb->control.exit_info_1 = 0;
++	svm->vmcb->control.exit_info_2 = 0;
++
++	nested_svm_vmexit(svm);
++}
++
+ static void nested_svm_nmi(struct vcpu_svm *svm)
+ {
+ 	svm->vmcb->control.exit_code = SVM_EXIT_NMI;
+@@ -831,6 +840,13 @@ static int svm_check_nested_events(struct kvm_vcpu *vcpu)
+ 		kvm_event_needs_reinjection(vcpu) || svm->nested.exit_required ||
+ 		svm->nested.nested_run_pending;
+ 
++	if (vcpu->arch.smi_pending && nested_exit_on_smi(svm)) {
++		if (block_nested_events)
++			return -EBUSY;
++		nested_svm_smi(svm);
++		return 0;
++	}
++
+ 	if (vcpu->arch.nmi_pending && nested_exit_on_nmi(svm)) {
+ 		if (block_nested_events)
+ 			return -EBUSY;
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index c4f1846b6259..83b8bc305fe1 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3778,14 +3778,6 @@ static bool svm_smi_allowed(struct kvm_vcpu *vcpu)
+ 	if (!gif_set(svm))
+ 		return false;
+ 
+-	if (is_guest_mode(&svm->vcpu) &&
+-	    svm->nested.intercept & (1ULL << INTERCEPT_SMI)) {
+-		/* TODO: Might need to set exit_info_1 and exit_info_2 here */
+-		svm->vmcb->control.exit_code = SVM_EXIT_SMI;
+-		svm->nested.exit_required = true;
+-		return false;
+-	}
+-
+ 	return !is_smm(vcpu);
+ }
+ 
+diff --git a/arch/x86/kvm/svm/svm.h b/arch/x86/kvm/svm/svm.h
+index d8ae654340d4..4dc6d2b4b721 100644
+--- a/arch/x86/kvm/svm/svm.h
++++ b/arch/x86/kvm/svm/svm.h
+@@ -378,6 +378,11 @@ static inline bool svm_nested_virtualize_tpr(struct kvm_vcpu *vcpu)
+ 	return is_guest_mode(vcpu) && (vcpu->arch.hflags & HF_VINTR_MASK);
+ }
+ 
++static inline bool nested_exit_on_smi(struct vcpu_svm *svm)
++{
++	return (svm->nested.intercept & (1ULL << INTERCEPT_SMI));
++}
++
+ static inline bool nested_exit_on_nmi(struct vcpu_svm *svm)
+ {
+ 	return (svm->nested.intercept & (1ULL << INTERCEPT_NMI));
+-- 
+2.27.0
+

@@ -1,0 +1,71 @@
+From a9fa7cb6aa997ba58294f1a07d402ce5855bafe1 Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Thu, 23 Apr 2020 11:02:36 -0400
+Subject: [PATCH] KVM: x86: replace is_smm checks with kvm_x86_ops.smi_allowed
+
+Do not hardcode is_smm so that all the architectural conditions for
+blocking SMIs are listed in a single place.  Well, in two places because
+this introduces some code duplication between Intel and AMD.
+
+This ensures that nested SVM obeys GIF in kvm_vcpu_has_events.
+
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/svm.c | 2 +-
+ arch/x86/kvm/vmx/vmx.c | 2 +-
+ arch/x86/kvm/x86.c     | 6 +++---
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index c6e5374db825..739414028536 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -3783,7 +3783,7 @@ static bool svm_smi_allowed(struct kvm_vcpu *vcpu)
+ 		return false;
+ 	}
+ 
+-	return true;
++	return !is_smm(vcpu);
+ }
+ 
+ static int svm_pre_enter_smm(struct kvm_vcpu *vcpu, char *smstate)
+diff --git a/arch/x86/kvm/vmx/vmx.c b/arch/x86/kvm/vmx/vmx.c
+index 4ca1f1f4ef1a..d0bea514d447 100644
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -7680,7 +7680,7 @@ static bool vmx_smi_allowed(struct kvm_vcpu *vcpu)
+ 	/* we need a nested vmexit to enter SMM, postpone if run is pending */
+ 	if (to_vmx(vcpu)->nested.nested_run_pending)
+ 		return false;
+-	return true;
++	return !is_smm(vcpu);
+ }
+ 
+ static int vmx_pre_enter_smm(struct kvm_vcpu *vcpu, char *smstate)
+diff --git a/arch/x86/kvm/x86.c b/arch/x86/kvm/x86.c
+index bdcb4e7c579d..446fbdd05bd4 100644
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -7764,8 +7764,7 @@ static int inject_pending_event(struct kvm_vcpu *vcpu)
+ 	if (kvm_event_needs_reinjection(vcpu))
+ 		return 0;
+ 
+-	if (vcpu->arch.smi_pending && !is_smm(vcpu) &&
+-	    kvm_x86_ops.smi_allowed(vcpu)) {
++	if (vcpu->arch.smi_pending && kvm_x86_ops.smi_allowed(vcpu)) {
+ 		vcpu->arch.smi_pending = false;
+ 		++vcpu->arch.smi_count;
+ 		enter_smm(vcpu);
+@@ -10206,7 +10205,8 @@ static inline bool kvm_vcpu_has_events(struct kvm_vcpu *vcpu)
+ 		return true;
+ 
+ 	if (kvm_test_request(KVM_REQ_SMI, vcpu) ||
+-	    (vcpu->arch.smi_pending && !is_smm(vcpu)))
++	    (vcpu->arch.smi_pending &&
++	     kvm_x86_ops.smi_allowed(vcpu)))
+ 		return true;
+ 
+ 	if (kvm_arch_interrupt_allowed(vcpu) &&
+-- 
+2.27.0
+

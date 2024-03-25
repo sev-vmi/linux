@@ -1,0 +1,61 @@
+From fb7333dfd812062d3d51f377e70c1d3a3788472b Mon Sep 17 00:00:00 2001
+From: Paolo Bonzini <pbonzini@redhat.com>
+Date: Mon, 8 Jun 2020 07:11:47 -0400
+Subject: [PATCH] KVM: SVM: fix calls to is_intercept
+
+is_intercept takes an INTERCEPT_* constant, not SVM_EXIT_*; because
+of this, the compiler was removing the body of the conditionals,
+as if is_intercept returned 0.
+
+This unveils a latent bug: when clearing the VINTR intercept,
+int_ctl must also be changed in the L1 VMCB (svm->nested.hsave),
+just like the intercept itself is also changed in the L1 VMCB.
+Otherwise V_IRQ remains set and, due to the VINTR intercept being clear,
+we get a spurious injection of a vector 0 interrupt on the next
+L2->L1 vmexit.
+
+Reported-by: Qian Cai <cai@lca.pw>
+Signed-off-by: Paolo Bonzini <pbonzini@redhat.com>
+---
+ arch/x86/kvm/svm/nested.c | 2 +-
+ arch/x86/kvm/svm/svm.c    | 4 +++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/arch/x86/kvm/svm/nested.c b/arch/x86/kvm/svm/nested.c
+index 8a6db11dcb43..6bceafb19108 100644
+--- a/arch/x86/kvm/svm/nested.c
++++ b/arch/x86/kvm/svm/nested.c
+@@ -258,7 +258,7 @@ void sync_nested_vmcb_control(struct vcpu_svm *svm)
+ 	/* Only a few fields of int_ctl are written by the processor.  */
+ 	mask = V_IRQ_MASK | V_TPR_MASK;
+ 	if (!(svm->nested.ctl.int_ctl & V_INTR_MASKING_MASK) &&
+-	    is_intercept(svm, SVM_EXIT_VINTR)) {
++	    is_intercept(svm, INTERCEPT_VINTR)) {
+ 		/*
+ 		 * In order to request an interrupt window, L0 is usurping
+ 		 * svm->vmcb->control.int_ctl and possibly setting V_IRQ
+diff --git a/arch/x86/kvm/svm/svm.c b/arch/x86/kvm/svm/svm.c
+index 9e333b91ff78..c8f5e87615d5 100644
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -1378,6 +1378,8 @@ static void svm_clear_vintr(struct vcpu_svm *svm)
+ 	/* Drop int_ctl fields related to VINTR injection.  */
+ 	svm->vmcb->control.int_ctl &= mask;
+ 	if (is_guest_mode(&svm->vcpu)) {
++		svm->nested.hsave->control.int_ctl &= mask;
++
+ 		WARN_ON((svm->vmcb->control.int_ctl & V_TPR_MASK) !=
+ 			(svm->nested.ctl.int_ctl & V_TPR_MASK));
+ 		svm->vmcb->control.int_ctl |= svm->nested.ctl.int_ctl & ~mask;
+@@ -1999,7 +2001,7 @@ void svm_set_gif(struct vcpu_svm *svm, bool value)
+ 		 */
+ 		if (vgif_enabled(svm))
+ 			clr_intercept(svm, INTERCEPT_STGI);
+-		if (is_intercept(svm, SVM_EXIT_VINTR))
++		if (is_intercept(svm, INTERCEPT_VINTR))
+ 			svm_clear_vintr(svm);
+ 
+ 		enable_gif(svm);
+-- 
+2.27.0
+
