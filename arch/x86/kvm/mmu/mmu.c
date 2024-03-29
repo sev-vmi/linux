@@ -4340,7 +4340,8 @@ static int kvm_faultin_pfn_private(struct kvm_vcpu *vcpu,
 	fault->map_writable = !(fault->slot->flags & KVM_MEM_READONLY);
 
 	r = static_call(kvm_x86_gmem_validate_fault)(vcpu->kvm, fault->pfn,
-						     fault->gfn, &fault->max_level);
+						     fault->gfn, fault->is_private,
+						     &fault->max_level);
 	if (r) {
 		kvm_release_pfn_clean(fault->pfn);
 		return r;
