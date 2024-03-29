@@ -2459,7 +2459,9 @@ static inline int kvm_gmem_get_uninit_pfn(struct kvm *kvm,
 static inline int kvm_gmem_undo_get_pfn(struct kvm *kvm,
 				        struct kvm_memory_slot *slot, gfn_t gfn,
 				        int order)
-{}
+{
+	return -EIO;
+}
 #endif /* CONFIG_KVM_PRIVATE_MEM */
 
 #ifdef CONFIG_HAVE_KVM_GMEM_PREPARE
