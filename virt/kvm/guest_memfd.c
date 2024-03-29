@@ -13,6 +13,13 @@ struct kvm_gmem {
 	struct list_head entry;
 };
 
+#ifdef CONFIG_HAVE_KVM_GMEM_PREPARE
+bool __weak kvm_arch_gmem_prepare_needed(struct kvm *kvm)
+{
+	return false;
+}
+#endif
+
 static int kvm_gmem_prepare_folio(struct inode *inode, pgoff_t index, struct folio *folio)
 {
 #ifdef CONFIG_HAVE_KVM_GMEM_PREPARE
@@ -26,6 +33,9 @@ static int kvm_gmem_prepare_folio(struct inode *inode, pgoff_t index, struct fol
 		kvm_pfn_t pfn;
 		gfn_t gfn;
 		int rc;
+
+		if (!kvm_arch_gmem_prepare_needed(kvm))
+			continue;
 
 		slot = xa_load(&gmem->bindings, index);
 		if (!slot)
