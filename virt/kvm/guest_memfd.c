@@ -580,8 +580,8 @@ static int __kvm_gmem_get_pfn(struct file *file, struct kvm_memory_slot *slot,
 	}
 
 	folio = kvm_gmem_get_folio(file_inode(file), index, prepare);
-	if (!folio)
-		return -ENOMEM;
+	if (IS_ERR_OR_NULL(folio))
+		return folio ? PTR_ERR(folio) : -ENOMEM;
 
 	if (folio_test_hwpoison(folio)) {
 		r = -EHWPOISON;
