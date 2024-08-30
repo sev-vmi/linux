@@ -217,6 +217,20 @@ struct kvm_hyperv_exit {
 	} u;
 };
 
+struct kvm_svsm_exit {
+#define KVM_EXIT_SVSM_VMICALL			1
+#define KVM_EXIT_SVSM_VMICALL_NO_RESULT 	0xffff
+	__u32 type;
+	__u32 pad1;
+	union {
+		struct {
+			__u64 input;
+			__u64 result;
+			//__u64 params[2];
+		} vmicall;
+	} u;
+};
+
 struct kvm_xen_exit {
 #define KVM_EXIT_XEN_HCALL          1
 	__u32 type;
@@ -269,6 +283,7 @@ struct kvm_xen_exit {
 #define KVM_EXIT_AP_RESET_HOLD    32
 #define KVM_EXIT_X86_BUS_LOCK     33
 #define KVM_EXIT_XEN              34
+#define KVM_EXIT_SVSM             35
 
 /* For KVM_EXIT_INTERNAL_ERROR */
 /* Emulate instruction failed. */
@@ -288,13 +303,21 @@ struct kvm_run {
 	/* in */
 	__u8 request_interrupt_window;
 	__u8 immediate_exit;
-	__u8 padding1[6];
+
+	__u8 request_vmpl_switch;
+	__u8 target_vmpl; // --> for requesting scheduling of VMPL0/1 explicitly
+
+	//__u8 padding1[6];
+	__u8 padding1[4]; // ours
 
 	/* out */
 	__u32 exit_reason;
 	__u8 ready_for_interrupt_injection;
 	__u8 if_flag;
 	__u16 flags;
+
+	__u8 curr_vmpl; //--> for blocking MMIO accesses by VMPL1
+	__u8 padding2[7];
 
 	/* in (pre_kvm_run), out (post_kvm_run) */
 	__u64 cr8;
@@ -451,6 +474,8 @@ struct kvm_run {
 		} eoi;
 		/* KVM_EXIT_HYPERV */
 		struct kvm_hyperv_exit hyperv;
+		/* KVM_EXIT_SVSM */
+        struct kvm_svsm_exit svsm;
 		/* KVM_EXIT_ARM_NISV */
 		struct {
 			__u64 esr_iss;

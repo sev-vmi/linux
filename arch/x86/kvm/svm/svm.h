@@ -233,6 +233,10 @@ struct vcpu_svm {
 	struct snp_vmsa_update snp_vmsa[SVM_SEV_VMPL_MAX];
 	unsigned int snp_current_vmpl;
 	unsigned int snp_target_vmpl;
+
+	u32 snp_event_inj_stash;
+	bool snp_restore_nmi_on_switch;
+	u8 _syssec_padding[3];
 };
 
 struct svm_cpu_data {
@@ -626,6 +630,9 @@ int svm_unregister_enc_region(struct kvm *kvm,
 			      struct kvm_enc_region *range);
 int svm_vm_copy_asid_from(struct kvm *kvm, unsigned int source_fd);
 void pre_sev_run(struct vcpu_svm *svm, int cpu);
+
+void sev_check_vmpl_switch_request(struct vcpu_svm *svm);
+
 void __init sev_set_cpu_caps(void);
 void __init sev_hardware_setup(void);
 void sev_hardware_teardown(void);

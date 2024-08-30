@@ -27,12 +27,17 @@
 #include <asm/sev.h>
 #include <asm/mman.h>
 
+#include <asm/svm.h>
+
 #include "x86.h"
 #include "svm.h"
 #include "svm_ops.h"
 #include "cpuid.h"
 #include "trace.h"
 #include "mmu.h"
+
+#define SYSSEC_DEBUG_PRINT 1
+//#undef SYSSEC_DEBUG_PRINT
 
 #ifndef CONFIG_KVM_AMD_SEV
 /*
@@ -81,6 +86,7 @@ static unsigned long *sev_asid_bitmap;
 static unsigned long *sev_reclaim_asid_bitmap;
 
 static int snp_decommission_context(struct kvm *kvm);
+static void sev_vmpl_stash_restore_event(struct vcpu_svm *svm, unsigned int vmpl);
 
 struct enc_region {
 	struct list_head list;
@@ -2861,6 +2867,7 @@ static int sev_es_validate_vmgexit(struct vcpu_svm *svm, u64 *exit_code)
 	case SVM_VMGEXIT_GUEST_REQUEST:
 	case SVM_VMGEXIT_EXT_GUEST_REQUEST:
 	case SVM_VMGEXIT_RUN_VMPL:
+	case SVSM_VMGEXIT_SVSM_CALL:
 		break;
 	default:
 		goto vmgexit_err;
@@ -2921,6 +2928,9 @@ void pre_sev_run(struct vcpu_svm *svm, int cpu)
 
 	/* Assign the asid allocated with this SEV guest */
 	svm->asid = asid;
+
+	/* Check for VMPL switch request */
+	sev_check_vmpl_switch_request(svm);
 
 	/*
 	 * Flush guest TLB:
@@ -3484,6 +3494,8 @@ static int __sev_snp_update_protected_guest_state(struct kvm_vcpu *vcpu)
 		svm->vmcb->control.ghcb_gpa = svm->ghcb_gpa[svm->snp_target_vmpl];
 
 		svm->snp_current_vmpl = svm->snp_target_vmpl;
+		// TODO: what about very first initialization of this value?
+		vcpu->run->curr_vmpl = (__u8)svm->snp_target_vmpl;
 	}
 
 	vmcb_mark_all_dirty(svm->vmcb);
@@ -3622,6 +3634,7 @@ static int sev_snp_ap_creation(struct vcpu_svm *svm)
 		/* Switch to new VMSA on the next VMRUN */
 		target_svm->snp_target_vmpl = vmpl;
 		target_svm->snp_vmsa[vmpl].gpa = svm->vmcb->control.exit_info_2 & PAGE_MASK;
+		//TODO: I think we do not have to save curr vmpl here already, as nothing has happened yet; target is just a request, like our requested_vmpl
 		break;
 	case SVM_VMGEXIT_AP_DESTROY:
 		break;
@@ -3715,6 +3728,65 @@ static void sev_get_apic_ids(struct vcpu_svm *svm)
 	kvfree(desc);
 }
 
+static void sev_vmpl_stash_restore_event(struct vcpu_svm *svm, unsigned int vmpl) {
+	// VMPL0: check if we need to stash a pending event injection
+	if (vmpl == 0) {
+		if (svm->vmcb->control.event_inj & SVM_EVTINJ_VALID) {
+			// already stashed, but not delivered; hard to deal with? (not yet observed)
+			if (svm->snp_event_inj_stash & SVM_EVTINJ_VALID) {
+				pr_err("syssec: conflict - event already stashed\n"); // unclear if that can happen (timer + resched.?)
+			} else {
+#ifdef SYSSEC_DEBUG_PRINT
+				pr_err("saving pending event for later re-injection (%x)\n", svm->vmcb->control.event_inj);
+#endif
+				svm->snp_event_inj_stash = svm->vmcb->control.event_inj;
+			}
+			svm->vmcb->control.event_inj = 0; // otherwise VMPL0 run error
+			kvm_clear_request(KVM_REQ_EVENT, &svm->vcpu); // todo: bad idea?
+		}
+	// VMPL>=1: check if we restore event injection
+	} else {
+		// something to restore?
+		if (svm->snp_event_inj_stash & SVM_EVTINJ_VALID) {
+			if (svm->vmcb->control.event_inj & SVM_EVTINJ_VALID) {
+				// never happened (VMPL0 runs with IRQs off -- masks external IRQs; NMIs not yet masked, though -- only for trap, not pausing)
+				pr_err("conflict: EVENT RESTORE WOULD OVERWRITE\n");
+				// keep stashed
+			} else {
+				kvm_make_request(KVM_REQ_EVENT, &svm->vcpu); // legacy IRQ force
+#ifdef SYSSEC_DEBUG_PRINT
+				pr_err("restoring pending event (%x)\n", svm->snp_event_inj_stash);
+#endif
+
+				// TODO: use injection APIs instead?
+				// svm_set_irq -- does nothing else than we do
+				// svm_inject_nmi -- does ours + set HF_NMI_MASK
+				// svm_queue_exception -- initially calls kvm_deliver_exception_payload()
+				//     -> nothing if exception has no payload
+				//	   -> DB (debug vector) behaviour
+				//	   -> PF (page fault vector) behaviour, setting vcpu->arch.cr2 = payload
+				//
+				//		--- I think only the #PF part might be interesting;
+				//		--- and not sure if that might play a role for our page traps !!
+				//		--- but then we might maybe also need to stash that exception payload
+				svm->vmcb->control.event_inj = svm->snp_event_inj_stash;
+				svm->snp_event_inj_stash = 0;
+			}
+		}
+
+		// restore NMI if we have masked it during monitor trap (TODO: could an NMI overwrite the above restored event injection?)
+		// TODO: consider always masking NMI on VMPL0 enter, and unmasking else
+		if (svm->snp_restore_nmi_on_switch) {
+#ifdef SYSSEC_DEBUG_PRINT
+			pr_info("syssec: re-enable NMI\n");
+#endif
+			// ~= svm_set_nmi_mask(.., false)
+			svm->vcpu.arch.hflags &= ~HF_NMI_MASK;
+			svm->snp_restore_nmi_on_switch = false;
+		}
+	}
+}
+
 static int __sev_run_vmpl_vmsa(struct vcpu_svm *svm, unsigned int vmpl)
 {
 	struct kvm_vcpu *vcpu = &svm->vcpu;
@@ -3725,9 +3797,12 @@ static int __sev_run_vmpl_vmsa(struct vcpu_svm *svm, unsigned int vmpl)
 
 	svm->snp_target_vmpl = vmpl;
 
+	// note that ..._protected_guest_state(...) can cause change of snp_current_vmpl
 	if (svm->snp_target_vmpl == svm->snp_current_vmpl ||
-	    sev_snp_init_protected_guest_state(vcpu))
-		return 0;
+		sev_snp_init_protected_guest_state(vcpu)) {
+			sev_vmpl_stash_restore_event(svm, vmpl); // TODO: always?
+			return 0;
+	}
 
 	/* If the VMSA is not valid, return an error */
 	if (!VALID_PAGE(svm->vmsa_pa[vmpl]))
@@ -3742,6 +3817,9 @@ static int __sev_run_vmpl_vmsa(struct vcpu_svm *svm, unsigned int vmpl)
 	svm->vmcb->control.ghcb_gpa = svm->ghcb_gpa[vmpl];
 
 	svm->snp_current_vmpl = vmpl;
+	vcpu->run->curr_vmpl = (__u8)vmpl;
+
+	sev_vmpl_stash_restore_event(svm, vmpl);
 
 	vmcb_mark_all_dirty(svm->vmcb);
 
@@ -3772,6 +3850,51 @@ static void sev_run_vmpl_vmsa(struct vcpu_svm *svm)
 err:
 	svm_set_ghcb_sw_exit_info_1(vcpu, 2);
 	svm_set_ghcb_sw_exit_info_2(vcpu, 0);
+}
+
+void sev_check_vmpl_switch_request(struct vcpu_svm *svm) {
+	struct kvm_run *run = svm->vcpu.run;
+
+	if(!run->request_vmpl_switch) {
+		// TODO: should not be necessary
+		sev_vmpl_stash_restore_event(svm, svm->snp_current_vmpl);
+		return;
+	}
+
+	// important: do not drop switch request here, otherwise might miss one
+	// if VMPL0 in the middle of leaving
+	if(svm->snp_current_vmpl == run->target_vmpl) {
+		// TODO: should not be necessary
+		sev_vmpl_stash_restore_event(svm, svm->snp_current_vmpl);
+		return;
+	}
+
+	// currently only support explicit switch to VMPL0 or VMPL1
+	switch (run->target_vmpl) {
+		case 0:
+			// switch
+			if(__sev_run_vmpl_vmsa(svm, run->target_vmpl) != 0) {
+				pr_err("sev_check_vmpl_switch_request: failed switching to requested VMPL %#x\n", run->target_vmpl);
+			}
+#ifdef SYSSEC_DEBUG_PRINT
+			pr_info("syssec: tried to switch to VMPL 0\n");
+#endif
+			break;
+		case 1:
+			if(__sev_run_vmpl_vmsa(svm, run->target_vmpl) != 0) {
+				pr_err("sev_check_vmpl_switch_request: failed switching to requested VMPL %#x\n", run->target_vmpl);
+			}
+#ifdef SYSSEC_DEBUG_PRINT
+			pr_info("syssec: tried to switch to VMPL 1\n");
+#endif
+			break;
+		default:
+			pr_err("sev_check_vmpl_switch_request: invalid switch to VMPL %#x requested\n", run->target_vmpl);
+			break;
+	}
+
+	// mark request as processed anyway
+	run->request_vmpl_switch = 0;
 }
 
 static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
@@ -3895,6 +4018,7 @@ static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
 		set_ghcb_msr_bits(svm, GHCB_MSR_PSC_RESP, GHCB_MSR_INFO_MASK, GHCB_MSR_INFO_POS);
 		break;
 	}
+	// Currently only used for VMPL1 -> VMPL0, or by VMPL0 during very early boot.
 	case GHCB_MSR_VMPL_REQ: {
 		unsigned int vmpl;
 
@@ -3908,7 +4032,7 @@ static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
 		set_ghcb_msr_bits(svm, 0, GHCB_MSR_VMPL_ERROR_MASK, GHCB_MSR_VMPL_ERROR_POS);
 		set_ghcb_msr_bits(svm, 0, GHCB_MSR_VMPL_RSVD_MASK, GHCB_MSR_VMPL_RSVD_POS);
 		set_ghcb_msr_bits(svm, GHCB_MSR_VMPL_RESP, GHCB_MSR_INFO_MASK, GHCB_MSR_INFO_POS);
-
+	
 		if (__sev_run_vmpl_vmsa(svm, vmpl))
 			set_ghcb_msr_bits(svm, 1, GHCB_MSR_VMPL_ERROR_MASK, GHCB_MSR_VMPL_ERROR_POS);
 
@@ -3935,6 +4059,16 @@ static int sev_handle_vmgexit_msr_protocol(struct vcpu_svm *svm)
 					    control->ghcb_gpa, ret);
 
 	return ret;
+}
+
+static int kvm_svsm_vmicall_complete_userspace(struct kvm_vcpu *vcpu) {
+	// TODO: I'm not sure if the syncing will still be done after this call
+	// -- if not, use ghcb_set_rax(ghcb, vcpu->run->svsm.u.vmicall.result); - instead
+	vcpu->arch.regs[VCPU_REGS_RAX] = vcpu->run->svsm.u.vmicall.result;
+	// success
+	svm_set_ghcb_sw_exit_info_1(vcpu, 0);
+	svm_set_ghcb_sw_exit_info_2(vcpu, 0);
+	return 1;
 }
 
 int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
@@ -4067,10 +4201,31 @@ int sev_handle_vmgexit(struct kvm_vcpu *vcpu)
 
 		ret = 1;
 		break;
+	// Currently only used by VMPL0 --> VMPL1. (Linux guest kernel does only use MSR atm)
 	case SVM_VMGEXIT_RUN_VMPL:
-		sev_run_vmpl_vmsa(svm);
+		sev_run_vmpl_vmsa(svm); // might fail in theory
+		ret = 1; // do not pass to QEMU
+		break;
+	case SVSM_VMGEXIT_SVSM_CALL:
+		// only VMPL0 is allowed to use this interface
+		if (vcpu->run->curr_vmpl != 0) {
+			printk(KERN_INFO "Invalid attempt to perform VMICALL from VMPL>0");
+			svm_set_ghcb_sw_exit_info_1(vcpu, 2); // malformed
+			svm_set_ghcb_sw_exit_info_2(vcpu, 0);
+			ret = 1;
+			break;
+		}
 
-		ret = 1;
+		vcpu->run->exit_reason = KVM_EXIT_SVSM;
+		vcpu->run->svsm.type = KVM_EXIT_SVSM_VMICALL;
+
+		vcpu->run->svsm.u.vmicall.input = control->exit_info_1;
+		vcpu->run->svsm.u.vmicall.result = KVM_EXIT_SVSM_VMICALL_NO_RESULT;
+
+		// for setting result value
+		vcpu->arch.complete_userspace_io = kvm_svsm_vmicall_complete_userspace;
+
+		ret = 0; // pass control to QEMU
 		break;
 	case SVM_VMGEXIT_UNSUPPORTED_EVENT:
 		vcpu_unimpl(vcpu,
@@ -4163,6 +4318,13 @@ void sev_es_create_vcpu(struct vcpu_svm *svm)
 		svm->vmsa_pa[i] = INVALID_PAGE;
 		svm->ghcb_gpa[i] = sev_info;
 	}
+
+	/* Init interception stash */
+	svm->snp_event_inj_stash = 0;
+	pr_info("Injection stash reset to 0 (svm: %p)\n", svm);
+
+	/* nmi flip */
+	svm->snp_restore_nmi_on_switch = false;
 }
 
 void sev_es_prepare_guest_switch(struct vcpu_svm *svm, unsigned int cpu)
@@ -4367,6 +4529,32 @@ void handle_rmp_page_fault(struct kvm_vcpu *vcpu, gpa_t gpa, u64 error_code)
 		if (rc)
 			pr_err_ratelimited("psmash failed, gpa 0x%llx pfn 0x%llx rc %d\n",
 					   gpa, pfn, rc);
+		goto out;
+	}
+
+	/*
+	 * If the fault was due to a VMPL permission violation (VMPL>0),
+	 * schedule into the in-VM agent to let it decide how to handle the
+	 * violation (e.g., query remote VM owner).
+	 * 
+	 * We currently only handle read/write violations, i.e., check for
+	 * indications of that.
+	 */
+	if ((error_code & PFERR_GUEST_VMPL_MASK) && !(error_code & PFERR_FETCH_MASK)) {
+#ifdef SYSSEC_DEBUG_PRINT
+		pr_info("syssec: #NPF: RMP-VMPL (no ins fetch), will try to schedule in-VM agent (VMPL0) to inspect it\n");
+#endif
+		// mask NMI to avoid watchdog firing
+		if (!svm_nmi_blocked(vcpu)) {
+#ifdef SYSSEC_DEBUG_PRINT
+			pr_info("syssec: masking NMI\n");
+#endif
+			// svm_set_nmi_mask(.., true)
+			vcpu->arch.hflags |= HF_NMI_MASK;
+            to_svm(vcpu)->snp_restore_nmi_on_switch = true;
+		}
+		if (__sev_run_vmpl_vmsa(to_svm(vcpu), 0))
+			pr_err("syssec: Failed scheduling VMPL0 on #NPF RMP-VMPL\n");
 		goto out;
 	}
 
